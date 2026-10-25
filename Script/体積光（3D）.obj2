@@ -1,4 +1,4 @@
---information:体積光（3D）v3.06
+--information:体積光（3D）v3.07
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -30,6 +30,20 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
+-- v3.07 更新点（2026-10-25・カメラ制御 3D 光源追従における「明るさ反転」および「スポット範囲ジャンプ・逆向き放射」の根治）：
+--   1. 【カメラ光源（点光源・スポット光源・平行光源）の「明るさ（発光度）」反転不具合を根治】
+--      ・AviUtl ExEdit2 本体の 3D OIT シェーダ（Shader #118, 0x1404404b0 / 0x1401301f2）は、スライス頂点法線が
+--        未指定の場合に視線正面法線 N = -sf を自動生成するため、逆光・上方光・側方光や減衰領域では max(0, dot(N, L)) ≈ 0 となり、
+--        ホスト乗算項 unlit = clamp(1 - 明るさ/100, 0, 1) のみが残って「明るさを上げるほど暗くなり 100% 以上で消灯する」現象が発生していた。
+--      ・公式 `obj.drawpoly({x,y,z,u,v,vx,vy,vz}, 4, alpha)` の頂点法線指定（点光源・スポット光源では光源投影点基準の適応分割格子）により
+--        全角度で dot(N, L) -> 1.0 を保証し、`beamatlas` 内でホスト受光式（unlit + 環境光 + 光源RGB×コーン・減衰）のチャンネル別逆補償を行うことで、
+--        明るさ 0%（完全消灯）〜100%〜200% 超まで色転び・白飛び・黒潰れなく完全に線形追従するよう修正（モード 0 / 2 の 100% 黒潰れも同時に解消）。
+--   2. 【スポット光源（カメラ制御）の「範囲」不連続ジャンプおよび放射方向 180° 反転の根治】
+--      ・ホスト `CameraLight64` 構造体の `f[15]` は cos(角度) ではなく半頂角ラジアン `範囲 * (π/180)`（0〜π/2）を格納しており、
+--        従来の `acos(f[15])` と範囲ガード `(0.05, 0.9995)` により約 2.86° および 57.27° で 22°/81° へ急変ジャンプし逆転していた不具合を修正。
+--      ・併せて `f[1..3]` が被照射点→光源ベクトル `L = normalize(pos - target)` であるため光線放射方向を `-f[1..3]` へ正転させ、
+--        公式 `obj.getvalue` による「ぼかし」「減衰」同期および真円コーン断面生成により 0°〜90° 全域で滑らかに連続変化するよう刷新。
+--
 -- v3.06 更新点（2026-10-24・特定レイヤー構成で遮蔽影が矩形黒塊・輪郭崩れ・点滅する不具合への多層防御）：
 --   1. 【遮蔽マスク「シルエット監査」と自動フォールバック（audit_object_alpha）】
 --      ・公式 Lua リファレンス既知の制限「obj.load("layer", no, effect) は個別オブジェクト等の
@@ -921,9 +935,31 @@
 ]]
 
 --[[pixelshader@ps_vl_white:
+    cbuffer WhiteCB : register(b0)
+    {
+        float4 p0; // x: inv_half_w, y: inv_half_h, z: shape_mode, w: aa_uv
+    };
+
     float4 ps_vl_white(float4 pos : SV_Position) : SV_Target
     {
-        return float4(1.0, 1.0, 1.0, 1.0);
+        if (p0.z < 0.5)
+        {
+            return float4(1.0, 1.0, 1.0, 1.0);
+        }
+        float2 d = float2(pos.x * p0.x - 1.0, pos.y * p0.y - 1.0);
+        float r = length(d);
+        float cov = 0.0;
+        if (p0.z < 1.5)
+        {
+            float e0 = min(1.0 - p0.w, 0.999);
+            cov = 1.0 - smoothstep(e0, 1.0, r);
+        }
+        else
+        {
+            float c = cos(saturate(r) * 1.57079633);
+            cov = c * sqrt(max(c, 0.0));
+        }
+        return float4(cov, cov, cov, cov);
     }
 ]]
 
@@ -957,6 +993,12 @@
         float4 p18;  // xyz: cam_r,   w: focal_over_scrw
         float4 p19;  // xyz: cam_d,   w: focal_over_scrh
         float4 p20;  // x: camocc_w, y: camocc_h, z: camocc_max_z, w: occ_3d_mode
+        float4 p21;  // x: cam_comp_mode, y: unlit_mul, z: cl_ltype, w: atten_k
+        float4 p22;  // xyz: amb_rgb,    w: spot_in_rad
+        float4 p23;  // xyz: cl_rgb,     w: spot_out_rad
+        float4 p24;  // xyz: cl_pos,     w: other_lum
+        float4 p25;  // xyz: cl_ray_dir, w: 0
+        float4 p26;  // xyz: target_rgb, w: 0
         float4 occ[32]; // 最大 8 個の 2D 前景遮蔽オブジェクト
     };
 
@@ -1473,13 +1515,47 @@
 
         float dither = (ign2 - 0.5) * (1.0 / 255.0);
 
+        float3 host_comp_rgb = float3(1.0, 1.0, 1.0);
+        if (p21.x > 0.5)
+        {
+            float phi_h = 1.0;
+            if (p21.z > 2.5)
+            {
+                float3 dv_l = wp0 - p24.xyz;
+                float dist_l = sqrt(max(dot(dv_l, dv_l), 1.0e-4));
+                if (p21.w > 1.0e-6)
+                {
+                    float dn = dist_l * (1.0 / 800.0);
+                    phi_h *= 1.0 / (1.0 + p21.w * dn * dn);
+                }
+                if (p21.z > 4.5)
+                {
+                    float cos_t = clamp(dot(dv_l * (1.0 / dist_l), p25.xyz), -1.0, 1.0);
+                    float ang_t = acos(cos_t);
+                    float in_r  = p22.w;
+                    float out_r = max(p23.w, in_r + 0.004);
+                    phi_h *= 1.0 - smoothstep(in_r, out_r, ang_t);
+                }
+            }
+            float base_u = p21.y + p24.w;
+            float3 h_est = float3(base_u, base_u, base_u) + p22.xyz + p23.xyz * phi_h;
+            if (p21.x < 1.5)
+            {
+                host_comp_rgb = saturate((p26.xyz * phi_h) / max(h_est, float3(1.0e-4, 1.0e-4, 1.0e-4)));
+            }
+            else
+            {
+                host_comp_rgb = saturate(float3(1.0, 1.0, 1.0) / max(h_est, float3(0.08, 0.08, 0.08)));
+            }
+        }
+
         if (p12.y > 0.5)
         {
             if (max_cov <= 0.001) return float4(0.0, 0.0, 0.0, 0.0);
             float a_solid = saturate(1.0 - exp(-max_cov * fg_vis * fog_mod * dz * 0.015));
             float out_as = saturate(a_solid + dither);
             if (out_as < (0.5 / 255.0)) return float4(0.0, 0.0, 0.0, 0.0);
-            float3 c_solid = saturate(best_c * min(p11.w * 360.0, 1.15));
+            float3 c_solid = saturate(best_c * min(p11.w * 360.0, 1.15) * host_comp_rgb);
             return float4(c_solid * out_as, out_as);
         }
 
@@ -1487,7 +1563,7 @@
         // blend="none" + poly_alpha=0.27 により frameBuffer(t[1]) 早期焼き込みを 100% 排除しつつ、
         // out_a = p12.z (= 1/255 → r4.w = 0.001059 > 0.001) の極小 OIT トークンのみを出力することで
         // 灰色煙ベール（不透明減衰）を根絶し、v2.09 同等の鮮烈な透明感・高彩度輝きを実現！
-        float3 scaled_rgb = acc_rgb * (step_len * p11.w * fog_mod * fg_vis);
+        float3 scaled_rgb = acc_rgb * (step_len * p11.w * fog_mod * fg_vis) * host_comp_rgb;
         float s_max = max(scaled_rgb.r, max(scaled_rgb.g, scaled_rgb.b));
         if (s_max <= 1e-6)
         {
@@ -1703,34 +1779,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.06] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.06] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.06] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.06] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.07] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.07] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.07] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.07] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.06 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.06 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.06 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.06 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.07 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.07 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.07 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.07 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.06 シェーダー失敗: ",
-        zh = "体积光（3D）v3.06 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.06 shader error: ",
-        de = "Volumenlicht (3D) v3.06 Shader-Fehler: ",
+        ja = "体積光（3D）v3.07 シェーダー失敗: ",
+        zh = "体积光（3D）v3.07 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.07 shader error: ",
+        de = "Volumenlicht (3D) v3.07 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.06：初期化中……",
-        zh = "体积光（3D）v3.06：初始化中……",
-        en = "Volumetric Light (3D) v3.06: Initializing...",
-        de = "Volumenlicht (3D) v3.06: Initialisierung läuft...",
+        ja = "体積光（3D）v3.07：初期化中……",
+        zh = "体积光（3D）v3.07：初始化中……",
+        en = "Volumetric Light (3D) v3.07: Initializing...",
+        de = "Volumenlicht (3D) v3.07: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.06：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.06：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.06: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.06: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.07：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.07：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.07: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.07: Initialisiert (%.2fs)",
     },
 }
 
@@ -1910,6 +1986,23 @@ local function rot_xyz(vx, vy, vz, rx_deg, ry_deg, rz_deg)
     local x2, z2 = vx * cy + z1 * sy, -vx * sy + z1 * cy
     local x3, y3 = x2 * cz - y1 * sz, x2 * sz + y1 * cz
     return x3, y3, z2
+end
+
+local function inv_rot_xyz(wx, wy, wz, rx_deg, ry_deg, rz_deg)
+    if math.abs(rx_deg) + math.abs(ry_deg) + math.abs(rz_deg) < 1e-5 then
+        return wx, wy, wz
+    end
+    local rad = math.pi / 180.0
+    local cx, sx = math.cos(rx_deg * rad), math.sin(rx_deg * rad)
+    local cy, sy = math.cos(ry_deg * rad), math.sin(ry_deg * rad)
+    local cz, sz = math.cos(rz_deg * rad), math.sin(rz_deg * rad)
+    local x2 = wx * cz + wy * sz
+    local y1 = -wx * sz + wy * cz
+    local vx = x2 * cy - wz * sy
+    local z1 = x2 * sy + wz * cy
+    local vy = y1 * cx + z1 * sx
+    local vz = -y1 * sx + z1 * cx
+    return vx, vy, vz
 end
 
 local function read_layer_transform(ln, def_x, def_y, def_z, def_rx, def_ry, def_rz)
@@ -4453,8 +4546,8 @@ _G._VL3D_RESOLVE_LIVE_LAYER = resolve_live_scene_layer_object
 --   gbuf = *(*[lctx + 0x88] + 0xD0)
 --   [gbuf + 0x98 .. 0xA0] = CameraLight64 配列（1 要素 64 bytes POD float[16]）：
 --     int32[0] = type (0:環境光, 2:平行光源, 3/4:点光源, 5:スポット光源)
---     float[1..3] = dir (x,y,z), float[4..6] = rgb (強度乗算済), float[7] = unlit_mul (0 or 1)
---     float[8..9] = atten, float[12..14] = world pos (X,Y,Z), float[15] = cone_cos
+--     float[1..3] = L (被照射点→光源への単位ベクトル = -ray_dir), float[4..6] = rgb (明るさ乗算済), float[7] = unlit_mul
+--     float[8..9] = atten, float[12..14] = world pos (X,Y,Z), float[15] = spot_half_angle_rad (範囲 * pi/180)
 -- =====================================================================
 local function inspect_or_suppress_camera_lights(suppress_deferred)
     if type(_G.VL3D_TEST_CAM_LIGHTS) == "table" then
@@ -4601,6 +4694,100 @@ local function inspect_or_suppress_camera_lights(suppress_deferred)
         out.suppress_requested = suppress_deferred and true or false
     end)
     return out
+end
+
+local SPOT_FX_BASES = { "スポット光源(カメラ制御)", "聚光源(摄像机)", "Spot Light (Camera)", "Spotlicht (Kamera)" }
+local SPOT_BLUR_KEYS = { "ぼかし", "模糊", "Blur", "Weichzeichnen" }
+local LIGHT_ATTEN_KEYS = { "減衰", "衰减", "Attenuation", "Dämpfung" }
+local POINT_FX_BASES = { "点光源(カメラ制御)", "点光源(摄像机)", "Point Light (Camera)", "Punktlicht (Kamera)" }
+
+local function read_cam_light_fx_extras(cl, self_layer)
+    local blur_deg = 0.0
+    local atten_pct = 0.0
+    if type(cl) ~= "table" then return blur_deg, atten_pct end
+    if type(cl.blur_deg) == "number" then blur_deg = math.max(0.0, math.min(90.0, cl.blur_deg)) end
+    if type(cl.atten_pct) == "number" then atten_pct = math.max(0.0, math.min(100.0, cl.atten_pct)) end
+    if type(cl.blur_deg) == "number" and type(cl.atten_pct) == "number" then
+        return blur_deg, atten_pct
+    end
+    local lt = cl.ltype or 0
+    if lt ~= 5 and lt ~= 3 and lt ~= 4 then
+        return blur_deg, atten_pct
+    end
+    if type(obj) ~= "table" or obj.getvalue == nil then
+        return blur_deg, atten_pct
+    end
+
+    pcall(function()
+        local fx_bases = (lt == 5) and SPOT_FX_BASES or POINT_FX_BASES
+        local best_d2 = 1e30
+        local hit_ln = nil
+        local max_ln = 100
+
+        local function probe_layer(ln)
+            if ln == nil or ln < 1 or ln > 100 then return false end
+            if obj.getvalue("layer" .. tostring(ln)) ~= true then return false end
+            local any_on_ln = false
+            for bi = 1, #fx_bases do
+                local base = fx_bases[bi]
+                local found_base = false
+                for idx = 0, 3 do
+                    local fx = (idx == 0) and base or (base .. ":" .. tostring(idx))
+                    local probe_keys = (lt == 5) and SPOT_BLUR_KEYS or LIGHT_ATTEN_KEYS
+                    local v_main = nil
+                    for ki = 1, #probe_keys do
+                        local v = obj.getvalue(ln, fx, probe_keys[ki])
+                        if type(v) == "number" then v_main = v; break end
+                    end
+                    if v_main ~= nil then
+                        found_base = true
+                        any_on_ln = true
+                        local vx = tonumber(obj.getvalue(ln, fx, "X")) or cl.px or 0.0
+                        local vy = tonumber(obj.getvalue(ln, fx, "Y")) or cl.py or 0.0
+                        local vz = tonumber(obj.getvalue(ln, fx, "Z")) or cl.pz or 0.0
+                        local dx_m = vx - (cl.px or 0.0)
+                        local dy_m = vy - (cl.py or 0.0)
+                        local dz_m = vz - (cl.pz or 0.0)
+                        local d2 = dx_m * dx_m + dy_m * dy_m + dz_m * dz_m
+                        if d2 < best_d2 then
+                            best_d2 = d2
+                            hit_ln = ln
+                            if lt == 5 then
+                                blur_deg = math.max(0.0, math.min(90.0, v_main))
+                                local va = nil
+                                for ai = 1, #LIGHT_ATTEN_KEYS do
+                                    local v = obj.getvalue(ln, fx, LIGHT_ATTEN_KEYS[ai])
+                                    if type(v) == "number" then va = v; break end
+                                end
+                                atten_pct = math.max(0.0, math.min(100.0, va or 0.0))
+                            else
+                                atten_pct = math.max(0.0, math.min(100.0, v_main))
+                            end
+                        end
+                    else
+                        break
+                    end
+                end
+                if found_base then break end
+            end
+            return any_on_ln
+        end
+
+        local cached_ln = _VL_PERSIST.last_cam_light_layer
+        if type(cached_ln) == "number" and probe_layer(cached_ln) and best_d2 < 4.0 then
+            return
+        end
+        for ln = 1, max_ln do
+            if ln ~= cached_ln then
+                probe_layer(ln)
+                if best_d2 < 1.0 then break end
+            end
+        end
+        if hit_ln ~= nil then
+            _VL_PERSIST.last_cam_light_layer = hit_ln
+        end
+    end)
+    return blur_deg, atten_pct
 end
 
 local function try_load_3d_layer_mesh(oln, aup2_hint_map, cur_frame)
@@ -6035,7 +6222,7 @@ local function scan_pool_from_object(lw, lh, thr_norm)
 end
 
 local VL_BF = {}
-local VL_BF_KEYS = { "base_alpha", "obj_x", "obj_y", "obj_z", "obj_rx", "obj_ry", "obj_rz", "zoom", "cam_mode", "has_exact_cam", "cam_x", "cam_y", "cam_z", "focal_d", "f_x", "f_y", "f_z", "r_x", "r_y", "r_z", "d_x", "d_y", "d_z", "ui_lang", "scr_w", "scr_h", "cam_light_info", "ln", "self_layer", "use_cam_virtual_src", "thr_norm", "tex_loaded", "lw", "lh", "u0_s", "u1_s", "v0_s", "v1_s", "base_ratio", "found_thr", "water_geo", "exists", "wx", "wy", "wz", "wrz", "zx", "zy", "zz_l", "Wrx", "Wry", "Wrz", "Wdx", "Wdy", "Wdz", "Wnx", "Wny", "Wnz", "src_desc", "Hx", "Hy", "cx_sh", "cy_sh", "R_fixed", "L_char", "f_dec", "L_tot", "k_dec", "inv_end", "mode_kind", "sx_p", "sy_p", "sz_p", "u_wn", "dS_wn", "mid_x", "mid_y", "mid_z", "s_min", "s_max", "hw", "hh", "dz", "total_sl", "pts", "pi", "is_edit", "sf_x", "sf_y", "sf_z", "sr_x", "sr_y", "sr_z", "sd_x", "sd_y", "sd_z", "use_source", "lc_r", "lc_g", "lc_b", "mip_ready", "mip_dots", "peak_cache_dots", "occ_str_val", "occ_tex_name", "shmap_tex_name", "camocc_tex_name", "n_occ_active", "sh3d_active", "sh_res_val", "sh_soft_px", "camocc_active", "camocc_w", "camocc_h", "camocc_max_z", "uv_span_x", "uv_span_y", "occ_flat", "occ_desc", "need_manual_hint", "lower_2d_occ_layer", "occ3d_int", "mode_int", "want_2d_occ", "want_3d_occ", "need_3d_sh", "TILES_X", "ATLAS", "TILE", "PAD", "k_gain_base", "fog_amt", "f_scale", "wox", "woy", "woz", "poly_alpha", "min_opt_a", "cam_comp", "cam_mode2_note", "k_gain_gpu", "n_chunks", "ps_ok", "ps_err", "aw", "ah", "total_v", "peak_r", "peak_g", "peak_b", "peak_a", "rxw", "ryw", "rzw", "dxw", "dyw", "dzw", "cam_along_sf", "ch_first", "ch_last", "ch_step", "si_reverse", "any_occ_active", "eff_occ_mode", "peak_m", "interact_drag", "_init_key", "_init_t0" }
+local VL_BF_KEYS = { "base_alpha", "obj_x", "obj_y", "obj_z", "obj_rx", "obj_ry", "obj_rz", "zoom", "cam_mode", "has_exact_cam", "cam_x", "cam_y", "cam_z", "focal_d", "f_x", "f_y", "f_z", "r_x", "r_y", "r_z", "d_x", "d_y", "d_z", "ui_lang", "scr_w", "scr_h", "cam_light_info", "cam_spot_inner_rad", "cam_spot_outer_rad", "cam_spot_eff_rad", "cam_atten_pct", "cam_ap_dist", "cam_ray_dx", "cam_ray_dy", "cam_ray_dz", "ln", "self_layer", "use_cam_virtual_src", "thr_norm", "tex_loaded", "lw", "lh", "u0_s", "u1_s", "v0_s", "v1_s", "base_ratio", "found_thr", "water_geo", "exists", "wx", "wy", "wz", "wrz", "zx", "zy", "zz_l", "Wrx", "Wry", "Wrz", "Wdx", "Wdy", "Wdz", "Wnx", "Wny", "Wnz", "src_desc", "Hx", "Hy", "cx_sh", "cy_sh", "R_fixed", "L_char", "f_dec", "L_tot", "k_dec", "inv_end", "mode_kind", "sx_p", "sy_p", "sz_p", "u_wn", "dS_wn", "mid_x", "mid_y", "mid_z", "s_min", "s_max", "hw", "hh", "dz", "total_sl", "pts", "pi", "is_edit", "sf_x", "sf_y", "sf_z", "sr_x", "sr_y", "sr_z", "sd_x", "sd_y", "sd_z", "use_source", "lc_r", "lc_g", "lc_b", "mip_ready", "mip_dots", "peak_cache_dots", "occ_str_val", "occ_tex_name", "shmap_tex_name", "camocc_tex_name", "n_occ_active", "sh3d_active", "sh_res_val", "sh_soft_px", "camocc_active", "camocc_w", "camocc_h", "camocc_max_z", "uv_span_x", "uv_span_y", "occ_flat", "occ_desc", "need_manual_hint", "lower_2d_occ_layer", "occ3d_int", "mode_int", "want_2d_occ", "want_3d_occ", "need_3d_sh", "TILES_X", "ATLAS", "TILE", "PAD", "k_gain_base", "fog_amt", "f_scale", "wox", "woy", "woz", "poly_alpha", "min_opt_a", "cam_comp", "cam_mode2_note", "k_gain_gpu", "n_chunks", "ps_ok", "ps_err", "aw", "ah", "total_v", "peak_r", "peak_g", "peak_b", "peak_a", "rxw", "ryw", "rzw", "dxw", "dyw", "dzw", "cam_along_sf", "ch_first", "ch_last", "ch_step", "si_reverse", "any_occ_active", "eff_occ_mode", "peak_m", "interact_drag", "_init_key", "_init_t0" }
 local function vl_bf_reset()
     for vl_i = 1, #VL_BF_KEYS do
         VL_BF[VL_BF_KEYS[vl_i]] = nil
@@ -6103,6 +6290,33 @@ local function vl_bf_capture()
     VL_BF.ln= P.src_layer
     VL_BF.self_layer= type(obj.layer) == "number" and obj.layer or -1
     VL_BF.use_cam_virtual_src= false
+    VL_BF.cam_spot_inner_rad= 0.0
+    VL_BF.cam_spot_outer_rad= 0.0
+    VL_BF.cam_spot_eff_rad= 0.0
+    VL_BF.cam_atten_pct= 0.0
+    VL_BF.cam_ap_dist= nil
+    VL_BF.cam_ray_dx, VL_BF.cam_ray_dy, VL_BF.cam_ray_dz= 0.0, 0.0, 1.0
+
+    do
+        local cl_p = VL_BF.cam_light_info.primary
+        if cl_p ~= nil then
+            local dl_p = math.max(1e-5, math.sqrt((cl_p.dx or 0.0)^2 + (cl_p.dy or 0.0)^2 + (cl_p.dz or 0.0)^2))
+            VL_BF.cam_ray_dx = -(cl_p.dx or 0.0) / dl_p
+            VL_BF.cam_ray_dy = -(cl_p.dy or 0.0) / dl_p
+            VL_BF.cam_ray_dz = -(cl_p.dz or 0.0) / dl_p
+            if P.cam_light_mode ~= 3 then
+                local b_deg, a_pct = read_cam_light_fx_extras(cl_p, VL_BF.self_layer)
+                VL_BF.cam_atten_pct = a_pct
+                if cl_p.ltype == 5 then
+                    local in_r = math.max(0.0, math.min(math.pi * 0.5, tonumber(cl_p.cos_ang) or 0.0))
+                    local out_r = math.min(math.pi * 0.5, in_r + math.rad(b_deg))
+                    VL_BF.cam_spot_inner_rad = in_r
+                    VL_BF.cam_spot_outer_rad = out_r
+                    VL_BF.cam_spot_eff_rad = math.min(math.rad(86.5), out_r)
+                end
+            end
+        end
+    end
 
     if VL_BF.ln <= 0 then
         if P.cam_light_mode == 1 then
@@ -6113,6 +6327,17 @@ local function vl_bf_capture()
             VL_BF.use_cam_virtual_src = true
         else
             draw_center_notice(I18N.unselected[VL_BF.ui_lang] or I18N.unselected.ja, VL_BF.cam_x, VL_BF.cam_y, VL_BF.cam_z, VL_BF.focal_d, VL_BF.f_x, VL_BF.f_y, VL_BF.f_z, VL_BF.obj_x, VL_BF.obj_y, VL_BF.obj_z)
+            do VL_BF._abort = true; return end
+        end
+    end
+    if P.cam_light_mode == 1 and VL_BF.cam_light_info.primary ~= nil then
+        local cl_chk = VL_BF.cam_light_info.primary
+        if (cl_chk.lum or 0.0) <= 1e-5 then
+            pcall(function() obj.setoption("draw_state", true) end)
+            do VL_BF._abort = true; return end
+        end
+        if VL_BF.use_cam_virtual_src and cl_chk.ltype == 5 and VL_BF.cam_spot_outer_rad <= 1e-4 then
+            pcall(function() obj.setoption("draw_state", true) end)
             do VL_BF._abort = true; return end
         end
     end
@@ -6134,31 +6359,18 @@ local function vl_bf_capture()
     if VL_BF.use_cam_virtual_src then
         pcall(function()
             local cl = VL_BF.cam_light_info.primary
-            local cr_c, cg_c, cb_c = 1.0, 1.0, 1.0
-            if P.light_color == nil and cl ~= nil and cl.lum > 1e-4 then
-                cr_c = math.min(1.0, cl.r / cl.lum)
-                cg_c = math.min(1.0, cl.g / cl.lum)
-                cb_c = math.min(1.0, cl.b / cl.lum)
-            end
-            obj.clearbuffer("object", 256, 256)
-            obj.pixelshader("ps_vl_white", "object", {}, {}, "copy")
-            if cr_c < 0.999 or cg_c < 0.999 or cb_c < 0.999 then
-                local ok_fc, ffi_c = pcall(require, "ffi")
-                local p_c = obj.getpixeldata("object", "rgba")
-                if ok_fc and ffi_c ~= nil and p_c ~= nil then
-                    local u8p = ffi_c.cast("uint8_t*", p_c)
-                    local rr = math.floor(cr_c * 255.0 + 0.5)
-                    local gg = math.floor(cg_c * 255.0 + 0.5)
-                    local bb = math.floor(cb_c * 255.0 + 0.5)
-                    for ipx = 0, 256 * 256 - 1 do
-                        local bi = ipx * 4
-                        u8p[bi], u8p[bi + 1], u8p[bi + 2], u8p[bi + 3] = rr, gg, bb, 255
-                    end
-                    obj.putpixeldata("object", p_c, 256, 256, "rgba")
+            local shape_mode = 0.0
+            if cl ~= nil then
+                if cl.ltype == 5 then
+                    shape_mode = 1.0
+                elseif cl.ltype ~= 2 then
+                    shape_mode = 2.0
                 end
             end
+            obj.clearbuffer("object", 256, 256)
+            obj.pixelshader("ps_vl_white", "object", {}, { 1.0 / 128.0, 1.0 / 128.0, shape_mode, 2.0 / 128.0 }, "copy")
             VL_BF.lw, VL_BF.lh = 256, 256
-            VL_BF.base_ratio = 0.85
+            VL_BF.base_ratio = (cl ~= nil and cl.ltype == 2) and 0.85 or 0.78
             VL_BF.tex_loaded = true
         end)
     else
@@ -6398,7 +6610,7 @@ local function vl_bf_capture()
     VL_BF.wx, VL_BF.wy, VL_BF.wz, VL_BF._discard, VL_BF._discard, VL_BF.wrz, VL_BF.zx, VL_BF.zy, VL_BF.zz_l, VL_BF._discard, VL_BF.Wrx, VL_BF.Wry, VL_BF.Wrz, VL_BF.Wdx, VL_BF.Wdy, VL_BF.Wdz, VL_BF.Wnx, VL_BF.Wny, VL_BF.Wnz=
         read_layer_transform(VL_BF.ln, VL_BF.obj_x, VL_BF.obj_y, VL_BF.obj_z, VL_BF.obj_rx, VL_BF.obj_ry, VL_BF.obj_rz)
 
-    if VL_BF.water_geo == nil then
+    if VL_BF.water_geo == nil and not VL_BF.use_cam_virtual_src then
         local src_f = vl_scene_frame()
         local src_li = resolve_live_scene_layer_object(VL_BF.ln, src_f)
         local src_is_txt, s_fx, s_fy, s_pl, s_pr, s_pt, s_pb = resolve_text_align_for_layer(VL_BF.ln, src_f, src_li, nil)
@@ -6478,17 +6690,18 @@ local function vl_bf_geometry()
         local cl = VL_BF.cam_light_info.primary
         if cl.ltype == 2 then
             local dl = math.max(1e-5, math.sqrt(cl.dx * cl.dx + cl.dy * cl.dy + cl.dz * cl.dz))
-            local ux_c, uy_c, uz_c = cl.dx / dl, cl.dy / dl, cl.dz / dl
+            local ux_c, uy_c, uz_c = -cl.dx / dl, -cl.dy / dl, -cl.dz / dl
             VL_BF.Wnx, VL_BF.Wny, VL_BF.Wnz = -ux_c, -uy_c, -uz_c
             VL_BF.wx = VL_BF.cam_x + VL_BF.f_x * 1200.0 - ux_c * (VL_BF.L_tot * 0.45)
             VL_BF.wy = VL_BF.cam_y + VL_BF.f_y * 1200.0 - uy_c * (VL_BF.L_tot * 0.45)
             VL_BF.wz = VL_BF.cam_z + VL_BF.f_z * 1200.0 - uz_c * (VL_BF.L_tot * 0.45)
             VL_BF.Hx, VL_BF.Hy = math.max(VL_BF.scr_w, VL_BF.scr_h) * 1.25, math.max(VL_BF.scr_w, VL_BF.scr_h) * 1.25
+            VL_BF.L_char = 195.0
         else
             local dir_x, dir_y, dir_z
             if cl.ltype == 5 then
                 local dl = math.max(1e-5, math.sqrt(cl.dx * cl.dx + cl.dy * cl.dy + cl.dz * cl.dz))
-                dir_x, dir_y, dir_z = cl.dx / dl, cl.dy / dl, cl.dz / dl
+                dir_x, dir_y, dir_z = -cl.dx / dl, -cl.dy / dl, -cl.dz / dl
             else
                 local tx_c = VL_BF.obj_x - cl.px
                 local ty_c = VL_BF.obj_y - cl.py
@@ -6498,15 +6711,19 @@ local function vl_bf_geometry()
                 dir_x, dir_y, dir_z = tx_c / tl, ty_c / tl, tz_c / tl
             end
             VL_BF.Wnx, VL_BF.Wny, VL_BF.Wnz = -dir_x, -dir_y, -dir_z
-            local ap_dist = 120.0
-            local half_ang = (cl.ltype == 5 and cl.cos_ang > 0.05 and cl.cos_ang < 0.9995)
-                and math.acos(cl.cos_ang)
+            local ap_dist = 3.0
+            VL_BF.cam_ap_dist = ap_dist
+            local half_ang = (cl.ltype == 5)
+                and (VL_BF.cam_spot_eff_rad or 0.0)
                 or math.rad(math.max(8.0, math.min(78.0, math.abs(P.spread) > 1.0 and math.abs(P.spread) or 48.0)))
-            local ap_half = ap_dist * math.tan(math.min(1.42, half_ang))
+            local clamped_ang = math.max(1e-4, math.min(math.rad(86.5), half_ang))
+            local ap_half = math.max(0.02, ap_dist * math.tan(clamped_ang))
             VL_BF.wx = cl.px + dir_x * ap_dist
             VL_BF.wy = cl.py + dir_y * ap_dist
             VL_BF.wz = cl.pz + dir_z * ap_dist
-            VL_BF.Hx, VL_BF.Hy = math.max(16.0, ap_half), math.max(16.0, ap_half)
+            VL_BF.Hx, VL_BF.Hy = ap_half, ap_half
+            local ref_r = math.min(520.0, 600.0 * math.tan(math.min(1.15, clamped_ang)))
+            VL_BF.L_char = math.min(200.0, math.max(22.0, ref_r * 0.32))
         end
         local upx, upy, upz = 0.0, 1.0, 0.0
         if math.abs(VL_BF.Wny) > 0.92 then upx, upy, upz = 1.0, 0.0, 0.0 end
@@ -6525,7 +6742,7 @@ local function vl_bf_geometry()
             local cl = VL_BF.cam_light_info.primary
             if cl.ltype == 2 then
                 local dl = math.max(1e-5, math.sqrt(cl.dx * cl.dx + cl.dy * cl.dy + cl.dz * cl.dz))
-                local ux_c, uy_c, uz_c = cl.dx / dl, cl.dy / dl, cl.dz / dl
+                local ux_c, uy_c, uz_c = -cl.dx / dl, -cl.dy / dl, -cl.dz / dl
                 if (ux_c * (-VL_BF.Wnx) + uy_c * (-VL_BF.Wny) + uz_c * (-VL_BF.Wnz)) < 0.0 then
                     ux_c, uy_c, uz_c = -ux_c, -uy_c, -uz_c
                 end
@@ -6769,13 +6986,28 @@ local function vl_bf_mip()
         local kf_p = math.max(1, math.ceil(math.max(VL_BF.lw, VL_BF.lh) / 640.0))
         local pw = math.max(2, math.ceil(VL_BF.lw / kf_p))
         local ph = math.max(2, math.ceil(VL_BF.lh / kf_p))
+        local prep_r, prep_g, prep_b = VL_BF.lc_r, VL_BF.lc_g, VL_BF.lc_b
+        local prep_use_src = VL_BF.use_source
+        local prep_thr = VL_BF.thr_norm
+        if VL_BF.use_cam_virtual_src then
+            prep_r, prep_g, prep_b = 1.0, 1.0, 1.0
+            prep_use_src = 0.0
+            prep_thr = 0.0
+        end
         obj.clearbuffer("cache:vl3d/prep", pw, ph)
         obj.pixelshader("ps_vl_prep", "cache:vl3d/prep", { "object" },
-            { VL_BF.lw, VL_BF.lh, kf_p, VL_BF.thr_norm, VL_BF.lc_r, VL_BF.lc_g, VL_BF.lc_b, VL_BF.use_source }, "copy")
+            { VL_BF.lw, VL_BF.lh, kf_p, prep_thr, prep_r, prep_g, prep_b, prep_use_src }, "copy")
 
         local world_sigma = math.max(2.0, 0.56 * VL_BF.dz)
-        local sig_x = world_sigma * (pw / math.max(2.0 * VL_BF.Hx, 1.0))
-        local sig_y = world_sigma * (ph / math.max(2.0 * VL_BF.Hy, 1.0))
+        local span_2x = 2.0 * VL_BF.Hx
+        local span_2y = 2.0 * VL_BF.Hy
+        if VL_BF.use_cam_virtual_src and VL_BF.cam_ap_dist ~= nil and VL_BF.cam_ap_dist > 0.0 then
+            local ref_mul = 600.0 / VL_BF.cam_ap_dist
+            span_2x = math.max(32.0, span_2x * ref_mul)
+            span_2y = math.max(32.0, span_2y * ref_mul)
+        end
+        local sig_x = world_sigma * (pw / math.max(span_2x, 1.0))
+        local sig_y = world_sigma * (ph / math.max(span_2y, 1.0))
         local rad_x = math.min(20, math.ceil(sig_x * 2.5))
         local rad_y = math.min(20, math.ceil(sig_y * 2.5))
 
@@ -7439,14 +7671,10 @@ function AB.sample_grid_region(grid_rgba, gw, gh, u_min, u_max, v_min, v_max, si
 end
 
 function AB.world_to_self_drawpoly(wx, wy, wz)
-    local dx, dy, dz = wx - VL_BF.obj_x, wy - VL_BF.obj_y, wz - VL_BF.obj_z
-    if math.abs(VL_BF.obj_rx) > 1e-5 or math.abs(VL_BF.obj_ry) > 1e-5 or math.abs(VL_BF.obj_rz) > 1e-5 then
-        local Orx, Ory, Orz, Odx, Ody, Odz, Onx, Ony, Onz = euler_zyx_axes(VL_BF.obj_rx, VL_BF.obj_ry, VL_BF.obj_rz)
-        local lx = dx * Orx + dy * Ory + dz * Orz
-        local ly = dx * Odx + dy * Ody + dz * Odz
-        local lz = dx * Onx + dy * Ony + dz * Onz
-        dx, dy, dz = lx, ly, lz
-    end
+    local dx, dy, dz = inv_rot_xyz(
+        wx - VL_BF.obj_x, wy - VL_BF.obj_y, wz - VL_BF.obj_z,
+        VL_BF.obj_rx, VL_BF.obj_ry, VL_BF.obj_rz
+    )
     return dx / VL_BF.zoom, dy / VL_BF.zoom, dz / VL_BF.zoom
 end
 
@@ -7872,7 +8100,7 @@ function AB.run_foreground_blend()
             if P.ab_color_mode == 2 then
                 local bl_r, bl_g, bl_b = math.floor(fb_r * 255.0 + 0.5), math.floor(fb_g * 255.0 + 0.5), math.floor(fb_b * 255.0 + 0.5)
                 local br_r, br_g, br_b = bl_r, bl_g, bl_b
-                if mip_ptr ~= nil then
+                if mip_ptr ~= nil and not VL_BF.use_cam_virtual_src then
                     -- Map sprite screen/world footprint onto mip level-0 tile [0..0.666, 0..1.0]
                     local mu0, mu1 = u0_b, u1_b
                     local mv0, mv1 = v0_b, v1_b
@@ -8060,17 +8288,15 @@ local function vl_bf_render()
     VL_BF.min_opt_a= 1.0 / 255.0
     VL_BF.cam_comp= 1.0
     VL_BF.cam_mode2_note= ""
-    if VL_BF.cam_light_info.count > 0 and (VL_BF.cam_light_info.peak_gain or 0) > 1.05 then
-        local allow_comp = false
+    local cli_r = VL_BF.cam_light_info or { count = 0, unlit = 1.0, amb_r = 0.0, amb_g = 0.0, amb_b = 0.0, peak_gain = 1.0, primary = nil }
+    local cl_pr = cli_r.primary
+    local cam_comp_mode = 0.0
+    if P.cam_light_mode == 1 and cl_pr ~= nil then
+        cam_comp_mode = 1.0
+    elseif (P.cam_light_mode == 0 or P.cam_light_mode == 2) and (cli_r.count or 0) > 0 and not cli_r.suppressed then
+        cam_comp_mode = 2.0
         if P.cam_light_mode == 2 then
-            -- 不写宿主。按只读峰值衰减光束，避免与摄像机照明叠加过曝，同时保留同场模型灯光。
-            allow_comp = true
-            VL_BF.cam_mode2_note = " mode2=peak-comp"
-        elseif (P.cam_light_mode == 0 or P.cam_light_mode == 1) and not VL_BF.cam_light_info.suppressed then
-            allow_comp = true
-        end
-        if allow_comp then
-            VL_BF.cam_comp = 1.0 / math.min(VL_BF.cam_light_info.peak_gain, 4.0)
+            VL_BF.cam_mode2_note = " mode2=host-comp"
         end
     end
     VL_BF.k_gain_gpu= VL_BF.k_gain_base * (VL_BF.base_alpha / VL_BF.poly_alpha) * 1.05 * VL_BF.cam_comp
@@ -8147,6 +8373,55 @@ local function vl_bf_render()
     VL_BF.any_occ_active= (VL_BF.n_occ_active > 0) or (VL_BF.sh3d_active > 0.5) or (VL_BF.camocc_active > 0.5)
     VL_BF.eff_occ_mode= VL_BF.any_occ_active and (P.occ_mode * 1.0) or 0.0
 
+    local cb_unlit = tonumber(cli_r.unlit) or 1.0
+    local cb_amb_r = tonumber(cli_r.amb_r) or 0.0
+    local cb_amb_g = tonumber(cli_r.amb_g) or 0.0
+    local cb_amb_b = tonumber(cli_r.amb_b) or 0.0
+    local cb_ltype = (cl_pr ~= nil) and (tonumber(cl_pr.ltype) or 0.0) or 0.0
+    local cb_a01   = math.max(0.0, math.min(1.0, (VL_BF.cam_atten_pct or 0.0) / 100.0))
+    local cb_att_k = cb_a01 * cb_a01 * 2.2
+    local cb_cl_r  = (cl_pr ~= nil) and (tonumber(cl_pr.r) or 0.0) or 0.0
+    local cb_cl_g  = (cl_pr ~= nil) and (tonumber(cl_pr.g) or 0.0) or 0.0
+    local cb_cl_b  = (cl_pr ~= nil) and (tonumber(cl_pr.b) or 0.0) or 0.0
+    local cb_cl_px = (cl_pr ~= nil) and (tonumber(cl_pr.px) or 0.0) or 0.0
+    local cb_cl_py = (cl_pr ~= nil) and (tonumber(cl_pr.py) or 0.0) or 0.0
+    local cb_cl_pz = (cl_pr ~= nil) and (tonumber(cl_pr.pz) or 0.0) or 0.0
+    local cb_sum_dp = math.max(0.0, (tonumber(cli_r.peak_gain) or 1.0) - cb_unlit - math.max(cb_amb_r, cb_amb_g, cb_amb_b))
+    local cb_other_lum = 0.5 * math.max(0.0, cb_sum_dp - ((cl_pr ~= nil) and (tonumber(cl_pr.lum) or 0.0) or 0.0))
+    local cb_in_rad  = VL_BF.cam_spot_inner_rad or 0.0
+    local cb_out_rad = VL_BF.cam_spot_outer_rad or 0.0
+    local cb_tgt_r, cb_tgt_g, cb_tgt_b = 1.0, 1.0, 1.0
+    if cam_comp_mode > 0.5 and cam_comp_mode < 1.5 and cl_pr ~= nil then
+        local cl_lum = tonumber(cl_pr.lum) or 0.0
+        if P.light_color ~= nil then
+            if VL_BF.use_cam_virtual_src then
+                cb_tgt_r, cb_tgt_g, cb_tgt_b = VL_BF.lc_r * cl_lum, VL_BF.lc_g * cl_lum, VL_BF.lc_b * cl_lum
+            else
+                cb_tgt_r, cb_tgt_g, cb_tgt_b = cl_lum, cl_lum, cl_lum
+            end
+        else
+            cb_tgt_r, cb_tgt_g, cb_tgt_b = cb_cl_r, cb_cl_g, cb_cl_b
+        end
+    end
+
+    local use_dir_norm = (cam_comp_mode > 0.5) and (cl_pr ~= nil) and (cb_ltype > 1.5 and cb_ltype < 2.5)
+    local use_pos_grid = (cam_comp_mode > 0.5) and (cl_pr ~= nil) and (cb_ltype > 2.5)
+    local flip_wind = (VL_BF.cam_along_sf >= 0.0)
+    local has_self_rot = (math.abs(VL_BF.obj_rx) + math.abs(VL_BF.obj_ry) + math.abs(VL_BF.obj_rz)) > 1e-5
+    local inv_zoom = 1.0 / VL_BF.zoom
+    local dir_vnx, dir_vny, dir_vnz = 0.0, 0.0, -1.0
+    local def_lwx, def_lwy, def_lwz = -VL_BF.sf_x, -VL_BF.sf_y, -VL_BF.sf_z
+    if cl_pr ~= nil then
+        local dl_n = math.max(1e-5, math.sqrt((cl_pr.dx or 0.0)^2 + (cl_pr.dy or 0.0)^2 + (cl_pr.dz or 0.0)^2))
+        if cb_ltype > 1.5 and cb_ltype < 2.5 or cb_ltype > 4.5 then
+            def_lwx, def_lwy, def_lwz = (cl_pr.dx or 0.0) / dl_n, (cl_pr.dy or 0.0) / dl_n, (cl_pr.dz or 0.0) / dl_n
+        end
+        if use_dir_norm then
+            dir_vnx, dir_vny, dir_vnz = inv_rot_xyz(def_lwx, def_lwy, def_lwz, VL_BF.obj_rx, VL_BF.obj_ry, VL_BF.obj_rz)
+        end
+    end
+    local KNOT_M = { -8.0, -2.6, -0.95, -0.32, 0.0, 0.32, 0.95, 2.6, 8.0 }
+
     for ch = VL_BF.ch_first, VL_BF.ch_last, VL_BF.ch_step do
         if not VL_BF.ps_ok then break end
         local ch_start = ch * 64
@@ -8175,6 +8450,12 @@ local function vl_bf_render()
             VL_BF.r_x, VL_BF.r_y, VL_BF.r_z, VL_BF.focal_d / math.max(VL_BF.scr_w, 1.0),
             VL_BF.d_x, VL_BF.d_y, VL_BF.d_z, VL_BF.focal_d / math.max(VL_BF.scr_h, 1.0),
             VL_BF.camocc_w, VL_BF.camocc_h, VL_BF.camocc_max_z, VL_BF.occ3d_int * 1.0,
+            cam_comp_mode, cb_unlit, cb_ltype, cb_att_k,
+            cb_amb_r, cb_amb_g, cb_amb_b, cb_in_rad,
+            cb_cl_r, cb_cl_g, cb_cl_b, cb_out_rad,
+            cb_cl_px, cb_cl_py, cb_cl_pz, cb_other_lum,
+            VL_BF.cam_ray_dx, VL_BF.cam_ray_dy, VL_BF.cam_ray_dz, 0.0,
+            cb_tgt_r, cb_tgt_g, cb_tgt_b, 0.0,
         }
         local base_len = #consts
         for oi = 1, MAX_OCC * 16 do
@@ -8207,6 +8488,15 @@ local function vl_bf_render()
             local s0_i = VL_BF.si_reverse and (ch_n - 1) or 0
             local s1_i = VL_BF.si_reverse and 0 or (ch_n - 1)
             local st_i = VL_BF.si_reverse and -1 or 1
+            local hw_s, hh_s = VL_BF.hw, VL_BF.hh
+            local inv_2hw_s = 1.0 / math.max(2.0 * hw_s, 1e-4)
+            local inv_2hh_s = 1.0 / math.max(2.0 * hh_s, 1e-4)
+            local srx, sry, srz = VL_BF.sr_x, VL_BF.sr_y, VL_BF.sr_z
+            local sdx, sdy, sdz = VL_BF.sd_x, VL_BF.sd_y, VL_BF.sd_z
+            local sfx, sfy, sfz = VL_BF.sf_x, VL_BF.sf_y, VL_BF.sf_z
+            local obj_x, obj_y, obj_z = VL_BF.obj_x, VL_BF.obj_y, VL_BF.obj_z
+            local orx_d, ory_d, orz_d = VL_BF.obj_rx, VL_BF.obj_ry, VL_BF.obj_rz
+
             for si = s0_i, s1_i, st_i do
                 local tx_i = si % VL_BF.TILES_X
                 local ty_i = math.floor(si / VL_BF.TILES_X)
@@ -8216,15 +8506,136 @@ local function vl_bf_render()
                 local v1 = ((ty_i + 1) * VL_BF.TILE - VL_BF.PAD) / VL_BF.ATLAS
 
                 local s_val = s_ch_min + (si + 0.5) * VL_BF.dz
-                local cx = VL_BF.mid_x + VL_BF.sf_x * s_val - VL_BF.obj_x
-                local cy = VL_BF.mid_y + VL_BF.sf_y * s_val - VL_BF.obj_y
-                local cz = VL_BF.mid_z + VL_BF.sf_z * s_val - VL_BF.obj_z
+                local cwx = VL_BF.mid_x + sfx * s_val
+                local cwy = VL_BF.mid_y + sfy * s_val
+                local cwz = VL_BF.mid_z + sfz * s_val
 
-                verts[vi + 1] = { (cx - VL_BF.rxw - VL_BF.dxw) / VL_BF.zoom, (cy - VL_BF.ryw - VL_BF.dyw) / VL_BF.zoom, (cz - VL_BF.rzw - VL_BF.dzw) / VL_BF.zoom, u0, v0 }
-                verts[vi + 2] = { (cx + VL_BF.rxw - VL_BF.dxw) / VL_BF.zoom, (cy + VL_BF.ryw - VL_BF.dyw) / VL_BF.zoom, (cz + VL_BF.rzw - VL_BF.dzw) / VL_BF.zoom, u1, v0 }
-                verts[vi + 3] = { (cx + VL_BF.rxw + VL_BF.dxw) / VL_BF.zoom, (cy + VL_BF.ryw + VL_BF.dyw) / VL_BF.zoom, (cz + VL_BF.rzw + VL_BF.dzw) / VL_BF.zoom, u1, v1 }
-                verts[vi + 4] = { (cx - VL_BF.rxw + VL_BF.dxw) / VL_BF.zoom, (cy - VL_BF.ryw + VL_BF.dyw) / VL_BF.zoom, (cz - VL_BF.rzw + VL_BF.dzw) / VL_BF.zoom, u0, v1 }
-                vi = vi + 4
+                if use_pos_grid then
+                    local dlcx, dlcy, dlcz = cb_cl_px - cwx, cb_cl_py - cwy, cb_cl_pz - cwz
+                    local lx_s = dlcx * srx + dlcy * sry + dlcz * srz
+                    local ly_s = dlcx * sdx + dlcy * sdy + dlcz * sdz
+                    local lz_s = dlcx * sfx + dlcy * sfy + dlcz * sfz
+                    local rk = math.max(24.0, math.abs(lz_s))
+
+                    local xk = { -hw_s }
+                    local nxk = 1
+                    for ki = 1, 9 do
+                        local kv = lx_s + KNOT_M[ki] * rk
+                        if kv > -hw_s + 2.0 and kv < hw_s - 2.0 and kv > xk[nxk] + 1.5 then
+                            nxk = nxk + 1
+                            xk[nxk] = kv
+                        end
+                    end
+                    nxk = nxk + 1
+                    xk[nxk] = hw_s
+
+                    local yk = { -hh_s }
+                    local nyk = 1
+                    for ki = 1, 9 do
+                        local kv = ly_s + KNOT_M[ki] * rk
+                        if kv > -hh_s + 2.0 and kv < hh_s - 2.0 and kv > yk[nyk] + 1.5 then
+                            nyk = nyk + 1
+                            yk[nyk] = kv
+                        end
+                    end
+                    nyk = nyk + 1
+                    yk[nyk] = hh_s
+
+                    local du_s = u1 - u0
+                    local dv_s = v1 - v0
+                    local c_dx, c_dy, c_dz = cwx - obj_x, cwy - obj_y, cwz - obj_z
+                    local nodes = {}
+                    for iy = 1, nyk do
+                        local yv = yk[iy]
+                        local vv = v0 + dv_s * ((yv + hh_s) * inv_2hh_s)
+                        local ywx, ywy, ywz = sdx * yv, sdy * yv, sdz * yv
+                        local r_base = (iy - 1) * nxk
+                        for ix = 1, nxk do
+                            local xv = xk[ix]
+                            local uu = u0 + du_s * ((xv + hw_s) * inv_2hw_s)
+                            local off_x = srx * xv + ywx
+                            local off_y = sry * xv + ywy
+                            local off_z = srz * xv + ywz
+                            local px, py, pz = c_dx + off_x, c_dy + off_y, c_dz + off_z
+                            local lx_v, ly_v, lz_v = dlcx - off_x, dlcy - off_y, dlcz - off_z
+                            local ll2 = lx_v * lx_v + ly_v * ly_v + lz_v * lz_v
+                            local nwx, nwy, nwz
+                            if ll2 > 1e-4 then
+                                local inv_ll = 1.0 / math.sqrt(ll2)
+                                nwx, nwy, nwz = lx_v * inv_ll, ly_v * inv_ll, lz_v * inv_ll
+                            else
+                                nwx, nwy, nwz = def_lwx, def_lwy, def_lwz
+                            end
+                            if has_self_rot then
+                                px, py, pz = inv_rot_xyz(px, py, pz, orx_d, ory_d, orz_d)
+                                nwx, nwy, nwz = inv_rot_xyz(nwx, nwy, nwz, orx_d, ory_d, orz_d)
+                            end
+                            nodes[r_base + ix] = { px * inv_zoom, py * inv_zoom, pz * inv_zoom, uu, vv, nwx, nwy, nwz }
+                        end
+                    end
+
+                    for iy = 1, nyk - 1 do
+                        local r0 = (iy - 1) * nxk
+                        local r1 = iy * nxk
+                        for ix = 1, nxk - 1 do
+                            local n00 = nodes[r0 + ix]
+                            local n10 = nodes[r0 + ix + 1]
+                            local n11 = nodes[r1 + ix + 1]
+                            local n01 = nodes[r1 + ix]
+                            if flip_wind then
+                                verts[vi + 1] = n00
+                                verts[vi + 2] = n01
+                                verts[vi + 3] = n11
+                                verts[vi + 4] = n10
+                            else
+                                verts[vi + 1] = n00
+                                verts[vi + 2] = n10
+                                verts[vi + 3] = n11
+                                verts[vi + 4] = n01
+                            end
+                            vi = vi + 4
+                        end
+                    end
+                elseif use_dir_norm then
+                    local cx, cy, cz = cwx - obj_x, cwy - obj_y, cwz - obj_z
+                    local p0x, p0y, p0z = cx - VL_BF.rxw - VL_BF.dxw, cy - VL_BF.ryw - VL_BF.dyw, cz - VL_BF.rzw - VL_BF.dzw
+                    local p1x, p1y, p1z = cx + VL_BF.rxw - VL_BF.dxw, cy + VL_BF.ryw - VL_BF.dyw, cz + VL_BF.rzw - VL_BF.dzw
+                    local p2x, p2y, p2z = cx + VL_BF.rxw + VL_BF.dxw, cy + VL_BF.ryw + VL_BF.dyw, cz + VL_BF.rzw + VL_BF.dzw
+                    local p3x, p3y, p3z = cx - VL_BF.rxw + VL_BF.dxw, cy - VL_BF.ryw + VL_BF.dyw, cz - VL_BF.rzw + VL_BF.dzw
+                    if has_self_rot then
+                        p0x, p0y, p0z = inv_rot_xyz(p0x, p0y, p0z, orx_d, ory_d, orz_d)
+                        p1x, p1y, p1z = inv_rot_xyz(p1x, p1y, p1z, orx_d, ory_d, orz_d)
+                        p2x, p2y, p2z = inv_rot_xyz(p2x, p2y, p2z, orx_d, ory_d, orz_d)
+                        p3x, p3y, p3z = inv_rot_xyz(p3x, p3y, p3z, orx_d, ory_d, orz_d)
+                    end
+                    local v00 = { p0x * inv_zoom, p0y * inv_zoom, p0z * inv_zoom, u0, v0, dir_vnx, dir_vny, dir_vnz }
+                    local v10 = { p1x * inv_zoom, p1y * inv_zoom, p1z * inv_zoom, u1, v0, dir_vnx, dir_vny, dir_vnz }
+                    local v11 = { p2x * inv_zoom, p2y * inv_zoom, p2z * inv_zoom, u1, v1, dir_vnx, dir_vny, dir_vnz }
+                    local v01 = { p3x * inv_zoom, p3y * inv_zoom, p3z * inv_zoom, u0, v1, dir_vnx, dir_vny, dir_vnz }
+                    if flip_wind then
+                        verts[vi + 1], verts[vi + 2], verts[vi + 3], verts[vi + 4] = v00, v01, v11, v10
+                    else
+                        verts[vi + 1], verts[vi + 2], verts[vi + 3], verts[vi + 4] = v00, v10, v11, v01
+                    end
+                    vi = vi + 4
+                else
+                    local cx, cy, cz = cwx - obj_x, cwy - obj_y, cwz - obj_z
+                    local p0x, p0y, p0z = cx - VL_BF.rxw - VL_BF.dxw, cy - VL_BF.ryw - VL_BF.dyw, cz - VL_BF.rzw - VL_BF.dzw
+                    local p1x, p1y, p1z = cx + VL_BF.rxw - VL_BF.dxw, cy + VL_BF.ryw - VL_BF.dyw, cz + VL_BF.rzw - VL_BF.dzw
+                    local p2x, p2y, p2z = cx + VL_BF.rxw + VL_BF.dxw, cy + VL_BF.ryw + VL_BF.dyw, cz + VL_BF.rzw + VL_BF.dzw
+                    local p3x, p3y, p3z = cx - VL_BF.rxw + VL_BF.dxw, cy - VL_BF.ryw + VL_BF.dyw, cz - VL_BF.rzw + VL_BF.dzw
+                    if has_self_rot then
+                        p0x, p0y, p0z = inv_rot_xyz(p0x, p0y, p0z, orx_d, ory_d, orz_d)
+                        p1x, p1y, p1z = inv_rot_xyz(p1x, p1y, p1z, orx_d, ory_d, orz_d)
+                        p2x, p2y, p2z = inv_rot_xyz(p2x, p2y, p2z, orx_d, ory_d, orz_d)
+                        p3x, p3y, p3z = inv_rot_xyz(p3x, p3y, p3z, orx_d, ory_d, orz_d)
+                    end
+                    verts[vi + 1] = { p0x * inv_zoom, p0y * inv_zoom, p0z * inv_zoom, u0, v0 }
+                    verts[vi + 2] = { p1x * inv_zoom, p1y * inv_zoom, p1z * inv_zoom, u1, v0 }
+                    verts[vi + 3] = { p2x * inv_zoom, p2y * inv_zoom, p2z * inv_zoom, u1, v1 }
+                    verts[vi + 4] = { p3x * inv_zoom, p3y * inv_zoom, p3z * inv_zoom, u0, v1 }
+                    vi = vi + 4
+                end
             end
             obj.drawpoly(verts, 4, VL_BF.poly_alpha)
             VL_BF.total_v = VL_BF.total_v + vi
@@ -8363,7 +8774,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.06 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.07 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -8392,7 +8803,7 @@ local function vl_run_frame()
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.06 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.07 error: " .. tostring(err)) end)
     end
     return ok
 end
