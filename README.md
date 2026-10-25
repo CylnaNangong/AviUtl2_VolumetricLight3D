@@ -2,11 +2,12 @@
 
 # 体積光（3D） / 体积光（3D） / Volumetric Light (3D)
 
+🎉 **震撼首发！！！**  
 **面向 AviUtl ExEdit2 的真·3D 丁达尔体积光自定义对象 · 内置 3D 联动「前景融入背景」 · 可选 D3D11 CS 硬件阴影加速插件**
 
 `体積光（3D）.obj2 v3.06` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
-**🌐 语言切换 / Language:** &nbsp; **简体中文** &nbsp;|&nbsp; **[日本語 (Japanese)](docs/README_ja.md)** &nbsp;|&nbsp; **[English](docs/README_en.md)**
+**🌐 语言切换 / Language:** &nbsp; **简体中文** &nbsp;|&nbsp; **[日本語 (Japanese)](docs/README_ja.md)** &nbsp;|&nbsp; **[English](docs/README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](docs/README_de.md)**
 
 *(附带四语界面支持：日本語 / 简体中文 / English / Deutsch)*
 
@@ -18,6 +19,8 @@
   <img src="docs/assets/demo.gif" alt="体积光（3D）动态演示" width="720" />
   <br />
   <sub>▲ 实时 3D 体积光束投射、2D/3D 前景遮光投影与边缘逆光融合动态效果</sub>
+  <br />
+  <sub>🎨 演示动图 / 对比图背景插画素材：[Magnific「彩绘玻璃教堂窗」免费矢量素材](https://www.magnific.com/free-vector/stained-glass-colorful-mosaic-cathedral-windows-dark-gothic-church-beautiful-interior-view-clouseup-illustration_21744714.htm#fromView=search&page=1&position=16&uuid=53b685e2-b869-4009-938e-495a85eac145&track=ais_hybrid&query=Stained+glass)</sub>
 </div>
 
 <br />
@@ -59,6 +62,7 @@
 
 2. **2D 图层 + 3D 模型（`.obj` / `.vrm`）混合前景遮挡**
    - 支持前方 2D 图层、`テキスト`（完整兼容全部 **18 种横排/竖排文字对齐** 与 **7 种阴影/描边装饰** 的中心偏移）、标准 `.obj`「模型文件」以及 `.vrm`（`VRMToolkitModel`）在光束中投射真实的三维遮光影柱（Shadow Shafts）与无黑边前景轮廓保护。
+   - 最大支持 **8 个前景遮挡物**（2D 图层 / `テキスト` 文字层上限 8 层；`.obj` / `.vrm` 3D 模型影柱独立渲染、不在此限）。
 
 3. **单脚本内置「前景融入背景（`前景なじませ`）」3D 联动子系统**
    - 基于 **nctype** 氏开源的 [`AutoBlendLight`](https://github.com/nctype/aviutl2_script_AutoBlendLight)（MIT License）深度整合于同一 `.obj2` 内（默认关闭，按需开启，无需额外挂载 `.anm2`）。

@@ -2,12 +2,13 @@
 
 # Volumetric Light (3D) / 体積光（3D） / 体积光（3D）
 
+🎉 **STUNNING PREMIERE!!!**  
 **THE REAL 3D Volumetric Light (God Rays / Crepuscular Rays / Light Shafts) Custom Object for AviUtl ExEdit2**  
 **With Built-in 3D-Linked Foreground Light Blending & Optional D3D11 CS GPU Acceleration**
 
 `体積光（3D）.obj2 v3.06` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
-**🌐 Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanese)](README_ja.md)** &nbsp;|&nbsp; **English**
+**🌐 Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanese)](README_ja.md)** &nbsp;|&nbsp; **English** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
 *(4 UI Languages Supported: 日本語 / 简体中文 / English / Deutsch)*
 
@@ -19,6 +20,8 @@
   <img src="assets/demo.gif" alt="Volumetric Light (3D) Real-Time Demo" width="720" />
   <br />
   <sub>▲ Real-time 3D volumetric god-ray emission, 2D/3D foreground shadow shafts, and edge-light blending</sub>
+  <br />
+  <sub>🎨 Demo gif / comparison image background artwork: [Magnific — Stained Glass Cathedral Windows (free vector)](https://www.magnific.com/free-vector/stained-glass-colorful-mosaic-cathedral-windows-dark-gothic-church-beautiful-interior-view-clouseup-illustration_21744714.htm#fromView=search&page=1&position=16&uuid=53b685e2-b869-4009-938e-495a85eac145&track=ais_hybrid&query=Stained+glass)</sub>
 </div>
 
 <br />
@@ -60,6 +63,7 @@
 
 2. **Hybrid 2D Layer + 3D Model (`.obj` / `.vrm`) Foreground Occlusion**
    - Casts volumetric 3D shadow shafts from foreground 2D layers, `Text` objects (supporting all **18 text alignments** and **7 border/shadow decorations**), built-in `.obj` 3D models, and `.vrm` avatars (`VRMToolkitModel`) with dark-halo-free silhouette holdout.
+   - Supports up to **8 foreground occluders** (2D layers / `Text` layers; `.obj` / `.vrm` 3D model shadow shafts are rendered separately and are not limited).
 
 3. **Built-in 3D-Linked Foreground Blend (`AutoBlendLight` Integration)**
    - Integrates **nctype**'s [`AutoBlendLight`](https://github.com/nctype/aviutl2_script_AutoBlendLight) (MIT License) directly inside `.obj2` as a 3D-beam-aware GPU pipeline (OFF by default; no separate `.anm2` effect needed).

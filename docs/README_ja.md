@@ -2,14 +2,17 @@
 
 # 体積光（3D） / 体积光（3D） / Volumetric Light (3D)
 
+🎉 **衝撃の初公開！！！**  
 **AviUtl ExEdit2 用 真・3D ボリューメトリックライト（ボリュームライト／ゴッドレイ／薄明光線）カスタムオブジェクト**  
 **3D 連動「前景なじませ」内蔵 · D3D11 CS 高速化プラグイン同梱**
 
 `体積光（3D）.obj2 v3.06` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
-**🌐 言語切替 / Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **日本語** &nbsp;|&nbsp; **[English](README_en.md)**
+**🌐 言語切替 / Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **日本語** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
 *(4 言語 UI 対応：日本語 / 简体中文 / English / Deutsch)*
+
+<sub>※ 本ドキュメントの日本語部分は AI 生成です。他の言語は作者自身で校閲しています。</sub>
 
 </div>
 
@@ -19,6 +22,8 @@
   <img src="assets/demo.gif" alt="体積光（3D）デモアニメーション" width="720" />
   <br />
   <sub>▲ リアルタイム 3D 体積光条（ゴッドレイ）の放射、2D/3D 前景遮蔽シャドウ、および逆光リム馴染ませの動作デモ</sub>
+  <br />
+  <sub>🎨 デモ動画／比較画像の背景アート：[Magnific「ステンドグラス・大聖堂窓」（無料ベクター素材）](https://www.magnific.com/free-vector/stained-glass-colorful-mosaic-cathedral-windows-dark-gothic-church-beautiful-interior-view-clouseup-illustration_21744714.htm#fromView=search&page=1&position=16&uuid=53b685e2-b869-4009-938e-495a85eac145&track=ais_hybrid&query=Stained+glass)</sub>
 </div>
 
 <br />
@@ -60,6 +65,7 @@
 
 2. **2D レイヤー＋3D モデル（`.obj` / `.vrm`）ハイブリッド前景遮蔽**
    - 手前に配置された 2D レイヤー、`テキスト`（全 **18 種の文字揃え** と **7 種の文字装飾** の中心オフセットに完全対応）、標準 `.obj`「モデルファイル」、および `.vrm`（`VRMToolkitModel`）から、物理的な 3D 影柱（シャドウシャフト）とダークハローのない輪郭保護を生成します。
+   - 最大 **8 個**の前景遮蔽物をサポート（2D レイヤー / `テキスト` 層は上限 8 層。`.obj` / `.vrm` 3D モデルの影柱は独立描画のためこの限りではありません）。
 
 3. **単一スクリプトに「前景なじませ（AutoBlendLight 3D 連動）」を統合**
    - **nctype** 氏公開の [`AutoBlendLight`](https://github.com/nctype/aviutl2_script_AutoBlendLight)（MIT License）のアルゴリズムを `.obj2` 内に 3D 体積光連動 GPU パイプラインとして統合（既定 OFF・追加の `.anm2` 適用不要）。
