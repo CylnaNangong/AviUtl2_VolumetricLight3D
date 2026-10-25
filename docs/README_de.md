@@ -21,7 +21,7 @@
   <br />
   <sub>▲ Echtzeit-Emission von 3D-Volumenlichtstrahlen, 2D/3D-Vordergrund-Schattensäulen und Randlicht-Einblendung</sub>
   <br />
-  <sub>🎨 Hintergrundkunst der Demo-GIFs / Vergleichsbilder: [Magnific — Verglaste Kathedralfenster (kostenloses Vektorbild)](https://www.magnific.com/free-vector/stained-glass-colorful-mosaic-cathedral-windows-dark-gothic-church-beautiful-interior-view-clouseup-illustration_21744714.htm#fromView=search&page=1&position=16&uuid=53b685e2-b869-4009-938e-495a85eac145&track=ais_hybrid&query=Stained+glass)</sub>
+  <sub>🎨 Hintergrundkunst der Demo-GIFs / Vergleichsbilder: <a href="https://www.magnific.com/free-vector/stained-glass-colorful-mosaic-cathedral-windows-dark-gothic-church-beautiful-interior-view-clouseup-illustration_21744714.htm#fromView=search&page=1&position=16&uuid=53b685e2-b869-4009-938e-495a85eac145&track=ais_hybrid&query=Stained+glass">Magnific — Verglaste Kathedralfenster (kostenloses Vektorbild)</a></sub>
 </div>
 
 <br />
