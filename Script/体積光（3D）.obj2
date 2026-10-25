@@ -1,4 +1,4 @@
---information:体積光（3D）v3.07
+--information:体積光（3D）v3.08
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -30,6 +30,25 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
+-- v3.08 更新点（2026-10-25・スポット光源スライス段差リング根治・3D 遮蔽影の砂状ノイズ解消・編集カメラ追従修正）：
+--   1. 【スポット光源（カメラ制御）および狭角コーン光束における周期的スライス段差（年輪状リング）の根治】
+--      ・AviUtl ExEdit2 の 3D OIT（Weight-Blended OIT, Shader #118）は指数型の深度重み w(z) を伴う重み付き平均
+--        `Out = (1 - Reveal) * sum(r4.rgb * w(z)) / sum(r4.w * w(z))` で解決されるため、従来のように全スライスへ定数アルファ
+--        `out_a = 1/255` を与えると、コーン外縁とスライス平面の交線 `sf = zc_front / dz` が整数を跨ぐたびに手前の微弱スライスが
+--        奥の明部スライスの平均輝度を約 28% 引き下げ、鋸歯状の年輪段差が発生していた。また `beamatlas` のホスト補償 `phi_h` が
+--        12 サブステップ窓の外側（単一点 `wp0`）で評価されていたため、「ぼかし」が小さい設定（1° 前後）でスライス間の重なりが切断されていた。
+--      ・適応 `poly_alpha`（0.045〜0.27）と発光量連動の比例アルファ符号化（`ka = 0.24`、灰色煙ベールを抑えつつ全スライスの Straight 色比
+--        `r4.rgb / r4.w` を深度不変に整合）を導入し、さらに `phi_h` の 12 サブステップ余弦窓積分と仮想スポット開口の 12% 余白確保により、
+--        急峻なコーン（ぼかし 0°〜1°）から広角ソフトコーンまで段差ゼロの滑らかな連続光束を実現。
+--   2. 【点光源・広角光束での 3D モデル遮蔽時に発生していた砂状スペックルノイズの根治】
+--      ・広角コーンで 1 `beamatlas` テクセルが `g_shmap`（1280x1280）上で 7〜10 テクセル分に拡大投影される際、`阴影柔和 = 0` で単一点サンプルとなり
+--        ナイキスト折り返しが生じていた問題と、PCG 白色乱数位相 `ign` が薄い花弁・茎の影シートで隣接テクセル間のランダム明滅を誘発していた問題を解消。
+--      ・`beamatlas` テクセルの解析的シャドウマップ・ヤコビアン `(du_sh, dv_sh)` に基づく異方性フットプリントフィルタ（偶奇サブステップ交互回転による
+--        実効 9 タップ被覆）と低分散黄金比スライス層化により、`阴影柔和 = 0` でも微細シルエットの影柱を滑らかかつシャープに描画。
+--   3. 【編集カメラ（俯瞰視点）切替時のライブ追従フォールバック修正】
+--      ・`VL3DBridge.ini` の既定設定（`allow_rpm = 0`）で `get_edit_camera()` が `false` を返した際、`try_read_live_edit_camera()` が誤って
+--        タイムライン側の `get_scene_camera` を返して LuaJIT FFI ライブ編集カメラ読取へ到達しなかった不具合を修正。
+--
 -- v3.07 更新点（2026-10-25・カメラ制御 3D 光源追従における「明るさ反転」および「スポット範囲ジャンプ・逆向き放射」の根治）：
 --   1. 【カメラ光源（点光源・スポット光源・平行光源）の「明るさ（発光度）」反転不具合を根治】
 --      ・AviUtl ExEdit2 本体の 3D OIT シェーダ（Shader #118, 0x1404404b0 / 0x1401301f2）は、スライス頂点法線が
@@ -937,7 +956,7 @@
 --[[pixelshader@ps_vl_white:
     cbuffer WhiteCB : register(b0)
     {
-        float4 p0; // x: inv_half_w, y: inv_half_h, z: shape_mode, w: aa_uv
+        float4 p0; // x: inv_half_w, y: inv_half_h, z: shape_mode, w: r_lim_or_aa
     };
 
     float4 ps_vl_white(float4 pos : SV_Position) : SV_Target
@@ -951,8 +970,9 @@
         float cov = 0.0;
         if (p0.z < 1.5)
         {
-            float e0 = min(1.0 - p0.w, 0.999);
-            cov = 1.0 - smoothstep(e0, 1.0, r);
+            float r_lim = (p0.w > 0.1) ? p0.w : 1.0;
+            float e0 = max(0.0, r_lim - (2.0 / 128.0));
+            cov = 1.0 - smoothstep(e0, r_lim, r);
         }
         else
         {
@@ -998,7 +1018,7 @@
         float4 p23;  // xyz: cl_rgb,     w: spot_out_rad
         float4 p24;  // xyz: cl_pos,     w: other_lum
         float4 p25;  // xyz: cl_ray_dir, w: 0
-        float4 p26;  // xyz: target_rgb, w: 0
+        float4 p26;  // xyz: target_rgb, w: wboit_ka
         float4 occ[32]; // 最大 8 個の 2D 前景遮蔽オブジェクト
     };
 
@@ -1341,13 +1361,59 @@
         uint2 tile_px = uint2(max(pix.xy - float2(tx, ty) * tile_sz, 0.0));
         float2 rnd_qmc = pcg3d_rand2(uint3(tile_px.x, tile_px.y, 17u));
         float2 rnd_grp = pcg3d_rand2(uint3(tile_px.x, tile_px.y, 131u + (g_si_u >> 3u)));
-        float ign  = frac(rnd_qmc.x + g_si_f * 0.61803399);
+        float ign  = frac(g_si_f * 0.61803399 + (rnd_qmc.x - 0.5) * 0.12);
         float ign2 = frac(rnd_grp.x + (float)(g_si_u & 7u) * 0.125);
 
         float kind = p9.w;
         bool cast_shadow    = do_shadow && (n_occ > 0) && use_2d_occ && (occ_str > 0.001);
         bool cast_shadow_3d = do_shadow && (p15.w > 0.5) && use_3d_occ && (occ_str > 0.001);
         int2 sh_lim = max(int2(p16.z + 0.5, p16.z + 0.5), int2(1, 1));
+
+        // 広角コーン等で 1 beamatlas テクセルが g_shmap 上で複数テクセルへ拡大投影される際の
+        // ナイキスト折り返し（砂状スペックル）を根絶する解析的シャドウマップ・ヤコビアン (du_sh, dv_sh)
+        float2 du_sh = float2(0.0, 0.0);
+        float2 dv_sh = float2(0.0, 0.0);
+        float len_u_sh = 0.0;
+        float len_v_sh = 0.0;
+        if (cast_shadow_3d)
+        {
+            float inv_teff_sh = 2.0 / max(tile_sz - 2.0 * pad, 1.0);
+            float3 dwp_tx = p3.xyz * (p3.w * inv_teff_sh);
+            float3 dwp_ty = p4.xyz * (p4.w * inv_teff_sh);
+            float3 dq_tx = float3(0.0, 0.0, 0.0);
+            float3 dq_ty = float3(0.0, 0.0, 0.0);
+            bool jac_ok = false;
+            if (kind < 0.5)
+            {
+                float inv_uwn = 1.0 / p8.w;
+                dq_tx = dwp_tx - p9.xyz * (dot(dwp_tx, p8.xyz) * inv_uwn);
+                dq_ty = dwp_ty - p9.xyz * (dot(dwp_ty, p8.xyz) * inv_uwn);
+                jac_ok = true;
+            }
+            else
+            {
+                float3 dv0_sh = wp0 - p9.xyz;
+                float den0_sh = dot(dv0_sh, p8.xyz);
+                if (abs(den0_sh) > 1.0e-4)
+                {
+                    float inv_den0 = 1.0 / den0_sh;
+                    float a0_sh = p7.w * inv_den0;
+                    dq_tx = (dwp_tx - dv0_sh * (dot(dwp_tx, p8.xyz) * inv_den0)) * a0_sh;
+                    dq_ty = (dwp_ty - dv0_sh * (dot(dwp_ty, p8.xyz) * inv_den0)) * a0_sh;
+                    jac_ok = true;
+                }
+            }
+            if (jac_ok)
+            {
+                float2 sh_sc = float2(p5.w, p6.w) * (float2(sh_lim) * (1.0 / 1.08));
+                du_sh = float2(dot(dq_tx, p6.xyz), dot(dq_tx, p7.xyz)) * sh_sc;
+                dv_sh = float2(dot(dq_ty, p6.xyz), dot(dq_ty, p7.xyz)) * sh_sc;
+                len_u_sh = length(du_sh);
+                len_v_sh = length(dv_sh);
+                if (len_u_sh > 12.0) { du_sh *= (12.0 / len_u_sh); len_u_sh = 12.0; }
+                if (len_v_sh > 12.0) { dv_sh *= (12.0 / len_v_sh); len_v_sh = 12.0; }
+            }
+        }
 
         float fog_mod = 1.0;
         if (p13.w > 0.001)
@@ -1366,9 +1432,12 @@
         float L_tot   = p11.y;
         float inv_end = p11.z;
 
-        float3 acc_rgb = float3(0.0, 0.0, 0.0);
-        float max_cov  = 0.0;
-        float3 best_c  = float3(0.0, 0.0, 0.0);
+        float3 acc_rgb   = float3(0.0, 0.0, 0.0);
+        float max_cov    = 0.0;
+        float3 best_c    = float3(0.0, 0.0, 0.0);
+        float w_core_acc = 0.0;
+        float phi_h_acc  = 0.0;
+        float phi_w_sum  = 0.0;
 
         [unroll]
         for (int sub_k = 0; sub_k < 12; ++sub_k)
@@ -1376,6 +1445,29 @@
             float u_hat = -2.0 + ((float)sub_k + ign) * (4.0 / 12.0);
             float w_hat = (1.0 / 12.0) * (1.0 + cos(1.57079633 * u_hat));
             float3 wp = wp0 + st_vec * u_hat;
+
+            if (p21.x > 0.5 && p21.z > 2.5)
+            {
+                float3 dv_lh = wp - p24.xyz;
+                float dist_lh = sqrt(max(dot(dv_lh, dv_lh), 1.0e-4));
+                float phi_sub = 1.0;
+                if (p21.w > 1.0e-6)
+                {
+                    float dn_h = dist_lh * (1.0 / 800.0);
+                    phi_sub *= 1.0 / (1.0 + p21.w * dn_h * dn_h);
+                }
+                if (p21.z > 4.5)
+                {
+                    float cos_th = clamp(dot(dv_lh * (1.0 / dist_lh), p25.xyz), -1.0, 1.0);
+                    float ang_th = acos(cos_th);
+                    float ang_pad = min(0.05, 0.55 * dz / max(dist_lh, 60.0));
+                    float in_rh  = max(0.0, p22.w - ang_pad);
+                    float out_rh = max(p23.w + ang_pad, in_rh + max(0.004, 2.0 * ang_pad));
+                    phi_sub *= 1.0 - smoothstep(in_rh, out_rh, ang_th);
+                }
+                phi_h_acc += phi_sub * w_hat;
+                phi_w_sum += w_hat;
+            }
 
             float cam_vis_sub = 1.0;
             if (cam_cov_s > 0.001)
@@ -1429,6 +1521,10 @@
 
             if (valid)
             {
+                float fin = saturate(t_ray / 36.0);
+                float w_dec = exp(-t_ray * k_dec);
+                w_core_acc += fin * w_dec * g_div * w_hat;
+
                 float3 dq = q_win - p5.xyz;
                 float2 uv = float2(0.5 + dot(dq, p6.xyz) * p5.w, 0.5 + dot(dq, p7.xyz) * p6.w);
 
@@ -1443,6 +1539,7 @@
                             float2 uv_sh = (uv + 0.04) * (1.0 / 1.08);
                             float2 fpos_sh = uv_sh * float2(sh_lim) - 0.5;
                             float vis3d = eval_shmap_bilinear(fpos_sh, sh_lim, t_ray, L_tot);
+                            float rad_px = 0.0;
                             if (p16.w > 0.15)
                             {
                                 int2 ic = clamp(int2(fpos_sh + 0.5), int2(0, 0), sh_lim - int2(1, 1));
@@ -1450,11 +1547,23 @@
                                 float dist_after = (cm.a > 0.5)
                                     ? max(0.0, t_ray - (1.0 - (cm.r + cm.g + cm.b) * (1.0 / 3.0)) * L_tot)
                                     : (L_tot * 0.35);
-                                float rad_px = p16.w * (0.22 + 0.78 * saturate(dist_after / 520.0));
-                                float v1 = eval_shmap_bilinear(fpos_sh + float2( 0.8944,  0.4472) * rad_px, sh_lim, t_ray, L_tot);
-                                float v2 = eval_shmap_bilinear(fpos_sh + float2(-0.8944, -0.4472) * rad_px, sh_lim, t_ray, L_tot);
-                                float v3 = eval_shmap_bilinear(fpos_sh + float2(-0.4472,  0.8944) * rad_px, sh_lim, t_ray, L_tot);
-                                float v4 = eval_shmap_bilinear(fpos_sh + float2( 0.4472, -0.8944) * rad_px, sh_lim, t_ray, L_tot);
+                                rad_px = p16.w * (0.22 + 0.78 * saturate(dist_after / 520.0));
+                            }
+                            if (max(max(len_u_sh, len_v_sh) * 0.55, rad_px) > 0.35)
+                            {
+                                float2 bu = (len_u_sh > 1.0e-4) ? (du_sh * (1.0 / len_u_sh)) : float2(1.0, 0.0);
+                                float2 bv = (len_v_sh > 1.0e-4) ? (dv_sh * (1.0 / len_v_sh)) : float2(0.0, 1.0);
+                                float ru = min(14.0, sqrt(0.30 * len_u_sh * len_u_sh + rad_px * rad_px));
+                                float rv = min(14.0, sqrt(0.30 * len_v_sh * len_v_sh + rad_px * rad_px));
+                                float2 ax_u = bu * ru;
+                                float2 ax_v = bv * rv;
+                                float sgn_p = ((sub_k & 1) != 0) ? -1.0 : 1.0;
+                                float2 o1 = ax_u * 0.8944 + ax_v * (0.4472 * sgn_p);
+                                float2 o2 = ax_u * (0.4472 * sgn_p) - ax_v * 0.8944;
+                                float v1 = eval_shmap_bilinear(fpos_sh + o1, sh_lim, t_ray, L_tot);
+                                float v2 = eval_shmap_bilinear(fpos_sh - o1, sh_lim, t_ray, L_tot);
+                                float v3 = eval_shmap_bilinear(fpos_sh + o2, sh_lim, t_ray, L_tot);
+                                float v4 = eval_shmap_bilinear(fpos_sh - o2, sh_lim, t_ray, L_tot);
                                 vis3d = (vis3d * 2.0 + v1 + v2 + v3 + v4) * (1.0 / 6.0);
                             }
                             sh_vis *= lerp(1.0, vis3d, occ_str);
@@ -1494,8 +1603,6 @@
 
                         if (sh_vis > 0.001)
                         {
-                            float fin = saturate(t_ray / 36.0);
-                            float w_dec = exp(-t_ray * k_dec);
                             float te = saturate((L_tot - t_ray) * inv_end);
                             float w_end = te * te * (3.0 - 2.0 * te);
                             float w = fin * w_dec * w_end * sh_vis;
@@ -1516,29 +1623,18 @@
         float dither = (ign2 - 0.5) * (1.0 / 255.0);
 
         float3 host_comp_rgb = float3(1.0, 1.0, 1.0);
+        float3 h_est  = float3(1.0, 1.0, 1.0);
+        float3 h_core = float3(1.0, 1.0, 1.0);
         if (p21.x > 0.5)
         {
             float phi_h = 1.0;
             if (p21.z > 2.5)
             {
-                float3 dv_l = wp0 - p24.xyz;
-                float dist_l = sqrt(max(dot(dv_l, dv_l), 1.0e-4));
-                if (p21.w > 1.0e-6)
-                {
-                    float dn = dist_l * (1.0 / 800.0);
-                    phi_h *= 1.0 / (1.0 + p21.w * dn * dn);
-                }
-                if (p21.z > 4.5)
-                {
-                    float cos_t = clamp(dot(dv_l * (1.0 / dist_l), p25.xyz), -1.0, 1.0);
-                    float ang_t = acos(cos_t);
-                    float in_r  = p22.w;
-                    float out_r = max(p23.w, in_r + 0.004);
-                    phi_h *= 1.0 - smoothstep(in_r, out_r, ang_t);
-                }
+                phi_h = (phi_w_sum > 1.0e-5) ? (phi_h_acc / phi_w_sum) : 1.0;
             }
             float base_u = p21.y + p24.w;
-            float3 h_est = float3(base_u, base_u, base_u) + p22.xyz + p23.xyz * phi_h;
+            h_est  = float3(base_u, base_u, base_u) + p22.xyz + p23.xyz * phi_h;
+            h_core = float3(base_u, base_u, base_u) + p22.xyz + p23.xyz;
             if (p21.x < 1.5)
             {
                 host_comp_rgb = saturate((p26.xyz * phi_h) / max(h_est, float3(1.0e-4, 1.0e-4, 1.0e-4)));
@@ -1559,11 +1655,12 @@
             return float4(c_solid * out_as, out_as);
         }
 
-        // aviutl2.exe Shader #118 (0x4404b0) 純粋光学散乱 OIT 出力（v2.09 璀璨発色 ＋ VRM/OBJ 完全不透明）：
-        // blend="none" + poly_alpha=0.27 により frameBuffer(t[1]) 早期焼き込みを 100% 排除しつつ、
-        // out_a = p12.z (= 1/255 → r4.w = 0.001059 > 0.001) の極小 OIT トークンのみを出力することで
-        // 灰色煙ベール（不透明減衰）を根絶し、v2.09 同等の鮮烈な透明感・高彩度輝きを実現！
-        float3 scaled_rgb = acc_rgb * (step_len * p11.w * fog_mod * fg_vis) * host_comp_rgb;
+        // aviutl2.exe Shader #118 (0x4404b0) 深度重み不変・純粋光学散乱 WBOIT 出力：
+        // 適応 poly_alpha (0.045..0.27) と発光量比例アルファ (ka = 0.24) により、灰色煙ベールを抑えつつ
+        // コーン外縁〜中心部まで全スライスの Straight 色比 (r4.rgb / r4.w) を深度重み w(z) に対し不変化し、
+        // スポット光源等のスライス交線段差（年輪リング）と終端キャップ段差を根絶する！
+        float slab_gain = step_len * p11.w * fog_mod * fg_vis;
+        float3 scaled_rgb = acc_rgb * slab_gain * host_comp_rgb;
         float s_max = max(scaled_rgb.r, max(scaled_rgb.g, scaled_rgb.b));
         if (s_max <= 1e-6)
         {
@@ -1581,7 +1678,25 @@
         {
             return float4(0.0, 0.0, 0.0, 0.0);
         }
-        return float4(q_rgb, p12.z);
+        float out_a = p12.z;
+        if (p26.w > 0.01)
+        {
+            float min_a = p12.z;
+            float h_core_m = max(h_core.r, max(h_core.g, max(h_core.b, 1.0e-4)));
+            float3 h_norm = (p21.x > 0.5 && p21.x < 1.5) ? (h_est * (1.0 / h_core_m)) : float3(1.0, 1.0, 1.0);
+            float3 core_c = (p21.x > 0.5 && p21.x < 1.5)
+                ? (p26.xyz * (1.0 / h_core_m))
+                : (p13.xyz * host_comp_rgb);
+            float core_emit = min(1.0, w_core_acc * slab_gain) * max(core_c.r, max(core_c.g, max(core_c.b, 1.0e-4)));
+            float emit_s = max(scaled_rgb.r * h_norm.r, max(scaled_rgb.g * h_norm.g, scaled_rgb.b * h_norm.b));
+            float ka_eff = max(p26.w, (min_a * 2.4) / max(core_emit, 1.0e-5));
+            out_a = floor(saturate(emit_s * ka_eff) * 255.0 + 0.5) * (1.0 / 255.0);
+            if (out_a < min_a - (0.25 / 255.0))
+            {
+                return float4(0.0, 0.0, 0.0, 0.0);
+            }
+        }
+        return float4(q_rgb, out_a);
     }
 ]]
 
@@ -1779,34 +1894,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.07] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.07] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.07] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.07] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.08] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.08] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.08] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.08] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.07 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.07 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.07 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.07 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.08 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.08 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.08 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.08 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.07 シェーダー失敗: ",
-        zh = "体积光（3D）v3.07 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.07 shader error: ",
-        de = "Volumenlicht (3D) v3.07 Shader-Fehler: ",
+        ja = "体積光（3D）v3.08 シェーダー失敗: ",
+        zh = "体积光（3D）v3.08 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.08 shader error: ",
+        de = "Volumenlicht (3D) v3.08 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.07：初期化中……",
-        zh = "体积光（3D）v3.07：初始化中……",
-        en = "Volumetric Light (3D) v3.07: Initializing...",
-        de = "Volumenlicht (3D) v3.07: Initialisierung läuft...",
+        ja = "体積光（3D）v3.08：初期化中……",
+        zh = "体积光（3D）v3.08：初始化中……",
+        en = "Volumetric Light (3D) v3.08: Initializing...",
+        de = "Volumenlicht (3D) v3.08: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.07：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.07：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.07: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.07: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.08：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.08：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.08: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.08: Initialisiert (%.2fs)",
     },
 }
 
@@ -5978,13 +6093,6 @@ local function try_read_live_edit_camera()
         if ok_c and okcam == true then
             return { x = x, y = y, z = z, tx = tx, ty = ty, tz = tz, ux = ux, uy = uy, uz = uz, rz = rz, d = d }
         end
-        if type(br_c.get_scene_camera) == "function" then
-            local ok2, okc2, x2, y2, z2, tx2, ty2, tz2, ux2, uy2, uz2, rz2, d2 =
-                pcall(br_c.get_scene_camera, 64, vl_scene_frame())
-            if ok2 and okc2 == true then
-                return { x = x2, y = y2, z = z2, tx = tx2, ty = ty2, tz = tz2, ux = ux2, uy = uy2, uz = uz2, rz = rz2, d = d2 }
-            end
-        end
     end
     local ok_ffi, ffi = pcall(require, "ffi")
     if not (ok_ffi and ffi ~= nil and ffi.os == "Windows" and ffi.arch == "x64") then
@@ -6360,15 +6468,17 @@ local function vl_bf_capture()
         pcall(function()
             local cl = VL_BF.cam_light_info.primary
             local shape_mode = 0.0
+            local r_lim_arg = 2.0 / 128.0
             if cl ~= nil then
                 if cl.ltype == 5 then
                     shape_mode = 1.0
+                    r_lim_arg = 1.0 / 1.12
                 elseif cl.ltype ~= 2 then
                     shape_mode = 2.0
                 end
             end
             obj.clearbuffer("object", 256, 256)
-            obj.pixelshader("ps_vl_white", "object", {}, { 1.0 / 128.0, 1.0 / 128.0, shape_mode, 2.0 / 128.0 }, "copy")
+            obj.pixelshader("ps_vl_white", "object", {}, { 1.0 / 128.0, 1.0 / 128.0, shape_mode, r_lim_arg }, "copy")
             VL_BF.lw, VL_BF.lh = 256, 256
             VL_BF.base_ratio = (cl ~= nil and cl.ltype == 2) and 0.85 or 0.78
             VL_BF.tex_loaded = true
@@ -6718,10 +6828,11 @@ local function vl_bf_geometry()
                 or math.rad(math.max(8.0, math.min(78.0, math.abs(P.spread) > 1.0 and math.abs(P.spread) or 48.0)))
             local clamped_ang = math.max(1e-4, math.min(math.rad(86.5), half_ang))
             local ap_half = math.max(0.02, ap_dist * math.tan(clamped_ang))
+            local ap_pad = (cl.ltype == 5) and (ap_half * 1.12) or ap_half
             VL_BF.wx = cl.px + dir_x * ap_dist
             VL_BF.wy = cl.py + dir_y * ap_dist
             VL_BF.wz = cl.pz + dir_z * ap_dist
-            VL_BF.Hx, VL_BF.Hy = ap_half, ap_half
+            VL_BF.Hx, VL_BF.Hy = ap_pad, ap_pad
             local ref_r = math.min(520.0, 600.0 * math.tan(math.min(1.15, clamped_ang)))
             VL_BF.L_char = math.min(200.0, math.max(22.0, ref_r * 0.32))
         end
@@ -8282,8 +8393,8 @@ local function vl_bf_render()
     pcall(function() obj.setoption("blend", "none") end)
 
     -- 3D OIT シーンでは lua_drawpoly(verts, 4, poly_alpha) が v1.z = poly_alpha を直接渡す（機械語 0x1404404b0 検証済）。
-    -- poly_alpha = 0.27 固定 + min_opt_a = 1/255 により r4.w = 0.001059 > 0.001 の極小 OIT 閾値を常時保証しつつ、
-    -- 不透明煙減衰ゼロ（v2.09 級の透明高彩度発色）と 9.89bit 階調・VRM/OBJ 100% 不透明を同時に成立させる！
+    -- v3.08: 適応 poly_alpha (0.045..0.27) ＋ 発光量比例アルファ (wboit_ka = 0.24) により、
+    -- ホスト WBOIT 深度重み w(z) 下でも全スライスの Straight 色比を整合させ、灰色煙ベールゼロと年輪段差ゼロを両立！
     VL_BF.poly_alpha= 0.27
     VL_BF.min_opt_a= 1.0 / 255.0
     VL_BF.cam_comp= 1.0
@@ -8298,6 +8409,22 @@ local function vl_bf_render()
         if P.cam_light_mode == 2 then
             VL_BF.cam_mode2_note = " mode2=host-comp"
         end
+    end
+    local wboit_ka = 0.0
+    if P.fill_mode ~= 1 then
+        wboit_ka = 0.24
+        local eff_lum_pa = 1.0
+        if cam_comp_mode > 0.5 and cam_comp_mode < 1.5 and cl_pr ~= nil then
+            eff_lum_pa = math.max(0.05, tonumber(cl_pr.lum) or 1.0)
+        end
+        local est_slice_e = VL_BF.k_gain_base * VL_BF.base_alpha * 1.05 * (VL_BF.dz or 16.4) * 1.6 * eff_lum_pa
+        if est_slice_e < 0.030 then
+            VL_BF.poly_alpha = math.max(0.045, math.min(0.14, 0.14 - est_slice_e * 3.1))
+        else
+            VL_BF.poly_alpha = math.max(0.045, math.min(0.27, est_slice_e * 0.65))
+        end
+        local min_k_opt = math.ceil(0.00103 * 255.0 / VL_BF.poly_alpha)
+        VL_BF.min_opt_a = min_k_opt / 255.0
     end
     VL_BF.k_gain_gpu= VL_BF.k_gain_base * (VL_BF.base_alpha / VL_BF.poly_alpha) * 1.05 * VL_BF.cam_comp
 
@@ -8455,7 +8582,7 @@ local function vl_bf_render()
             cb_cl_r, cb_cl_g, cb_cl_b, cb_out_rad,
             cb_cl_px, cb_cl_py, cb_cl_pz, cb_other_lum,
             VL_BF.cam_ray_dx, VL_BF.cam_ray_dy, VL_BF.cam_ray_dz, 0.0,
-            cb_tgt_r, cb_tgt_g, cb_tgt_b, 0.0,
+            cb_tgt_r, cb_tgt_g, cb_tgt_b, wboit_ka,
         }
         local base_len = #consts
         for oi = 1, MAX_OCC * 16 do
@@ -8774,7 +8901,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.07 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.08 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -8803,7 +8930,7 @@ local function vl_run_frame()
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.07 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.08 error: " .. tostring(err)) end)
     end
     return ok
 end
