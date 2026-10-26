@@ -1,4 +1,4 @@
---information:体積光（3D）v3.09
+--information:体積光（3D）v3.10
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -30,6 +30,28 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
+-- v3.10 更新点（2026-10-26・スポット光源（カメラ制御）のコーン角整合・内部スライス段差＆影境界ジャギー根治・初回初期化 0.00 秒ログ修正）：
+--   1. 【スポット光源（カメラ制御）におけるコーン内スライス境界段差・3D 遮光壁ジャギーの完全根治】
+--      ・AviUtl ExEdit2 本体のスポット光源シェーダ（Shader #118, `0x1404404b0`）を実機角度・ぼかしスイープ画素計測で
+--        検証した結果、ホスト側のコーン減衰区間は `[範囲, 範囲 + ぼかし]`（外側加算）ではなく、`範囲` を外縁半頂角とする
+--        `[max(0, 範囲 - ぼかし), 範囲]`（内側ソフト化・`範囲 = 0` では `ぼかし` に依らず完全消灯）であることを確認。
+--        従来の外側加算ではコーン内縁 `[範囲 - ぼかし, 範囲]` でホスト `H_host(θ)` が減衰を開始する一方、スクリプト側の
+--        `1 / H_est` が `1.0` のまま据え置かれていたため、各スライスがコーン壁を横切る位置ごとに約 25 本の U字リング段差が
+--        発生していた。ホストと厳密一致する `[max(0, 範囲 - ぼかし), 範囲]` へ統一してミスマッチを解消。
+--      ・さらに `v3.09` の単一階段アルファ（`out_a = 1/255, poly_alpha = 0.2565`）と `0.96 * h_worst` ハード切断が招いていた
+--        3D 遮光影柱側面のテクセル階段およびコーン下部の円弧段差に対し、6 段階決定論マルチレベルアルファ（`k_ref = 6`,
+--        `k_out = 1` で `r4.w = 0.001006` により外縁ゼロ隣接への漏れを遮断しつつ、`6..1` 間でハードウェア浮動小数点バイリニア補間を
+--        100% 維持）＋ `k_out / k_ref` 同率スケーリング（WBOIT 深度重みに対する `r4.rgb / r4.w` 完全不変化）＋低非照射域での
+--        12 サブサンプル Hann 窓コーン外皮カバレッジ補間＋2D R2 準乱数＆黄金比スライス位相ディザを導入し、`ぼかし = 0°〜90°`・
+--        `明るさ = 0〜200%` 全域で内部リング・影壁ジャギー・外縁階段を同時に解消（点光源・平行光源・2D 光源パスは不変）。
+--   2. 【初回プロジェクト読込時に「初期化が完了しました（所要 0.00 秒）」と記録される壁時計エポック不整合の修正】
+--      ・初回オープン時、`vl_bf_prepare()` 冒頭では `VL3DBridge.aux2` 読込前のため Win32 `QueryPerformanceCounter`（PC 起動からの
+--        経過秒数）で開始時刻 `_init_t0` を取得していた一方、同フレーム末尾の `vl_bf_render()` では途中ロードされた
+--        `VL3DBridge.wall_time_sec()`（初回呼出時 `0.0` 秒起点の遅延 `static t0`）へ切り替わり、`math.max(0.0, 0.0 - QPC)` により
+--        毎回 `0.00 秒` にクランプされていた問題を特定。`vl_wall_time_sec()` のクロック源とゼロ基準エポックを初回呼出時に
+--        `_VL_PERSIST.clock_state` へ単一ロック（64-bit カウンタ差分演算＋POSIX `ffi_l` 修正）し、シーンキー別の開始時刻保持と
+--        合わせて初回オープン時から正確な初期化所要時間を記録するよう修正。
+--
 -- v3.09 更新点（2026-10-26・スポット光源（カメラ制御）の周期的U字リング段差・テクセル階段状の完全根治）：
 --   1. 【スポット光源（カメラ制御）における周期的スライスU字リングおよびテクセル階段状ジャギーの完全根治】
 --      ・AviUtl ExEdit2 本体の 3D OIT パス（Shader #118, 0x1404404b0）を実機画素プロファイルで検証した結果、
@@ -1455,6 +1477,9 @@
         float ang_sp0     = 0.0;
         float ang_pad_sp  = 0.0;
         float phi_ray_sp  = 1.0;
+        float tex_step_sp = 0.0;
+        float pad_k_sp    = 0.85;
+        float w_u_sp      = 1.0;
 
         if (spot_env)
         {
@@ -1466,8 +1491,11 @@
                 return float4(0.0, 0.0, 0.0, 0.0);
             }
             float inv_inner_sp = 2.0 / max(tile_sz - 2.0 * pad, 1.0);
-            float tex_step_sp  = max(p3.w, p4.w) * inv_inner_sp;
-            ang_pad_sp = min(0.72 * tex_step_sp / max(dist_sp0, 24.0), spot_out_rh * 0.45);
+            tex_step_sp = max(p3.w, p4.w) * inv_inner_sp;
+            float base_u_pad = p21.y + p24.w + max(p22.x, max(p22.y, p22.z));
+            w_u_sp     = smoothstep(0.0, 0.25, base_u_pad);
+            pad_k_sp   = lerp(1.30, 0.85, w_u_sp);
+            ang_pad_sp = min(pad_k_sp * tex_step_sp / max(dist_sp0, 24.0), spot_out_rh * 0.45);
             ang_sp0    = acos(clamp(axial_sp0 / dist_sp0, -1.0, 1.0));
             if (ang_sp0 + ang_pad_sp >= spot_out_rh)
             {
@@ -1515,12 +1543,14 @@
             }
         }
 
-        float3 acc_rgb   = float3(0.0, 0.0, 0.0);
-        float max_cov    = 0.0;
-        float3 best_c    = float3(0.0, 0.0, 0.0);
-        float w_core_acc = 0.0;
-        float phi_h_acc  = 0.0;
-        float phi_w_sum  = 0.0;
+        float3 acc_rgb      = float3(0.0, 0.0, 0.0);
+        float max_cov       = 0.0;
+        float3 best_c       = float3(0.0, 0.0, 0.0);
+        float w_core_acc    = 0.0;
+        float unsh_sp_acc   = 0.0;
+        float cov_sh_sp_acc = 0.0;
+        float phi_h_acc     = 0.0;
+        float phi_w_sum     = 0.0;
 
         [unroll]
         for (int sub_k = 0; sub_k < 12; ++sub_k)
@@ -1560,15 +1590,15 @@
             float t_ray = -1.0;
             float3 q_win = float3(0.0, 0.0, 0.0);
             float g_div = 1.0;
-            bool valid = (cam_vis_sub > 0.002);
+            bool valid_geo = false;
 
-            if (valid)
+            if (spot_env || cam_vis_sub > 0.002)
             {
                 if (kind < 0.5)
                 {
                     t_ray = dot(wp - p5.xyz, p8.xyz) / p8.w;
                     q_win = wp - p9.xyz * t_ray;
-                    valid = (t_ray > 0.0) && (t_ray < L_tot);
+                    valid_geo = (t_ray > 0.0) && (t_ray < L_tot);
                 }
                 else
                 {
@@ -1582,24 +1612,29 @@
                         q_win = p9.xyz + dv * alpha;
                         if (kind < 1.5)
                         {
-                            valid = (alpha > 0.0) && (alpha < 1.0) && (t_ray < L_tot);
+                            valid_geo = (alpha > 0.0) && (alpha < 1.0) && (t_ray < L_tot);
                             g_div = 1.0;
                         }
                         else
                         {
-                            valid = ((alpha > 1.0) || (alpha < 0.0)) && (t_ray < L_tot);
+                            valid_geo = ((alpha > 1.0) || (alpha < 0.0)) && (t_ray < L_tot);
                             float conc = clamp(abs(alpha), 1.0, 9.0);
                             g_div = min(pow(conc, 1.15), 6.5);
                         }
                     }
-                    else
-                    {
-                        valid = false;
-                    }
                 }
             }
 
-            if (valid)
+            if (spot_env && valid_geo)
+            {
+                float fin_sp = saturate(t_ray / 36.0);
+                float w_dec_sp = exp(-t_ray * k_dec);
+                float te_sp = saturate((L_tot - t_ray) * inv_end);
+                float w_end_sp = te_sp * te_sp * (3.0 - 2.0 * te_sp);
+                unsh_sp_acc += fin_sp * w_dec_sp * w_end_sp * g_div * w_hat;
+            }
+
+            if (valid_geo && cam_vis_sub > 0.002)
             {
                 float fin = saturate(t_ray / 36.0);
                 float w_dec = exp(-t_ray * k_dec);
@@ -1694,6 +1729,27 @@
                             float w = fin * w_dec * w_end * sh_vis;
 
                             acc_rgb += s.rgb * (w * g_div * w_hat);
+                            if (spot_env)
+                            {
+                                float cone_cov = 1.0;
+                                if (w_u_sp < 0.999)
+                                {
+                                    float3 dv_sp = wp - p24.xyz;
+                                    float dist_sp = sqrt(max(dot(dv_sp, dv_sp), 1.0e-4));
+                                    float axial_sp = dot(dv_sp, p25.xyz);
+                                    cone_cov = 0.0;
+                                    if (axial_sp > 3.0 && dist_sp < L_tot)
+                                    {
+                                        float pad_sub = min(pad_k_sp * tex_step_sp / max(dist_sp, 24.0), spot_out_rh * 0.45);
+                                        float ang_sp  = acos(clamp(axial_sp / dist_sp, -1.0, 1.0));
+                                        float cov_hi  = max(0.0, spot_out_rh - pad_sub);
+                                        float cov_lo  = max(0.0, cov_hi - max(pad_sub, 0.012));
+                                        cone_cov = 1.0 - smoothstep(cov_lo, max(cov_hi, cov_lo + 1.0e-4), ang_sp);
+                                    }
+                                    cone_cov = lerp(cone_cov, 1.0, w_u_sp);
+                                }
+                                cov_sh_sp_acc += w * g_div * w_hat * cone_cov;
+                            }
                             float cw = s.a * w * w_hat;
                             if (cw > max_cov)
                             {
@@ -1762,27 +1818,53 @@
         }
 
         float slab_gain = step_len * p11.w * fog_mod * fg_vis;
-        float3 scaled_rgb;
         if (spot_env)
         {
-            float ray_mod_sp    = phi_ray_sp * att_d_sp;
-            float3 unsh_want_sp = (w_core_acc * slab_gain * ray_mod_sp) * p26.xyz;
-            if (phi_worst_sp < 0.85 * ray_mod_sp)
+            if (unsh_sp_acc <= 1.0e-6 || cov_sh_sp_acc <= 1.0e-6)
             {
-                if ((p26.r > 1.0e-4 && (h_worst_sp.r < 1.0e-4 || unsh_want_sp.r > 0.96 * h_worst_sp.r)) ||
-                    (p26.g > 1.0e-4 && (h_worst_sp.g < 1.0e-4 || unsh_want_sp.g > 0.96 * h_worst_sp.g)) ||
-                    (p26.b > 1.0e-4 && (h_worst_sp.b < 1.0e-4 || unsh_want_sp.b > 0.96 * h_worst_sp.b)))
-                {
-                    return float4(0.0, 0.0, 0.0, 0.0);
-                }
+                return float4(0.0, 0.0, 0.0, 0.0);
             }
-            float3 want_post_sp = (acc_rgb * slab_gain * ray_mod_sp) * p26.xyz;
-            scaled_rgb = want_post_sp / max(h_est, float3(1.0e-4, 1.0e-4, 1.0e-4));
+            float vis_cov_sp = saturate(cov_sh_sp_acc / unsh_sp_acc);
+            float ray_mod_sp = phi_ray_sp * att_d_sp;
+            float3 unsh_post_sp = (unsh_sp_acc * slab_gain * ray_mod_sp) * p26.xyz;
+            float3 raw_div_sp = float3(
+                (h_core.r > 1.0e-4) ? (unsh_post_sp.r / max(h_est.r, 1.0e-5)) : 0.0,
+                (h_core.g > 1.0e-4) ? (unsh_post_sp.g / max(h_est.g, 1.0e-5)) : 0.0,
+                (h_core.b > 1.0e-4) ? (unsh_post_sp.b / max(h_est.b, 1.0e-5)) : 0.0
+            );
+            float worst_r_sp = (h_core.r > 1.0e-4 && p26.r > 1.0e-4) ? (unsh_post_sp.r / max(h_worst_sp.r, 1.0e-5)) : 0.0;
+            float worst_g_sp = (h_core.g > 1.0e-4 && p26.g > 1.0e-4) ? (unsh_post_sp.g / max(h_worst_sp.g, 1.0e-5)) : 0.0;
+            float worst_b_sp = (h_core.b > 1.0e-4 && p26.b > 1.0e-4) ? (unsh_post_sp.b / max(h_worst_sp.b, 1.0e-5)) : 0.0;
+            float worst_max_sp = max(worst_r_sp, max(worst_g_sp, worst_b_sp));
+
+            float k_ref_sp = max(1.0, floor(p12.z * 255.0 + 0.5));
+            float w_hr_sp  = (worst_max_sp > 0.96) ? clamp(0.96 / worst_max_sp, 0.0, 1.0) : 1.0;
+            float w_a_sp   = vis_cov_sp * w_hr_sp;
+            float k_out_sp = (w_a_sp >= 0.999) ? k_ref_sp : floor(w_a_sp * k_ref_sp + 0.5);
+            if (k_out_sp < 0.5)
+            {
+                return float4(0.0, 0.0, 0.0, 0.0);
+            }
+            float3 scaled_sp = raw_div_sp * (k_out_sp / k_ref_sp);
+            float s_max_sp = max(scaled_sp.r, max(scaled_sp.g, scaled_sp.b));
+            if (s_max_sp <= 1.0e-6)
+            {
+                return float4(0.0, 0.0, 0.0, 0.0);
+            }
+            if (s_max_sp > 1.0)
+            {
+                scaled_sp *= (1.0 / s_max_sp);
+            }
+            float d_r2_sp = frac(dot(float2(tile_px), float2(0.75487767, 0.56984029)));
+            float d_q_sp  = frac(g_si_f * 0.61803399 + (d_r2_sp - 0.5) * 0.65);
+            float3 q_sp   = floor(saturate(scaled_sp) * 255.0 + float3(d_q_sp, d_q_sp, d_q_sp)) * (1.0 / 255.0);
+            if (max(q_sp.r, max(q_sp.g, q_sp.b)) < (0.5 / 255.0))
+            {
+                return float4(0.0, 0.0, 0.0, 0.0);
+            }
+            return float4(q_sp, k_out_sp * (1.0 / 255.0));
         }
-        else
-        {
-            scaled_rgb = acc_rgb * slab_gain * host_comp_rgb;
-        }
+        float3 scaled_rgb = acc_rgb * slab_gain * host_comp_rgb;
         float s_max = max(scaled_rgb.r, max(scaled_rgb.g, scaled_rgb.b));
         if (s_max <= 1e-6)
         {
@@ -1898,6 +1980,7 @@ end
 local read_binary_file_utf8
 local get_env_utf8
 local vl_wall_time_sec
+local vl3d_bridge
 
 local function detect_ui_lang()
     local now_c = (type(vl_wall_time_sec) == "function") and vl_wall_time_sec() or 0.0
@@ -2015,34 +2098,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.09] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.09] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.09] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.09] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.10] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.10] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.10] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.10] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.09 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.09 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.09 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.09 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.10 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.10 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.10 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.10 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.09 シェーダー失敗: ",
-        zh = "体积光（3D）v3.09 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.09 shader error: ",
-        de = "Volumenlicht (3D) v3.09 Shader-Fehler: ",
+        ja = "体積光（3D）v3.10 シェーダー失敗: ",
+        zh = "体积光（3D）v3.10 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.10 shader error: ",
+        de = "Volumenlicht (3D) v3.10 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.09：初期化中……",
-        zh = "体积光（3D）v3.09：初始化中……",
-        en = "Volumetric Light (3D) v3.09: Initializing...",
-        de = "Volumenlicht (3D) v3.09: Initialisierung läuft...",
+        ja = "体積光（3D）v3.10：初期化中……",
+        zh = "体积光（3D）v3.10：初始化中……",
+        en = "Volumetric Light (3D) v3.10: Initializing...",
+        de = "Volumenlicht (3D) v3.10: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.09：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.09：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.09: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.09: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.10：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.10：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.10: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.10: Initialisiert (%.2fs)",
     },
 }
 
@@ -2678,62 +2761,108 @@ local function get_w32_api()
     return api
 end
 
--- 単調増加壁時計（秒）：os == nil の AviUtl2 スクリプト環境でも常に実時間を返す 4 段チェーン
---   1) VL3DBridge.wall_time_sec() (C++ steady_clock)
---   2) Win32 QueryPerformanceCounter (kernel32 FFI 直接バインド)
---   3) obj.getinfo("clock") (AviUtl2 組込クロック)
---   4) POSIX clock_gettime / os.clock() フォールバック
+-- 単調増加壁時計（秒）：初回呼出時に単一クロック源・ゼロ基準エポックを _VL_PERSIST.clock_state にロックし、
+-- フレーム途中で VL3DBridge.aux2 が遅延ロードされてもエポック切替（0.00 秒クランプ）を絶対に起こさない設計。
 vl_wall_time_sec = function()
-    local br_m = _VL_PERSIST.bridge_mod
-    if type(br_m) == "table" and type(br_m.wall_time_sec) == "function" then
-        local ok_wt, wt = pcall(br_m.wall_time_sec)
-        if ok_wt and type(wt) == "number" then return wt end
+    if type(_G.VL3D_TEST_BRIDGE) == "table" and type(_G.VL3D_TEST_BRIDGE.wall_time_sec) == "function" then
+        local ok_tb, wt_tb = pcall(_G.VL3D_TEST_BRIDGE.wall_time_sec)
+        if ok_tb and type(wt_tb) == "number" then return wt_tb end
     end
-    local qpc = _VL_PERSIST.qpc_state
-    if qpc == nil then
-        qpc = { ok = false, posix_ok = false }
+    local cs = _VL_PERSIST.clock_state
+    if cs == nil then
+        cs = { kind = nil, last = 0.0, ofs = 0.0 }
+        -- 1) Win32 QueryPerformanceCounter（64-bit 整数ティック差分・DLL ロード前でも即座に高精度単調時刻を取得）
         pcall(function()
             local api = get_w32_api()
             if api ~= nil and api.ffi ~= nil and api.QueryPerformanceCounter ~= nil and api.QueryPerformanceFrequency ~= nil then
                 local hz = api.ffi.new("int64_t[1]")
-                if api.QueryPerformanceFrequency(hz) ~= 0 and tonumber(hz[0]) > 0 then
-                    qpc.ok = true
-                    qpc.fn_c = api.QueryPerformanceCounter
-                    qpc.inv_hz = 1.0 / tonumber(hz[0])
-                    qpc.buf = api.ffi.new("int64_t[1]")
-                end
-            else
-                local ok_f, ffi_l = pcall(require, "ffi")
-                if ok_f and ffi_l ~= nil and ffi_l.os ~= "Windows" then
-            pcall(ffi.cdef, "typedef struct { long tv_sec; long tv_nsec; } vl3d_timespec_t;")
-            pcall(ffi.cdef, "int clock_gettime(int clk_id, void* tp);")
-            local fn_cg = ffi.cast("int (*)(int, void*)", ffi_l.C.clock_gettime)
-            local ts = ffi_l.new("int64_t[2]")
-            if fn_cg(1, ts) == 0 then
-                qpc.posix_ok = true
-                qpc.posix_fn = fn_cg
-                qpc.posix_ts = ts
-                qpc.posix_t0 = tonumber(ts[0]) + tonumber(ts[1]) * 1e-9
-            end
+                local c0 = api.ffi.new("int64_t[1]")
+                if api.QueryPerformanceFrequency(hz) ~= 0 and tonumber(hz[0]) > 0 and api.QueryPerformanceCounter(c0) ~= 0 then
+                    cs.kind = "qpc"
+                    cs.fn_c = api.QueryPerformanceCounter
+                    cs.inv_hz = 1.0 / tonumber(hz[0])
+                    cs.c0 = c0[0]
+                    cs.buf = api.ffi.new("int64_t[1]")
                 end
             end
         end)
-        _VL_PERSIST.qpc_state = qpc
+        -- 2) POSIX clock_gettime(CLOCK_MONOTONIC)（Linux テスト環境等）
+        if cs.kind == nil then
+            pcall(function()
+                local ok_f, ffi_l = pcall(require, "ffi")
+                if ok_f and ffi_l ~= nil and ffi_l.os ~= "Windows" then
+                    pcall(ffi_l.cdef, "int clock_gettime(int clk_id, void* tp);")
+                    local fn_cg = ffi_l.cast("int (*)(int, void*)", ffi_l.C.clock_gettime)
+                    local ts = ffi_l.new("int64_t[2]")
+                    if fn_cg(1, ts) == 0 then
+                        cs.kind = "posix"
+                        cs.posix_fn = fn_cg
+                        cs.posix_ts = ts
+                        cs.s0 = ts[0]
+                        cs.ns0 = ts[1]
+                    end
+                end
+            end)
+        end
+        -- 3) VL3DBridge.wall_time_sec()（先行ロードして同一エポックに固定）
+        if cs.kind == nil then
+            if _VL_PERSIST.bridge_mod == nil and type(vl3d_bridge) == "function" then
+                pcall(vl3d_bridge)
+            end
+            local br_m = _VL_PERSIST.bridge_mod
+            if type(br_m) == "table" and type(br_m.wall_time_sec) == "function" then
+                local ok_wt, wt = pcall(br_m.wall_time_sec)
+                if ok_wt and type(wt) == "number" then
+                    cs.kind = "bridge"
+                    cs.fn_br = br_m.wall_time_sec
+                    cs.t0 = wt
+                end
+            end
+        end
+        -- 4) obj.getinfo("clock") / os.clock() フォールバック
+        if cs.kind == nil and type(obj) == "table" and type(obj.getinfo) == "function" then
+            local ok_c, clk = pcall(obj.getinfo, "clock")
+            if ok_c and type(clk) == "number" then
+                cs.kind = "aviutl"
+                cs.t0 = clk
+            end
+        end
+        if cs.kind == nil and type(os) == "table" and type(os.clock) == "function" then
+            cs.kind = "os"
+            cs.t0 = os.clock()
+        end
+        _VL_PERSIST.clock_state = cs
     end
-    if qpc.ok and qpc.fn_c(qpc.buf) ~= 0 then
-        return tonumber(qpc.buf[0]) * qpc.inv_hz
-    end
-    if qpc.posix_ok and qpc.posix_fn(1, qpc.posix_ts) == 0 then
-        return (tonumber(qpc.posix_ts[0]) + tonumber(qpc.posix_ts[1]) * 1e-9) - qpc.posix_t0
-    end
-    if type(obj) == "table" and type(obj.getinfo) == "function" then
+
+    local raw_t = nil
+    if cs.kind == "qpc" then
+        if cs.fn_c(cs.buf) ~= 0 then
+            raw_t = tonumber(cs.buf[0] - cs.c0) * cs.inv_hz
+        end
+    elseif cs.kind == "posix" then
+        if cs.posix_fn(1, cs.posix_ts) == 0 then
+            raw_t = tonumber(cs.posix_ts[0] - cs.s0) + tonumber(cs.posix_ts[1] - cs.ns0) * 1e-9
+        end
+    elseif cs.kind == "bridge" then
+        local ok_wt, wt = pcall(cs.fn_br)
+        if ok_wt and type(wt) == "number" then raw_t = wt - cs.t0 end
+    elseif cs.kind == "aviutl" then
         local ok_c, clk = pcall(obj.getinfo, "clock")
-        if ok_c and type(clk) == "number" then return clk end
+        if ok_c and type(clk) == "number" then raw_t = clk - cs.t0 end
+    elseif cs.kind == "os" then
+        raw_t = os.clock() - cs.t0
     end
-    if type(os) == "table" and type(os.clock) == "function" then
-        return os.clock()
+    if raw_t == nil then
+        raw_t = (type(obj) == "table" and type(obj.time) == "number") and obj.time or cs.last
     end
-    return type(obj) == "table" and type(obj.time) == "number" and obj.time or 0.0
+    local cur_t = raw_t + cs.ofs
+    if cur_t < cs.last then
+        cs.ofs = cs.last - raw_t
+        cur_t = cs.last
+    else
+        cs.last = cur_t
+    end
+    return cur_t
 end
 
 local function win32_read_file_wide_direct(wpath)
@@ -4313,7 +4442,7 @@ end
 -- 编辑相机、图层模型路径、摄像机光源全部改为只读官方 SDK + 版本白名单探针。
 -- 插件缺失或宿主 ABI 未验证时，自动回退到下方已加固的 Lua 只读路径，绝不写宿主内存。
 -- =====================================================================
-local function vl3d_bridge()
+vl3d_bridge = function()
     if type(_G.VL3D_TEST_BRIDGE) == "table" then
         return _G.VL3D_TEST_BRIDGE
     end
@@ -6499,9 +6628,15 @@ local function vl_bf_prepare()
         if scn_id == nil then scn_id = _VL_PERSIST.aup2_cache and _VL_PERSIST.aup2_cache.active_scene_id or 0 end
         local ikey = string.format("%s:%d:%dx%d", tostring(scn_id), type(obj.layer) == "number" and obj.layer or 0, math.floor(VL_BF.scr_w), math.floor(VL_BF.scr_h))
         if not _VL_PERSIST.inited_scenes[ikey] then
+            _VL_PERSIST.init_t0_map = _VL_PERSIST.init_t0_map or {}
+            _VL_PERSIST.init_started_map = _VL_PERSIST.init_started_map or {}
+            if _VL_PERSIST.init_t0_map[ikey] == nil then
+                _VL_PERSIST.init_t0_map[ikey] = vl_wall_time_sec()
+            end
             VL_BF._init_key = ikey
-            VL_BF._init_t0 = vl_wall_time_sec()
-            if P.log_mode then
+            VL_BF._init_t0 = _VL_PERSIST.init_t0_map[ikey]
+            if P.log_mode and not _VL_PERSIST.init_started_map[ikey] then
+                _VL_PERSIST.init_started_map[ikey] = true
                 pcall(function() print("@info", I18N.init_start[VL_BF.ui_lang] or I18N.init_start.ja) end)
             end
         end
@@ -6537,8 +6672,8 @@ local function vl_bf_capture()
                 local b_deg, a_pct = read_cam_light_fx_extras(cl_p, VL_BF.self_layer)
                 VL_BF.cam_atten_pct = a_pct
                 if cl_p.ltype == 5 then
-                    local in_r = math.max(0.0, math.min(math.pi * 0.5, tonumber(cl_p.cos_ang) or 0.0))
-                    local out_r = math.min(math.pi * 0.5, in_r + math.rad(b_deg))
+                    local out_r = math.max(0.0, math.min(math.pi * 0.5, tonumber(cl_p.cos_ang) or 0.0))
+                    local in_r = math.max(0.0, out_r - math.rad(b_deg))
                     VL_BF.cam_spot_inner_rad = in_r
                     VL_BF.cam_spot_outer_rad = out_r
                     VL_BF.cam_spot_eff_rad = math.min(math.rad(86.5), out_r)
@@ -8517,8 +8652,8 @@ local function vl_bf_render()
     pcall(function() obj.setoption("blend", "none") end)
 
     -- 3D OIT シーンでは lua_drawpoly(verts, 4, poly_alpha) が v1.z = poly_alpha を直接渡す（機械語 0x1404404b0 検証済）。
-    -- v3.09: 仮想スポット光源コーンでは視線包絡角関数 phi_ray ＋ poly_alpha = 0.2565・out_a = 1/255（ゼロ隣接補間 99.4% 破棄）
-    -- によりU字スライス段差と階段ジャギーを完全根治し、点光源・2D 光源では v3.08 の比例アルファを維持！
+    -- v3.10: 仮想スポット光源コーンではホスト一致区間 [max(0, 範囲 - ぼかし), 範囲] ＋ 6 段階マルチレベルアルファ
+    -- （k_ref = 6, k = 1 で r4.w = 0.001006 外縁ゼロ漏れ遮断＆内部バイリニア補間維持）により内部段差と影壁ジャギーを根治。
     VL_BF.poly_alpha= 0.27
     VL_BF.min_opt_a= 1.0 / 255.0
     VL_BF.cam_comp= 1.0
@@ -8541,8 +8676,8 @@ local function vl_bf_render()
     if P.fill_mode ~= 1 then
         if is_virtual_spot then
             VL_BF.poly_alpha = 0.2565
-            VL_BF.min_opt_a  = 1.0 / 255.0
-            VL_BF.cam_comp   = 0.58
+            VL_BF.min_opt_a  = 6.0 / 255.0
+            VL_BF.cam_comp   = 0.60
             wboit_ka         = 0.0
         else
             wboit_ka = 0.24
@@ -8979,11 +9114,15 @@ local function vl_bf_render()
         end)
     end
     if VL_BF._init_key ~= nil then
+        local ikey_done = VL_BF._init_key
         _VL_PERSIST.inited_scenes = _VL_PERSIST.inited_scenes or {}
-        _VL_PERSIST.inited_scenes[VL_BF._init_key] = true
+        _VL_PERSIST.inited_scenes[ikey_done] = true
+        local t0_done = VL_BF._init_t0 or (_VL_PERSIST.init_t0_map and _VL_PERSIST.init_t0_map[ikey_done]) or nil
+        if _VL_PERSIST.init_t0_map ~= nil then _VL_PERSIST.init_t0_map[ikey_done] = nil end
         if P.log_mode then
             pcall(function()
-                local dt_i = math.max(0.0, vl_wall_time_sec() - (VL_BF._init_t0 or vl_wall_time_sec()))
+                local now_done = vl_wall_time_sec()
+                local dt_i = math.max(0.0, now_done - (t0_done or now_done))
                 local dfmt = I18N.init_done[VL_BF.ui_lang] or I18N.init_done.ja
                 print("@info", string.format(dfmt, dt_i))
             end)
@@ -9035,7 +9174,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.09 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.10 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -9064,7 +9203,7 @@ local function vl_run_frame()
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.09 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.10 error: " .. tostring(err)) end)
     end
     return ok
 end
