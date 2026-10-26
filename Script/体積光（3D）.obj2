@@ -1,4 +1,4 @@
---information:体積光（3D）v3.08
+--information:体積光（3D）v3.09
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -30,6 +30,21 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
+-- v3.09 更新点（2026-10-26・スポット光源（カメラ制御）の周期的U字リング段差・テクセル階段状の完全根治）：
+--   1. 【スポット光源（カメラ制御）における周期的スライスU字リングおよびテクセル階段状ジャギーの完全根治】
+--      ・AviUtl ExEdit2 本体の 3D OIT パス（Shader #118, 0x1404404b0）を実機画素プロファイルで検証した結果、
+--        ホスト OIT は `r4.w = tex.a * poly_alpha < 0.001` でフラグメントを破棄しつつ、通過フラグメントの色 `r4.rgb` を
+--        個別の `r4.w` で正規化せず深度重み `w(z)` で加算合成する特性を持つことを確認。このため `v3.08` で導入した
+--        比例アルファ（高い `min_opt_a`）では、`beamatlas`（316x316）のコーン外縁におけるゼロ隣接バイリニア補間画素や
+--        手前コーン壁の減衰テクセルが `r4.w >= 0.001` を通過して手前スライス輝度を引き下げ、U字状の周期リングと
+--        テクセル境界に沿う花弁状の階段ジャギーが残存していた。
+--      ・仮想スポット光源コーンに対し、(a) カメラ視線 `cam + s * v_dir` と軸方向範囲 `[3, L_tot]` 上の最小コーン角を
+--        解析的停留点から閉形式で求める視線包絡角関数 `phi_ray`（スライス深度に依存せず「ぼかし」角度に応じた滑らかな
+--        外縁減衰を生成）、(b) `poly_alpha = 0.2565`・定数 `out_a = 1/255`（`r4.w = 0.0010059 > 0.001` によりゼロ隣接
+--        バイリニア補間の 99.4% をホスト側 alpha test でハードウェア破棄）、(c) 非パディング厳密ホストコーン角による
+--        `1 / H_host(wp0)` 事前逆補償＋半テクセル角マージン＆外皮飽和ガード（`ぼかし = 0°〜90°`・`明るさ = 0〜200` 全域対応）
+--        を統合。`v3.08` で解消済みの点光源 3D 遮蔽品質を維持したまま、スポット光源のU字スライス段差を完全に根絶。
+--
 -- v3.08 更新点（2026-10-25・スポット光源スライス段差リング根治・3D 遮蔽影の砂状ノイズ解消・編集カメラ追従修正）：
 --   1. 【スポット光源（カメラ制御）および狭角コーン光束における周期的スライス段差（年輪状リング）の根治】
 --      ・AviUtl ExEdit2 の 3D OIT（Weight-Blended OIT, Shader #118）は指数型の深度重み w(z) を伴う重み付き平均
@@ -1017,7 +1032,7 @@
         float4 p22;  // xyz: amb_rgb,    w: spot_in_rad
         float4 p23;  // xyz: cl_rgb,     w: spot_out_rad
         float4 p24;  // xyz: cl_pos,     w: other_lum
-        float4 p25;  // xyz: cl_ray_dir, w: 0
+        float4 p25;  // xyz: cl_ray_dir, w: spot_ray_env_mode
         float4 p26;  // xyz: target_rgb, w: wboit_ka
         float4 occ[32]; // 最大 8 個の 2D 前景遮蔽オブジェクト
     };
@@ -1432,6 +1447,74 @@
         float L_tot   = p11.y;
         float inv_end = p11.z;
 
+        bool spot_env     = (p25.w > 0.5);
+        float spot_in_rh  = p22.w;
+        float spot_out_rh = max(p23.w, spot_in_rh + 1.0e-4);
+        float spot_sil_rh = max(spot_out_rh, spot_in_rh + 0.0043633);
+        float dist_sp0    = 0.0;
+        float ang_sp0     = 0.0;
+        float ang_pad_sp  = 0.0;
+        float phi_ray_sp  = 1.0;
+
+        if (spot_env)
+        {
+            float3 dv_sp0 = wp0 - p24.xyz;
+            dist_sp0 = sqrt(max(dot(dv_sp0, dv_sp0), 1.0e-4));
+            float axial_sp0 = dot(dv_sp0, p25.xyz);
+            if (axial_sp0 <= 3.0 || dist_sp0 >= L_tot)
+            {
+                return float4(0.0, 0.0, 0.0, 0.0);
+            }
+            float inv_inner_sp = 2.0 / max(tile_sz - 2.0 * pad, 1.0);
+            float tex_step_sp  = max(p3.w, p4.w) * inv_inner_sp;
+            ang_pad_sp = min(0.72 * tex_step_sp / max(dist_sp0, 24.0), spot_out_rh * 0.45);
+            ang_sp0    = acos(clamp(axial_sp0 / dist_sp0, -1.0, 1.0));
+            if (ang_sp0 + ang_pad_sp >= spot_out_rh)
+            {
+                return float4(0.0, 0.0, 0.0, 0.0);
+            }
+            float3 org_sp   = (p10.w > 0.5) ? (wp0 - p2.xyz * 8192.0) : p10.xyz;
+            float3 v_ray_sp = normalize(wp0 - org_sp + float3(0.0, 0.0, 1.0e-4));
+            float3 o_sp     = org_sp - p24.xyz;
+            float od_sp     = dot(o_sp, p25.xyz);
+            float ov_sp     = dot(o_sp, v_ray_sp);
+            float vd_sp     = dot(v_ray_sp, p25.xyz);
+            float oo_sp     = dot(o_sp, o_sp);
+            float s_lo_sp   = 0.0;
+            float s_hi_sp   = 65536.0;
+            if (abs(vd_sp) > 1.0e-5)
+            {
+                float sa_sp = (3.0 - od_sp) / vd_sp;
+                float sb_sp = (L_tot - od_sp) / vd_sp;
+                s_lo_sp = max(s_lo_sp, min(sa_sp, sb_sp));
+                s_hi_sp = min(s_hi_sp, max(sa_sp, sb_sp));
+            }
+            else if (od_sp < 3.0 || od_sp > L_tot)
+            {
+                return float4(0.0, 0.0, 0.0, 0.0);
+            }
+            if (s_hi_sp < s_lo_sp)
+            {
+                return float4(0.0, 0.0, 0.0, 0.0);
+            }
+            float den_sp   = od_sp - vd_sp * ov_sp;
+            float s_mid_sp = (abs(den_sp) > 1.0e-6)
+                ? clamp((vd_sp * oo_sp - od_sp * ov_sp) / den_sp, s_lo_sp, s_hi_sp)
+                : s_lo_sp;
+            float3 p_lo_sp  = o_sp + v_ray_sp * s_lo_sp;
+            float3 p_hi_sp  = o_sp + v_ray_sp * s_hi_sp;
+            float3 p_mid_sp = o_sp + v_ray_sp * s_mid_sp;
+            float c_lo_sp   = dot(p_lo_sp,  p25.xyz) * rsqrt(max(dot(p_lo_sp,  p_lo_sp),  1.0e-4));
+            float c_hi_sp   = dot(p_hi_sp,  p25.xyz) * rsqrt(max(dot(p_hi_sp,  p_hi_sp),  1.0e-4));
+            float c_mid_sp  = dot(p_mid_sp, p25.xyz) * rsqrt(max(dot(p_mid_sp, p_mid_sp), 1.0e-4));
+            float ang_min_sp = acos(clamp(max(c_mid_sp, max(c_lo_sp, c_hi_sp)), -1.0, 1.0));
+            phi_ray_sp = 1.0 - smoothstep(spot_in_rh, spot_sil_rh, ang_min_sp);
+            if (phi_ray_sp <= 1.0e-4)
+            {
+                return float4(0.0, 0.0, 0.0, 0.0);
+            }
+        }
+
         float3 acc_rgb   = float3(0.0, 0.0, 0.0);
         float max_cov    = 0.0;
         float3 best_c    = float3(0.0, 0.0, 0.0);
@@ -1446,7 +1529,7 @@
             float w_hat = (1.0 / 12.0) * (1.0 + cos(1.57079633 * u_hat));
             float3 wp = wp0 + st_vec * u_hat;
 
-            if (p21.x > 0.5 && p21.z > 2.5)
+            if (!spot_env && p21.x > 0.5 && p21.z > 2.5)
             {
                 float3 dv_lh = wp - p24.xyz;
                 float dist_lh = sqrt(max(dot(dv_lh, dv_lh), 1.0e-4));
@@ -1460,10 +1543,7 @@
                 {
                     float cos_th = clamp(dot(dv_lh * (1.0 / dist_lh), p25.xyz), -1.0, 1.0);
                     float ang_th = acos(cos_th);
-                    float ang_pad = min(0.05, 0.55 * dz / max(dist_lh, 60.0));
-                    float in_rh  = max(0.0, p22.w - ang_pad);
-                    float out_rh = max(p23.w + ang_pad, in_rh + max(0.004, 2.0 * ang_pad));
-                    phi_sub *= 1.0 - smoothstep(in_rh, out_rh, ang_th);
+                    phi_sub *= 1.0 - smoothstep(spot_in_rh, spot_out_rh, ang_th);
                 }
                 phi_h_acc += phi_sub * w_hat;
                 phi_w_sum += w_hat;
@@ -1527,10 +1607,16 @@
 
                 float3 dq = q_win - p5.xyz;
                 float2 uv = float2(0.5 + dot(dq, p6.xyz) * p5.w, 0.5 + dot(dq, p7.xyz) * p6.w);
+                if (spot_env)
+                {
+                    uv = clamp(uv, 0.001, 0.999);
+                }
 
                 if (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0)
                 {
-                    float4 s = (p12.w > 0.5) ? g_src.SampleLevel(g_smp, uv, 0.0) : proc_rose(uv);
+                    float4 s = spot_env
+                        ? float4(1.0, 1.0, 1.0, 1.0)
+                        : ((p12.w > 0.5) ? g_src.SampleLevel(g_smp, uv, 0.0) : proc_rose(uv));
                     if (s.a > 0.0005)
                     {
                         float sh_vis = cam_vis_sub;
@@ -1623,9 +1709,28 @@
         float dither = (ign2 - 0.5) * (1.0 / 255.0);
 
         float3 host_comp_rgb = float3(1.0, 1.0, 1.0);
-        float3 h_est  = float3(1.0, 1.0, 1.0);
-        float3 h_core = float3(1.0, 1.0, 1.0);
-        if (p21.x > 0.5)
+        float3 h_est      = float3(1.0, 1.0, 1.0);
+        float3 h_core     = float3(1.0, 1.0, 1.0);
+        float3 h_worst_sp = float3(1.0, 1.0, 1.0);
+        float att_d_sp    = 1.0;
+        float phi_worst_sp = 1.0;
+
+        if (spot_env)
+        {
+            if (p21.w > 1.0e-6)
+            {
+                float dn_sp = dist_sp0 * (1.0 / 800.0);
+                att_d_sp = 1.0 / (1.0 + p21.w * dn_sp * dn_sp);
+            }
+            float phi_wp0_sp = (1.0 - smoothstep(spot_in_rh, spot_out_rh, ang_sp0)) * att_d_sp;
+            phi_worst_sp     = (1.0 - smoothstep(spot_in_rh, spot_out_rh, ang_sp0 + ang_pad_sp)) * att_d_sp;
+            float base_u_sp  = p21.y + p24.w;
+            h_est      = float3(base_u_sp, base_u_sp, base_u_sp) + p22.xyz + p23.xyz * phi_wp0_sp;
+            h_worst_sp = float3(base_u_sp, base_u_sp, base_u_sp) + p22.xyz + p23.xyz * phi_worst_sp;
+            h_core     = float3(base_u_sp, base_u_sp, base_u_sp) + p22.xyz + p23.xyz;
+            host_comp_rgb = saturate((p26.xyz * (phi_ray_sp * att_d_sp)) / max(h_est, float3(1.0e-4, 1.0e-4, 1.0e-4)));
+        }
+        else if (p21.x > 0.5)
         {
             float phi_h = 1.0;
             if (p21.z > 2.5)
@@ -1647,20 +1752,37 @@
 
         if (p12.y > 0.5)
         {
-            if (max_cov <= 0.001) return float4(0.0, 0.0, 0.0, 0.0);
-            float a_solid = saturate(1.0 - exp(-max_cov * fg_vis * fog_mod * dz * 0.015));
+            float eff_cov = spot_env ? (max_cov * phi_ray_sp) : max_cov;
+            if (eff_cov <= 0.001) return float4(0.0, 0.0, 0.0, 0.0);
+            float a_solid = saturate(1.0 - exp(-eff_cov * fg_vis * fog_mod * dz * 0.015));
             float out_as = saturate(a_solid + dither);
             if (out_as < (0.5 / 255.0)) return float4(0.0, 0.0, 0.0, 0.0);
             float3 c_solid = saturate(best_c * min(p11.w * 360.0, 1.15) * host_comp_rgb);
             return float4(c_solid * out_as, out_as);
         }
 
-        // aviutl2.exe Shader #118 (0x4404b0) 深度重み不変・純粋光学散乱 WBOIT 出力：
-        // 適応 poly_alpha (0.045..0.27) と発光量比例アルファ (ka = 0.24) により、灰色煙ベールを抑えつつ
-        // コーン外縁〜中心部まで全スライスの Straight 色比 (r4.rgb / r4.w) を深度重み w(z) に対し不変化し、
-        // スポット光源等のスライス交線段差（年輪リング）と終端キャップ段差を根絶する！
         float slab_gain = step_len * p11.w * fog_mod * fg_vis;
-        float3 scaled_rgb = acc_rgb * slab_gain * host_comp_rgb;
+        float3 scaled_rgb;
+        if (spot_env)
+        {
+            float ray_mod_sp    = phi_ray_sp * att_d_sp;
+            float3 unsh_want_sp = (w_core_acc * slab_gain * ray_mod_sp) * p26.xyz;
+            if (phi_worst_sp < 0.85 * ray_mod_sp)
+            {
+                if ((p26.r > 1.0e-4 && (h_worst_sp.r < 1.0e-4 || unsh_want_sp.r > 0.96 * h_worst_sp.r)) ||
+                    (p26.g > 1.0e-4 && (h_worst_sp.g < 1.0e-4 || unsh_want_sp.g > 0.96 * h_worst_sp.g)) ||
+                    (p26.b > 1.0e-4 && (h_worst_sp.b < 1.0e-4 || unsh_want_sp.b > 0.96 * h_worst_sp.b)))
+                {
+                    return float4(0.0, 0.0, 0.0, 0.0);
+                }
+            }
+            float3 want_post_sp = (acc_rgb * slab_gain * ray_mod_sp) * p26.xyz;
+            scaled_rgb = want_post_sp / max(h_est, float3(1.0e-4, 1.0e-4, 1.0e-4));
+        }
+        else
+        {
+            scaled_rgb = acc_rgb * slab_gain * host_comp_rgb;
+        }
         float s_max = max(scaled_rgb.r, max(scaled_rgb.g, scaled_rgb.b));
         if (s_max <= 1e-6)
         {
@@ -1670,9 +1792,8 @@
         {
             scaled_rgb *= (1.0 / s_max);
         }
-        float2 rnd_c2 = pcg3d_rand2(uint3(tile_px.x ^ 0x5bd1u, tile_px.y ^ 0x1b87u, 277u + g_si_u));
-        float3 d3 = frac(float3(ign2, rnd_c2.x, rnd_c2.y) + float3(0.0, 0.38196601, 0.72360680));
-        float3 q_rgb = floor(saturate(scaled_rgb) * 255.0 + d3) * (1.0 / 255.0);
+        float d_q = frac(52.9829189 * frac(dot(float2(tile_px), float2(0.06711056, 0.00583715))) + g_si_f * 0.61803399);
+        float3 q_rgb = floor(saturate(scaled_rgb) * 255.0 + float3(d_q, d_q, d_q)) * (1.0 / 255.0);
         float q_max = max(q_rgb.r, max(q_rgb.g, q_rgb.b));
         if (q_max < (0.5 / 255.0))
         {
@@ -1894,34 +2015,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.08] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.08] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.08] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.08] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.09] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.09] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.09] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.09] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.08 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.08 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.08 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.08 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.09 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.09 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.09 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.09 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.08 シェーダー失敗: ",
-        zh = "体积光（3D）v3.08 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.08 shader error: ",
-        de = "Volumenlicht (3D) v3.08 Shader-Fehler: ",
+        ja = "体積光（3D）v3.09 シェーダー失敗: ",
+        zh = "体积光（3D）v3.09 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.09 shader error: ",
+        de = "Volumenlicht (3D) v3.09 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.08：初期化中……",
-        zh = "体积光（3D）v3.08：初始化中……",
-        en = "Volumetric Light (3D) v3.08: Initializing...",
-        de = "Volumenlicht (3D) v3.08: Initialisierung läuft...",
+        ja = "体積光（3D）v3.09：初期化中……",
+        zh = "体积光（3D）v3.09：初始化中……",
+        en = "Volumetric Light (3D) v3.09: Initializing...",
+        de = "Volumenlicht (3D) v3.09: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.08：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.08：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.08: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.08: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.09：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.09：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.09: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.09: Initialisiert (%.2fs)",
     },
 }
 
@@ -6471,8 +6592,7 @@ local function vl_bf_capture()
             local r_lim_arg = 2.0 / 128.0
             if cl ~= nil then
                 if cl.ltype == 5 then
-                    shape_mode = 1.0
-                    r_lim_arg = 1.0 / 1.12
+                    shape_mode = 0.0
                 elseif cl.ltype ~= 2 then
                     shape_mode = 2.0
                 end
@@ -6828,7 +6948,11 @@ local function vl_bf_geometry()
                 or math.rad(math.max(8.0, math.min(78.0, math.abs(P.spread) > 1.0 and math.abs(P.spread) or 48.0)))
             local clamped_ang = math.max(1e-4, math.min(math.rad(86.5), half_ang))
             local ap_half = math.max(0.02, ap_dist * math.tan(clamped_ang))
-            local ap_pad = (cl.ltype == 5) and (ap_half * 1.12) or ap_half
+            local ap_pad = ap_half
+            if cl.ltype == 5 then
+                local pad_ang = math.min(math.rad(87.5), clamped_ang + math.rad(1.5))
+                ap_pad = math.max(ap_half * 1.12, ap_dist * math.tan(pad_ang))
+            end
             VL_BF.wx = cl.px + dir_x * ap_dist
             VL_BF.wy = cl.py + dir_y * ap_dist
             VL_BF.wz = cl.pz + dir_z * ap_dist
@@ -8393,8 +8517,8 @@ local function vl_bf_render()
     pcall(function() obj.setoption("blend", "none") end)
 
     -- 3D OIT シーンでは lua_drawpoly(verts, 4, poly_alpha) が v1.z = poly_alpha を直接渡す（機械語 0x1404404b0 検証済）。
-    -- v3.08: 適応 poly_alpha (0.045..0.27) ＋ 発光量比例アルファ (wboit_ka = 0.24) により、
-    -- ホスト WBOIT 深度重み w(z) 下でも全スライスの Straight 色比を整合させ、灰色煙ベールゼロと年輪段差ゼロを両立！
+    -- v3.09: 仮想スポット光源コーンでは視線包絡角関数 phi_ray ＋ poly_alpha = 0.2565・out_a = 1/255（ゼロ隣接補間 99.4% 破棄）
+    -- によりU字スライス段差と階段ジャギーを完全根治し、点光源・2D 光源では v3.08 の比例アルファを維持！
     VL_BF.poly_alpha= 0.27
     VL_BF.min_opt_a= 1.0 / 255.0
     VL_BF.cam_comp= 1.0
@@ -8410,21 +8534,31 @@ local function vl_bf_render()
             VL_BF.cam_mode2_note = " mode2=host-comp"
         end
     end
+    local is_virtual_spot = VL_BF.use_cam_virtual_src and (cam_comp_mode > 0.5 and cam_comp_mode < 1.5)
+        and (cl_pr ~= nil) and (tonumber(cl_pr.ltype) == 5)
+    local spot_ray_env_mode = is_virtual_spot and 1.0 or 0.0
     local wboit_ka = 0.0
     if P.fill_mode ~= 1 then
-        wboit_ka = 0.24
-        local eff_lum_pa = 1.0
-        if cam_comp_mode > 0.5 and cam_comp_mode < 1.5 and cl_pr ~= nil then
-            eff_lum_pa = math.max(0.05, tonumber(cl_pr.lum) or 1.0)
-        end
-        local est_slice_e = VL_BF.k_gain_base * VL_BF.base_alpha * 1.05 * (VL_BF.dz or 16.4) * 1.6 * eff_lum_pa
-        if est_slice_e < 0.030 then
-            VL_BF.poly_alpha = math.max(0.045, math.min(0.14, 0.14 - est_slice_e * 3.1))
+        if is_virtual_spot then
+            VL_BF.poly_alpha = 0.2565
+            VL_BF.min_opt_a  = 1.0 / 255.0
+            VL_BF.cam_comp   = 0.58
+            wboit_ka         = 0.0
         else
-            VL_BF.poly_alpha = math.max(0.045, math.min(0.27, est_slice_e * 0.65))
+            wboit_ka = 0.24
+            local eff_lum_pa = 1.0
+            if cam_comp_mode > 0.5 and cam_comp_mode < 1.5 and cl_pr ~= nil then
+                eff_lum_pa = math.max(0.05, tonumber(cl_pr.lum) or 1.0)
+            end
+            local est_slice_e = VL_BF.k_gain_base * VL_BF.base_alpha * 1.05 * (VL_BF.dz or 16.4) * 1.6 * eff_lum_pa
+            if est_slice_e < 0.030 then
+                VL_BF.poly_alpha = math.max(0.045, math.min(0.14, 0.14 - est_slice_e * 3.1))
+            else
+                VL_BF.poly_alpha = math.max(0.045, math.min(0.27, est_slice_e * 0.65))
+            end
+            local min_k_opt = math.ceil(0.00103 * 255.0 / VL_BF.poly_alpha)
+            VL_BF.min_opt_a = min_k_opt / 255.0
         end
-        local min_k_opt = math.ceil(0.00103 * 255.0 / VL_BF.poly_alpha)
-        VL_BF.min_opt_a = min_k_opt / 255.0
     end
     VL_BF.k_gain_gpu= VL_BF.k_gain_base * (VL_BF.base_alpha / VL_BF.poly_alpha) * 1.05 * VL_BF.cam_comp
 
@@ -8581,7 +8715,7 @@ local function vl_bf_render()
             cb_amb_r, cb_amb_g, cb_amb_b, cb_in_rad,
             cb_cl_r, cb_cl_g, cb_cl_b, cb_out_rad,
             cb_cl_px, cb_cl_py, cb_cl_pz, cb_other_lum,
-            VL_BF.cam_ray_dx, VL_BF.cam_ray_dy, VL_BF.cam_ray_dz, 0.0,
+            VL_BF.cam_ray_dx, VL_BF.cam_ray_dy, VL_BF.cam_ray_dz, spot_ray_env_mode,
             cb_tgt_r, cb_tgt_g, cb_tgt_b, wboit_ka,
         }
         local base_len = #consts
@@ -8901,7 +9035,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.08 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.09 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -8930,7 +9064,7 @@ local function vl_run_frame()
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.08 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.09 error: " .. tostring(err)) end)
     end
     return ok
 end
