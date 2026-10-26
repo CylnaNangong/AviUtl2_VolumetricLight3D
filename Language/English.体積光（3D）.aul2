@@ -1,11 +1,11 @@
 ;===============================================================
-; Target: Volumetric Light (3D) v3.11 (体積光（3D）.obj2)
+; Target: Volumetric Light (3D) v3.12 (体積光（3D）.obj2)
 ; Language: English
 ; Place this file in  Language\  (e.g. C:\ProgramData\aviutl2\Language\)
 ;===============================================================
 
 [Language]
-Information=Volumetric Light (3D) v3.11 English Language Pack
+Information=Volumetric Light (3D) v3.12 English Language Pack
 SubLanguage=English
 
 [Effect]
@@ -113,7 +113,7 @@ SubLanguage=English
 ログに出力=Log to Console
 
 [Tips.体積光（3D）]
-effect.name=3D volumetric light (god-ray) custom object (v3.11 for AviUtl2 v2.1.15+), featuring optional Foreground Blend (AutoBlendLight 3D integration). Paired with VL3DBridge.aux2 (v1.21) GPU hardware shadow rasterization and lock-free read bridge for 2D layers and 3D models (.obj / .vrm), 3D camera light sync, and natural edge-light blending.
+effect.name=3D volumetric light (god-ray) custom object (v3.12 for AviUtl2 v2.1.15+), featuring optional Foreground Blend (AutoBlendLight 3D integration). Paired with VL3DBridge.aux2 (v1.21) GPU hardware shadow rasterization and lock-free read bridge for 2D layers and 3D models (.obj / .vrm), 3D camera light sync, and natural edge-light blending.
 光源レイヤー=Select the layer number used as the light source (image, video, text, shape, or custom object; 0 = unselected, or emits directly from a Camera Control 3D light when Follow Camera Light is active).
 光の出方=Select beam geometry: Parallel, Radiate (expanding outward from a virtual 3D focal point), or Converge.
 光の中身=Volumetric renders soft atmospheric Tyndall rays; Flat Solid renders crisp stylized solid beams.
