@@ -6,7 +6,7 @@
 **THE REAL 3D Volumetric Light (God Rays / Crepuscular Rays / Light Shafts) Custom Object for AviUtl ExEdit2**  
 **With Built-in 3D-Linked Foreground Light Blending & Optional D3D11 CS GPU Acceleration**
 
-`体積光（3D）.obj2 v3.10` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`体積光（3D）.obj2 v3.11` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanese)](README_ja.md)** &nbsp;|&nbsp; **English** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
@@ -97,8 +97,8 @@
 ### 🚀 Method 1: Drag & Drop `.au2pkg.zip` onto the Preview Window (Recommended — Ready to Use!)
 
 1. Download the latest package from **GitHub Releases** (**do NOT unzip it**):
-   - **`VolumetricLight3D-v3.10.au2pkg.zip`** (Full Recommended Edition: core script + `VL3DBridge.aux2` GPU plugin + language packs)
-   - *Or `VolumetricLight3D-v3.10-ScriptOnly.au2pkg.zip` (Script-Only Edition: `.obj2` + language packs without native `.aux2`)*
+   - **`VolumetricLight3D-v3.11.au2pkg.zip`** (Full Recommended Edition: core script + `VL3DBridge.aux2` GPU plugin + language packs)
+   - *Or `VolumetricLight3D-v3.11-ScriptOnly.au2pkg.zip` (Script-Only Edition: `.obj2` + language packs without native `.aux2`)*
 2. Open AviUtl ExEdit2 and **drag & drop the `.au2pkg.zip` file directly onto the AviUtl2 preview window**, then confirm the installation dialog.
 3. If you installed the Full Edition with `VL3DBridge.aux2`, **restart AviUtl2 once** to load the native plugin & language packs (you can manage or uninstall the package anytime from AviUtl2's **Package Information** menu).
 
@@ -109,7 +109,7 @@ Copy **`Script`**, **`Plugin`** (recommended), and **`Language`** into your AviU
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── 体積光（3D）.obj2                  # [Required] Core custom object script (v3.10)
+│   └── 体積光（3D）.obj2                  # [Required] Core custom object script (v3.11)
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [Recommended] Lock-free read & D3D11 CS GPU shadow plugin (v1.21)
 │   └── VL3DBridge.ini                     # [Optional] Probe whitelist & GPU config (next to .aux2)
@@ -283,7 +283,7 @@ We disclose the exact scope of version-sensitivity transparently below:
 ## 8. Reporting Bugs
 
 - **[GitHub Issues](../../issues) is the best channel!** Please include:
-  - the script version (turn on 「画面に状態表示 / status overlay」 to show it in the top-left HUD, e.g. `v3.10`) and your AviUtl ExEdit2 version;
+  - the script version (turn on 「画面に状態表示 / status overlay」 to show it in the top-left HUD, e.g. `v3.11`) and your AviUtl ExEdit2 version;
   - steps to reproduce, a screenshot of your timeline layer layout, and of the visual glitch (**keep the HUD visible** — fields like `遮蔽=…` / `光源=…` are key clues!);
   - if the HUD occlusion tag shows `,opq` (mask nearly fully opaque — check that the occluder image has an alpha channel) or `L4*` (that layer fell back to raw image load), mention it too ^_^
 - **Discord community**: you can also join the Japanese AviUtl2 community server **「AviUtl2の情報が知りたいだろって‼」** ([invite link](https://discord.gg/8qzmGY5NgQ)) and ping **南宫若馨Cylna** (`@nangongerregtcylna`, the author) directly!
@@ -325,7 +325,7 @@ python3 packaging/build_au2pkg.py
 - **KEN-kun (ＫＥＮくん)** ([Official Website](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)) — Creator of AviUtl ExEdit2 and the official AviUtl2 Plugin SDK.
 
 #### AI Collaboration Credits
-- **Arena.ai Agent** — Co-designed and implemented the `v2.90`–`v3.10` architecture, `VL3DBridge.aux2` lock-free bridge & D3D11 ComputeShader rasterizer, `AutoBlendLight` 3D integration, and extreme-resolution cache hardening.
+- **Arena.ai Agent** — Co-designed and implemented the `v2.90`–`v3.11` architecture, `VL3DBridge.aux2` lock-free bridge & D3D11 ComputeShader rasterizer, `AutoBlendLight` 3D integration, and extreme-resolution cache hardening.
 - **ChatGPT** — Code review & bug hunting (spotted the trilinear grid-vertex coordinate bug in the 3D fog noise shader!).
 - **Gemini** — Authored the initial HLSL volumetric fog prototype (making the companion *Volumetric Fog (3D)* script a happy byproduct of this project XD).
 - **Microsoft Copilot** — Patiently helped investigate cache-overflow issues and organize notes when high-resolution images first broke `OpenGlow`.

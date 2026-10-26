@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Builds AviUtl ExEdit2 drag-and-drop installation packages (*.au2pkg.zip) for Volumetric Light (3D).
-  1. VolumetricLight3D-v3.10.au2pkg.zip             (Full Recommended Edition: Script + VL3DBridge Plugin + Languages)
-  2. VolumetricLight3D-v3.10-ScriptOnly.au2pkg.zip  (Pure Script Edition: Script + Languages, without native .aux2)
+  1. VolumetricLight3D-v3.11.au2pkg.zip             (Full Recommended Edition: Script + VL3DBridge Plugin + Languages)
+  2. VolumetricLight3D-v3.11-ScriptOnly.au2pkg.zip  (Pure Script Edition: Script + Languages, without native .aux2)
 """
 import argparse
 import zipfile
 from pathlib import Path
 
-VERSION = "v3.10"
+VERSION = "v3.11"
 
 
 def to_crlf(data: bytes) -> bytes:
