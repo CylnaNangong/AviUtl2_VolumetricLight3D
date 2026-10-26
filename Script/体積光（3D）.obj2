@@ -1,4 +1,4 @@
---information:体積光（3D）v3.12
+--information:体積光（3D）v3.13
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -30,6 +30,17 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
+-- v3.13 更新点（2026-10-26・3D カメラ近クリップ面による HUD 消失の修正 ＆ 動画出力時の HUD 自動非表示化）：
+--   1. 【3D カメラ／編集カメラ下で「画面に状態表示（HUD）」が表示されなくなっていた不具合の修正】
+--      ・原因特定：`v3.12` で HUD ビルボードを `z_cam = 32`（`k_hud = 32 / focal_d`）へ配置した際、AviUtl / ExEdit2 の 3D カメラ透視投影における
+--        近クリップ面 `zn`（`~102.4..128`）より手前に入ったため、D3D11 視錐台クリッピングによって HUD ポリゴン全体が破棄されていた。
+--      ・解決策：3D 透視カメラ下の投影距離を `z_hud = max(256, focal_d * 0.28125)`（標準 `focal_d = 1024` 時に `z_hud = 288`, `k_hud = 0.28125`；
+--        近距離の影付きスポット光源 `z_lp > 220` がある場合は `min(z_hud, max(192, z_lp * 0.72))` へ自動追従）に刷新。近クリップ面 `zn` より十分奥で
+--        確実に描画されつつ、シーン内の光源や 3D モデルより十分手前（スポット光円錐外）に位置するため HUD 自身の横縞影焼き込みもゼロを維持。
+--   2. 【動画出力（エンコード書き出し）時の HUD・診断テキスト自動非表示化（`obj.getoption("gui")` 連動）】
+--      ・公式 Lua 仕様 `obj.getoption("gui")`（編集プレビュー中は `true`、動画出力中は自動的に `false`）で状態 HUD および未選択案内テキストをゲート。
+--        「画面に状態表示」にチェックを入れたまま動画書き出しを行っても、最終出力映像には HUD 文字が一切焼き込まれないよう安全化。
+--
 -- v3.12 更新点（2026-10-26・スポット光源「X < 0 ＆ 影を付ける ON」時の横縞黒斑根治・斜めコーン内の馬蹄形輝度アーチ＆スペックル完全解消）：
 --   1. 【スポット光源（カメラ制御）で光源を左側（X < 0）へ配置し「影を付ける」を ON にした際の光束内横縞・黒斑の完全根治】
 --      ・原因特定：「画面に状態表示（HUD）」の 4 行テキストビルボードが 3D ワールド空間の `cam + f * focal_d - r * 420 - d * 400`
@@ -2305,34 +2316,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.12] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.12] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.12] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.12] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.13] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.13] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.13] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.13] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.12 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.12 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.12 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.12 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.13 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.13 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.13 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.13 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.12 シェーダー失敗: ",
-        zh = "体积光（3D）v3.12 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.12 shader error: ",
-        de = "Volumenlicht (3D) v3.12 Shader-Fehler: ",
+        ja = "体積光（3D）v3.13 シェーダー失敗: ",
+        zh = "体积光（3D）v3.13 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.13 shader error: ",
+        de = "Volumenlicht (3D) v3.13 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.12：初期化中……",
-        zh = "体积光（3D）v3.12：初始化中……",
-        en = "Volumetric Light (3D) v3.12: Initializing...",
-        de = "Volumenlicht (3D) v3.12: Initialisierung läuft...",
+        ja = "体積光（3D）v3.13：初期化中……",
+        zh = "体积光（3D）v3.13：初始化中……",
+        en = "Volumetric Light (3D) v3.13: Initializing...",
+        de = "Volumenlicht (3D) v3.13: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.12：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.12：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.12: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.12: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.13：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.13：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.13: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.13: Initialisiert (%.2fs)",
     },
 }
 
@@ -6768,23 +6779,6 @@ local function get_camera_basis()
     return cam_mode, has_exact_cam, cam_x, cam_y, cam_z, focal_d, f_x, f_y, f_z, r_x, r_y, r_z, d_x, d_y, d_z
 end
 
-local function draw_center_notice(msg, cam_x, cam_y, cam_z, focal_d, f_x, f_y, f_z, obj_x, obj_y, obj_z)
-    pcall(function()
-        local k_hud = ((VL_BF.cam_mode or 0) ~= 0 and VL_BF.has_exact_cam ~= false)
-            and math.min(1.0, 32.0 / math.max(focal_d, 32.0)) or 1.0
-        obj.setoption("drawtarget", "framebuffer")
-        obj.setoption("culling", 0)
-        obj.setoption("billboard", 3)
-        pcall(function() obj.setfont("", 34, 3, 0xffffff, 0x1f1f33) end)
-        obj.load("text", msg)
-        obj.ox = cam_x + f_x * (focal_d * k_hud) - obj_x
-        obj.oy = cam_y + f_y * (focal_d * k_hud) - obj_y
-        obj.oz = cam_z + f_z * (focal_d * k_hud) - obj_z
-        obj.draw(0, 0, 0, k_hud, 0.95)
-    end)
-    pcall(function() obj.setoption("draw_state", true) end)
-end
-
 -- "object" から直接読み取り、直後に cache:vl3d/pool を 1x1 解放（cache:vl3d/src 不要＝0 バイト！）
 local function scan_pool_from_object(lw, lh, thr_norm)
     local u0, u1, v0, v1 = 0.0, 1.0, 0.0, 1.0
@@ -6846,6 +6840,59 @@ end
 
 local VL_BF = {}
 local VL_BF_KEYS = { "base_alpha", "obj_x", "obj_y", "obj_z", "obj_rx", "obj_ry", "obj_rz", "zoom", "cam_mode", "has_exact_cam", "cam_x", "cam_y", "cam_z", "focal_d", "f_x", "f_y", "f_z", "r_x", "r_y", "r_z", "d_x", "d_y", "d_z", "ui_lang", "scr_w", "scr_h", "cam_light_info", "cam_spot_inner_rad", "cam_spot_outer_rad", "cam_spot_eff_rad", "cam_atten_pct", "cam_ap_dist", "cam_ray_dx", "cam_ray_dy", "cam_ray_dz", "ln", "self_layer", "use_cam_virtual_src", "thr_norm", "tex_loaded", "lw", "lh", "u0_s", "u1_s", "v0_s", "v1_s", "base_ratio", "found_thr", "water_geo", "exists", "wx", "wy", "wz", "wrz", "zx", "zy", "zz_l", "Wrx", "Wry", "Wrz", "Wdx", "Wdy", "Wdz", "Wnx", "Wny", "Wnz", "src_desc", "Hx", "Hy", "cx_sh", "cy_sh", "R_fixed", "L_char", "f_dec", "L_tot", "k_dec", "inv_end", "mode_kind", "sx_p", "sy_p", "sz_p", "u_wn", "dS_wn", "mid_x", "mid_y", "mid_z", "s_min", "s_max", "hw", "hh", "dz", "total_sl", "pts", "pi", "is_edit", "sf_x", "sf_y", "sf_z", "sr_x", "sr_y", "sr_z", "sd_x", "sd_y", "sd_z", "use_source", "lc_r", "lc_g", "lc_b", "mip_ready", "mip_dots", "peak_cache_dots", "occ_str_val", "occ_tex_name", "shmap_tex_name", "camocc_tex_name", "n_occ_active", "sh3d_active", "sh_res_val", "sh_soft_px", "camocc_active", "camocc_w", "camocc_h", "camocc_max_z", "uv_span_x", "uv_span_y", "occ_flat", "occ_desc", "need_manual_hint", "lower_2d_occ_layer", "occ3d_int", "mode_int", "want_2d_occ", "want_3d_occ", "need_3d_sh", "TILES_X", "ATLAS", "TILE", "PAD", "k_gain_base", "fog_amt", "f_scale", "wox", "woy", "woz", "poly_alpha", "min_opt_a", "cam_comp", "cam_mode2_note", "k_gain_gpu", "n_chunks", "ps_ok", "ps_err", "aw", "ah", "total_v", "peak_r", "peak_g", "peak_b", "peak_a", "rxw", "ryw", "rzw", "dxw", "dyw", "dzw", "cam_along_sf", "ch_first", "ch_last", "ch_step", "si_reverse", "any_occ_active", "eff_occ_mode", "peak_m", "interact_drag", "_init_key", "_init_t0" }
+
+-- v3.13: 公式 Lua 仕様 obj.getoption("gui")（編集プレビュー中 true / 動画出力中 false）で
+-- HUD・案内オーバーレイを一括ゲートし、書き出し映像へ診断テキストが焼き込まれるのを完全防止する。
+local function is_editor_gui_visible()
+    local gui_on = true
+    pcall(function()
+        local g = obj.getoption("gui")
+        if type(g) == "boolean" then gui_on = g end
+    end)
+    return gui_on
+end
+
+-- v3.13: 3D 透視カメラ下の HUD 縮小率。ホスト 3D カメラの近クリップ面 zn (~102.4..128) より十分奥
+-- (z_hud = 288 @ focal_d = 1024) を確保して HUD 消失を根治しつつ、シーン内光源・遮蔽物より手前を保つ。
+local function calc_hud_near_scale(focal_d)
+    if (VL_BF.cam_mode or 0) == 0 or VL_BF.has_exact_cam == false or VL_BF.is_edit then
+        return 1.0
+    end
+    local fd = math.max(tonumber(focal_d) or 1024.0, 1.0)
+    local z_hud = math.max(256.0, fd * 0.28125)
+    local cli_h = VL_BF.cam_light_info
+    local cl_h  = cli_h and cli_h.primary or nil
+    if cl_h ~= nil and (tonumber(cl_h.ltype) or 0) == 5 then
+        local lpx = (tonumber(cl_h.px) or 0.0) - (VL_BF.cam_x or 0.0)
+        local lpy = (tonumber(cl_h.py) or 0.0) - (VL_BF.cam_y or 0.0)
+        local lpz = (tonumber(cl_h.pz) or 0.0) - (VL_BF.cam_z or -1024.0)
+        local z_lp = lpx * (VL_BF.f_x or 0.0) + lpy * (VL_BF.f_y or 0.0) + lpz * (VL_BF.f_z or 1.0)
+        if z_lp > 220.0 then
+            z_hud = math.min(z_hud, math.max(192.0, z_lp * 0.72))
+        end
+    end
+    return math.min(1.0, z_hud / fd)
+end
+
+local function draw_center_notice(msg, cam_x, cam_y, cam_z, focal_d, f_x, f_y, f_z, obj_x, obj_y, obj_z)
+    if is_editor_gui_visible() then
+        pcall(function()
+            local k_hud = calc_hud_near_scale(focal_d)
+            obj.setoption("drawtarget", "framebuffer")
+            obj.setoption("culling", 0)
+            obj.setoption("sampler", "clamp")
+            obj.setoption("billboard", 3)
+            pcall(function() obj.setfont("", 34, 3, 0xffffff, 0x1f1f33) end)
+            obj.load("text", msg)
+            obj.ox = cam_x + f_x * (focal_d * k_hud) - obj_x
+            obj.oy = cam_y + f_y * (focal_d * k_hud) - obj_y
+            obj.oz = cam_z + f_z * (focal_d * k_hud) - obj_z
+            obj.draw(0, 0, 0, k_hud, 0.95)
+        end)
+    end
+    pcall(function() obj.setoption("draw_state", true) end)
+end
+
 local function vl_bf_reset()
     for vl_i = 1, #VL_BF_KEYS do
         VL_BF[VL_BF_KEYS[vl_i]] = nil
@@ -9326,7 +9373,8 @@ local function vl_bf_render()
     -- 全作業キャッシュをフレーム終了時に即座に 1x1 へ解放（OpenGlow r3 / サブシーンと完全共存！）
     release_work_caches()
 
-    if VL_BF.need_manual_hint or P.show_info then
+    local gui_hud_ok = is_editor_gui_visible()
+    if gui_hud_ok and (VL_BF.need_manual_hint or P.show_info) then
         pcall(function() obj.setoption("blend", "none") end)
     end
 
@@ -9337,11 +9385,13 @@ local function vl_bf_render()
         end)
     end
 
-    if VL_BF.need_manual_hint then
+    if gui_hud_ok and VL_BF.need_manual_hint then
         pcall(function()
             local omsg = I18N.occ_unselected[VL_BF.ui_lang] or I18N.occ_unselected.ja
-            local k_hud = ((VL_BF.cam_mode or 0) ~= 0 and not VL_BF.is_edit)
-                and math.min(1.0, 32.0 / math.max(VL_BF.focal_d, 32.0)) or 1.0
+            local k_hud = calc_hud_near_scale(VL_BF.focal_d)
+            obj.setoption("drawtarget", "framebuffer")
+            obj.setoption("culling", 0)
+            obj.setoption("sampler", "clamp")
             obj.setoption("billboard", 3)
             pcall(function() obj.setfont("", 28, 3, 0xffffff, 0x1f1f33) end)
             obj.load("text", omsg)
@@ -9354,7 +9404,7 @@ local function vl_bf_render()
 
     VL_BF.peak_m= VL_BF.peak_cache_dots / 1000000.0
 
-    if P.show_info then
+    if gui_hud_ok and P.show_info then
         pcall(function()
             local hud_fmt = I18N.hud[VL_BF.ui_lang] or I18N.hud.ja
             local extra_tip = ""
@@ -9368,10 +9418,12 @@ local function vl_bf_render()
                 VL_BF.ln, VL_BF.lw, VL_BF.lh, VL_BF.wx, VL_BF.wy, VL_BF.wz, VL_BF.u0_s, VL_BF.u1_s, VL_BF.v0_s, VL_BF.v1_s, VL_BF.base_ratio * 100.0,
                 P.length, VL_BF.L_tot, VL_BF.total_v, VL_BF.peak_r, VL_BF.peak_g, VL_BF.peak_b, VL_BF.peak_a, extra_tip
             )
-            -- v3.12: 3D 透視カメラ下では画面上の位置・文字サイズを完全維持したまま近傍面 z_cam = 32 (k_hud = 32 / focal_d) へ投影。
-            -- シーン内部 (z_cam = focal_d = 1024) に巨大テキストビルボードが浮遊してスポット光源のシャドウマップへ横縞影を落とす現象を完全根絶！
-            local k_hud = ((VL_BF.cam_mode or 0) ~= 0 and not VL_BF.is_edit)
-                and math.min(1.0, 32.0 / math.max(VL_BF.focal_d, 32.0)) or 1.0
+            -- v3.13: 動画出力中 (obj.getoption("gui") == false) は HUD を自動非表示。編集プレビュー中は 3D カメラの近クリップ面 zn (~102.4..128) より奥かつ
+            -- シーン内光源・遮蔽物より手前の z_hud (~288 @ focal_d=1024) へ等倍縮小投影し、HUD 消失とシャドウマップ横縞影の両方を完全根絶！
+            local k_hud = calc_hud_near_scale(VL_BF.focal_d)
+            obj.setoption("drawtarget", "framebuffer")
+            obj.setoption("culling", 0)
+            obj.setoption("sampler", "clamp")
             obj.setoption("billboard", 3)
             pcall(function() obj.setfont("", 18, 3, 0xffffff, 0x111122) end)
             obj.load("text", info_txt)
@@ -9464,7 +9516,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.12 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.13 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -9493,7 +9545,7 @@ local function vl_run_frame()
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.12 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.13 error: " .. tostring(err)) end)
     end
     return ok
 end

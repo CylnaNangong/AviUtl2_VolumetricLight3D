@@ -1,11 +1,11 @@
 ;===============================================================
-; Target: Volumenlicht (3D) v3.12 (体積光（3D）.obj2)
+; Target: Volumenlicht (3D) v3.13 (体積光（3D）.obj2)
 ; Language: Deutsch
 ; Place this file in  Language\  (e.g. C:\ProgramData\aviutl2\Language\)
 ;===============================================================
 
 [Language]
-Information=Volumenlicht (3D) v3.12 Sprachpaket Deutsch
+Information=Volumenlicht (3D) v3.13 Sprachpaket Deutsch
 SubLanguage=English
 
 [Effect]
@@ -113,7 +113,7 @@ SubLanguage=English
 ログに出力=In Konsole protokollieren
 
 [Tips.体積光（3D）]
-effect.name=3D-Volumenlicht-Objekt (v3.12 für AviUtl2 v2.1.15+) mit optionaler Vordergrund-Einblendung (AutoBlendLight-3D-Integration). Unterstützt mit VL3DBridge.aux2 (v1.21) GPU-beschleunigte 3D-Schattenrasterisierung für 2D-Ebenen und 3D-Modelle (.obj / .vrm), Kamera-3D-Lichtkopplung und natürliche Kantenlicht-Einblendung.
+effect.name=3D-Volumenlicht-Objekt (v3.13 für AviUtl2 v2.1.15+) mit optionaler Vordergrund-Einblendung (AutoBlendLight-3D-Integration). Unterstützt mit VL3DBridge.aux2 (v1.21) GPU-beschleunigte 3D-Schattenrasterisierung für 2D-Ebenen und 3D-Modelle (.obj / .vrm), Kamera-3D-Lichtkopplung und natürliche Kantenlicht-Einblendung.
 光源レイヤー=Ebenennummer der Lichtquelle wählen (Bild, Video, Text, Form oder eigenes Objekt; 0 = nicht gewählt, oder direkt über 3D-Kameralicht bei aktiver Kameralicht-Nachführung).
 光の出方=Strahlgeometrie wählen: Parallel, Ausstrahlend (von einem virtuellen 3D-Brennpunkt) oder Bündelnd.
 光の中身=Volumenlicht erzeugt weiche atmosphärische Lichtstrahlen; Flächig erzeugt klar begrenzte Vollstrahlen.
@@ -159,7 +159,7 @@ effect.name=3D-Volumenlicht-Objekt (v3.12 für AviUtl2 v2.1.15+) mit optionaler 
 自動動的精度=Skaliert die Scheibenanzahl (64-192) dynamisch je nach Strahltiefe.
 スライス数=Manuelle Scheibenanzahl bei deaktivierter Auto-Präzision (16-64).
 視点追従=Richtet Volumenscheiben automatisch zur 3D-Kamera und Editoransicht oder entlang der X-Achse aus.
-画面に状態表示=Zeigt oben links ein Echtzeit-Status-HUD an (GPU-Modus, Atlas, Scheiben, Abschattung, Cache).
+画面に状態表示=Zeigt oben links ein Echtzeit-Status-HUD an (GPU-Modus, Atlas, Scheiben, Abschattung, Cache; beim Videoexport automatisch ausgeblendet).
 ログに出力=Gibt den aktuellen Renderstatus im AviUtl2-Protokollfenster aus.
 
 [Tips]
@@ -208,5 +208,5 @@ effect.name=3D-Volumenlicht-Objekt (v3.12 für AviUtl2 v2.1.15+) mit optionaler 
 自動動的精度=Skaliert die Scheibenanzahl (64-192) dynamisch je nach Strahltiefe.
 スライス数=Manuelle Scheibenanzahl bei deaktivierter Auto-Präzision (16-64).
 視点追従=Richtet Volumenscheiben automatisch zur 3D-Kamera und Editoransicht oder entlang der X-Achse aus.
-画面に状態表示=Zeigt oben links ein Echtzeit-Status-HUD an (GPU-Modus, Atlas, Scheiben, Abschattung, Cache).
+画面に状態表示=Zeigt oben links ein Echtzeit-Status-HUD an (GPU-Modus, Atlas, Scheiben, Abschattung, Cache; beim Videoexport automatisch ausgeblendet).
 ログに出力=Gibt den aktuellen Renderstatus im AviUtl2-Protokollfenster aus.
