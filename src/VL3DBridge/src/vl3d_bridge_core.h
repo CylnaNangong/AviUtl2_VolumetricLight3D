@@ -85,10 +85,10 @@ struct CameraLightsResult {
     double peak_gain = 1.0;
     bool has_primary = false;
     int32_t ltype = 0;
-    double dx = 0.0, dy = 0.0, dz = 1.0;
+    double dx = 0.0, dy = 0.0, dz = 1.0;  // CameraLight64 f[1..3]: unit vector from scene/target toward light (L = -ray_dir)
     double r = 0.0, g = 0.0, b = 0.0, lum = 0.0;
     double px = 0.0, py = 0.0, pz = 0.0;
-    double cos_ang = 0.0;
+    double cos_ang = 0.0;                 // CameraLight64 f[15]: spotlight half-angle in radians (範囲 * pi/180), NOT cos(angle)
 };
 
 // =========================================================================

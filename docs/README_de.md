@@ -6,7 +6,7 @@
 **DAS ECHTE 3D-Volumenlicht (God Rays / Krepuskulare Strahlen / Lichtstrahlen) für AviUtl ExEdit2**  
 **Mit eingebauter 3D-Vordergrund-Einblendung & optionalem D3D11-CS-Hardware-Schattenbeschleuniger**
 
-`体積光（3D）.obj2 v3.06` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`体積光（3D）.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Sprache:** &nbsp; **[简体中文 (Chinesisch)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanisch)](README_ja.md)** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **Deutsch**
 
@@ -97,8 +97,8 @@
 ### 🚀 Methode 1: `.au2pkg.zip`-Paket per Drag & Drop auf das Vorschaufenster (empfohlen — sofort einsatzbereit!)
 
 1. Laden Sie das aktuelle Paket von **GitHub Releases** herunter (**nicht entpacken**!):
-   - **`VolumetricLight3D-v3.06.au2pkg.zip`** (Komplett-Edition: Kernskript + `VL3DBridge.aux2`-GPU-Plugin + Sprachpakete)
-   - *Oder `VolumetricLight3D-v3.06-ScriptOnly.au2pkg.zip` (Nur-Skript-Edition: `.obj2` + Sprachpakete ohne natives `.aux2`)*
+   - **`VolumetricLight3D-v3.13.au2pkg.zip`** (Komplett-Edition: Kernskript + `VL3DBridge.aux2`-GPU-Plugin + Sprachpakete)
+   - *Oder `VolumetricLight3D-v3.13-ScriptOnly.au2pkg.zip` (Nur-Skript-Edition: `.obj2` + Sprachpakete ohne natives `.aux2`)*
 2. Öffnen Sie AviUtl ExEdit2 und **ziehen Sie die `.au2pkg.zip`-Datei direkt per Drag & Drop in das AviUtl2-Vorschaufenster**; bestätigen Sie den Installationsdialog.
 3. Wenn die Komplett-Edition mit `VL3DBridge.aux2` installiert wurde, **starten Sie AviUtl2 einmal neu**, um das native Plugin zu laden (die Verwaltung/Entfernung des Pakets ist jederzeit im AviUtl2-Menü „Paketinformationen“ möglich).
 
@@ -109,7 +109,7 @@ Kopieren Sie die **`Script`**-, **`Plugin`**- (empfohlen) und **`Language`**-Ord
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── 体積光（3D）.obj2                  # [Erforderlich] Kern-Objekt-Skript (v3.06)
+│   └── 体積光（3D）.obj2                  # [Erforderlich] Kern-Objekt-Skript (v3.13)
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [Empfohlen] Lock-Free-Lesung & D3D11-CS-GPU-Schatten-Plugin (v1.21)
 │   └── VL3DBridge.ini                     # [Optional] Probe-Whitelist & GPU-Konfiguration (neben .aux2)
@@ -242,7 +242,7 @@ Alle **47 Parameter in 6 UI-Gruppen** (Deutsche UI-Labels aus `Deutsch.体積光
 | **Auto-Präzision** (`自動動的精度`) | `AN / AUS` | `AN` | Skaliert die Schaibenanzahl kontinuierlich zwischen `64` und `192` je nach Strahltiefe. |
 | **Scheibenanzahl** (`スライス数`) | `16 – 64` | `64` | *(Bei AUS)* Manuelle Schaibenanzahl. |
 | **Scheibenausrichtung** (`視点追従`) | `Auto (3D-Kamera & Editoransicht)` / `Seitlich (X-Achse)` | `Auto` | Richte die Schaibleinen senkrecht zur aktiven 3D-Kamera oder entlang der X-Achse aus. |
-| **Status-HUD anzeigen** (`画面に状態表示`) | `AN / AUS` | `AUS` | Zeigt ein Echtzeit-Diagnose-HUD oben links (GPU-Modus `,CS`, Atlasgröße, Abschattung, Cache-Nutzung) — **vor dem Export auf AUS stellen**. |
+| **Status-HUD anzeigen** (`画面に状態表示`) | `AN / AUS` | `AUS` | Zeigt ein Echtzeit-Diagnose-HUD oben links (GPU-Modus `,CS`, Atlasgröße, Abschattung, Cache-Nutzung) — **beim Videoexport automatisch ausgeblendet**. |
 | **In Konsole protokollieren** (`ログに出力`) | `AN / AUS` | `AN` | Gibt Statuszusammenfassungen ins AviUtl2-Protokollfenster aus. |
 
 </details>
@@ -283,7 +283,7 @@ Wir offenlegen transparent, welche Funktionen versionssensible sind:
 ## 8. Fehlerberichte
 
 - **[GitHub Issues](../../issues) ist der beste Kanal!** Bitte include:
-  - die Skriptversion (Aktivieren Sie 「画面に状態表示 / Status-HUD」, um sie oben links im HUD zu sehen, z. B. `v3.06`) und Ihre AviUtl ExEdit2-Version;
+  - die Skriptversion (Aktivieren Sie 「画面に状態表示 / Status-HUD」, um sie oben links im HUD zu sehen, z. B. `v3.13`) und Ihre AviUtl ExEdit2-Version;
   - Schritte zur Reproduktion, einen Screenshot Ihrer Zeitleisten-Ebenen-Ansicht und des visuellen Fehlers (**den HUD sichtbar lassen** — Felder wie `遮蔽=…` / `光源=…` sind wichtige Hinweise!);
   - wenn die HUD-Abschattungsanzeige `,opq` (Maske fast vollständig undurchsichtig — prüfen Sie, ob das Abschattungs-Asset einen Alphakanal hat) oder `L4*` (diese Ebene ist auf Rohbild-Load zurückgefallen) zeigt, mentionieren Sie das bitte auch ^_^
 - **Discord-Community**: Treten Sie auch dem japanischen AviUtl2-Infoserver **「AviUtl2の情報が知りたいだろって‼」** bei ([Einladungslink](https://discord.gg/8qzmGY5NgQ)) und ping direkt **南宫若馨Cylna** (`@nangongerregtcylna`, der Autor)!
@@ -325,7 +325,7 @@ python3 packaging/build_au2pkg.py
 - **KEN-kun (ＫＥＮくん)** ([Offizielle Website](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)) — Schöpfer von AviUtl ExEdit2 und des offiziellen AviUtl2-Plugin-SDK.
 
 #### KI-Entwicklungspartner
-- **Arena.ai Agent** — Mitentworfen und implementiert die `v2.90`–`v3.06`-Architektur, den `VL3DBridge.aux2`-Lock-Free-Bridge & D3D11-ComputeShader-Rasterizer, die AutoBlendLight-3D-Integration und die Extrem-Auflösungs-Cache-Härtung.
+- **Arena.ai Agent** — Mitentworfen und implementiert die `v2.90`–`v3.13`-Architektur, den `VL3DBridge.aux2`-Lock-Free-Bridge & D3D11-ComputeShader-Rasterizer, die AutoBlendLight-3D-Integration und die Extrem-Auflösungs-Cache-Härtung.
 - **ChatGPT** — Code-Review & Fehlerjagd (hat den trilinearen Gitter-Eckpunkt-Koordinaten-Bug im 3D-Nebelrauschen-Shader gefunden!).
 - **Gemini** — Verfasse den frühesten HLSL-Volumennebel-Prototyp (in gewisser Weise ist das Begleit-Projekt *Volumetric Fog (3D)* ein glückliches Nebenprodukt dieser Entwicklung XD).
 - **Microsoft Copilot** — Hat geduldig Cache-Überlauf-Probleme untersucht und Dokumentation organisiert, als hochauflösende Bilder `OpenGlow` erstmals zum Platzen brachten.

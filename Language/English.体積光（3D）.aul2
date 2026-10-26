@@ -1,11 +1,11 @@
 ;===============================================================
-; Target: Volumetric Light (3D) v3.06 (体積光（3D）.obj2)
+; Target: Volumetric Light (3D) v3.13 (体積光（3D）.obj2)
 ; Language: English
 ; Place this file in  Language\  (e.g. C:\ProgramData\aviutl2\Language\)
 ;===============================================================
 
 [Language]
-Information=Volumetric Light (3D) v3.06 English Language Pack
+Information=Volumetric Light (3D) v3.13 English Language Pack
 SubLanguage=English
 
 [Effect]
@@ -113,7 +113,7 @@ SubLanguage=English
 ログに出力=Log to Console
 
 [Tips.体積光（3D）]
-effect.name=3D volumetric light (god-ray) custom object (v3.06 for AviUtl2 v2.1.15+), featuring optional Foreground Blend (AutoBlendLight 3D integration). Paired with VL3DBridge.aux2 (v1.21) GPU hardware shadow rasterization and lock-free read bridge for 2D layers and 3D models (.obj / .vrm), 3D camera light sync, and natural edge-light blending.
+effect.name=3D volumetric light (god-ray) custom object (v3.13 for AviUtl2 v2.1.15+), featuring optional Foreground Blend (AutoBlendLight 3D integration). Paired with VL3DBridge.aux2 (v1.21) GPU hardware shadow rasterization and lock-free read bridge for 2D layers and 3D models (.obj / .vrm), 3D camera light sync, and natural edge-light blending.
 光源レイヤー=Select the layer number used as the light source (image, video, text, shape, or custom object; 0 = unselected, or emits directly from a Camera Control 3D light when Follow Camera Light is active).
 光の出方=Select beam geometry: Parallel, Radiate (expanding outward from a virtual 3D focal point), or Converge.
 光の中身=Volumetric renders soft atmospheric Tyndall rays; Flat Solid renders crisp stylized solid beams.
@@ -159,7 +159,7 @@ effect.name=3D volumetric light (god-ray) custom object (v3.06 for AviUtl2 v2.1.
 自動動的精度=Automatically scales slice count continuously (64-192) based on beam depth.
 スライス数=Manual slice count used when Auto Dynamic Precision is turned off (16-64).
 視点追従=Aligns volume slices automatically to the 3D Camera Control and Editor View, or along the X-axis.
-画面に状態表示=Displays a live status HUD at top-left (GPU mode, atlas size, slice count, occluders, and cache usage).
+画面に状態表示=Displays a live status HUD at top-left (GPU mode, atlas size, slice count, occluders, and cache usage; automatically hidden during video export).
 ログに出力=Outputs current render status and diagnostic summary to the AviUtl2 Log window.
 
 [Tips]
@@ -208,5 +208,5 @@ effect.name=3D volumetric light (god-ray) custom object (v3.06 for AviUtl2 v2.1.
 自動動的精度=Automatically scales slice count continuously (64-192) based on beam depth.
 スライス数=Manual slice count used when Auto Dynamic Precision is turned off (16-64).
 視点追従=Aligns volume slices automatically to the 3D Camera Control and Editor View, or along the X-axis.
-画面に状態表示=Displays a live status HUD at top-left (GPU mode, atlas size, slice count, occluders, and cache usage).
+画面に状態表示=Displays a live status HUD at top-left (GPU mode, atlas size, slice count, occluders, and cache usage; automatically hidden during video export).
 ログに出力=Outputs current render status and diagnostic summary to the AviUtl2 Log window.
