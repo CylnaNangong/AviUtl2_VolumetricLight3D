@@ -1,0 +1,50 @@
+
+=== A. sandbox-bundled v3.06 reference checks ===
+  [PASS] A1 v3.06 verse1 render: no Lua error
+  [PASS] A2 v3.06 HUD shows L4(m1) occlusion hit — @info	体積光（3D）v3.06 GPU=true 光源=レイヤー2(512x512) 遮蔽=L4(m1) アトラス=2560x2560x2 スライス=90(dz=16.3) 頂点=360 固有充填=0.40 キャッシュ頂点=0.87M
+  [PASS] A3 v3.06 occ OFF reference: no error
+  [SKIP] A4b — 2D-only scene produces no 3D shadow map by design (see E1c)
+  [PASS] A5 v3.06 peak cache dots <= 16M budget — peak=871,587
+  [PASS] A6 v3.06 opaque-rect fallback fired (L4*) — fallback=True marker=True
+  [PASS] A7 v3.06 restricted host (os/io=nil) init-complete + no error
+
+=== B. repository v3.13 checks ===
+    (v3.13 frame render 15.2s)
+  [PASS] B1 v3.13 verse1 render: no Lua error
+  [PASS] B2 v3.13 HUD occlusion L4(m1) — @info	体積光（3D）v3.13 GPU=true 光源=レイヤー2(512x512) 遮蔽=L4(m1) アトラス=2560x2560x2 スライス=90(dz=16.3) 頂点=360 固有充填=0.40 キャッシュ頂点=0.87M
+  [PASS] B3 v3.13 peak cache dots <= 16M — peak=871,587
+  [PASS] B4 v3.13 multi-frame (147-149) stable, no errors — errs=0
+      sweep ok: parallel-light default  (ps=9, quads=90)
+      sweep ok: radial point source  (ps=9, quads=90)
+      sweep ok: convergent beams  (ps=9, quads=90)
+      sweep ok: solid fill mode  (ps=9, quads=90)
+      sweep ok: occ mode2 mask-only  (ps=9, quads=90)
+      sweep ok: occ mode3 3D+mask  (ps=9, quads=90)
+      sweep ok: occ mode1 + soft 40  (ps=9, quads=90)
+      sweep ok: fog on  (ps=9, quads=90)
+      sweep ok: autoblend on  (ps=13, quads=0)
+      sweep ok: hi-res mode  (ps=9, quads=90)
+      sweep ok: lightweight mode  (ps=9, quads=90)
+      sweep ok: manual slices 32  (ps=8, quads=32)
+      sweep ok: cam-light follow  (ps=9, quads=90)
+      sweep ok: cam-light suppress  (ps=9, quads=90)
+  [PASS] B5 v3.13 param sweep x14 no errors — []
+  [PASS] B5b sweep peak cache dots <= 16M — peak=871,593
+
+=== C. native VL3DBridge (.so fresh build from repo src) cross-check ===
+
+=== D. standalone (no bridge) mode ===
+  [PASS] D1 standalone (obj.module=nil) full fallback chain works
+
+=== E. 3D model (birdcage .obj) shadow map & native bridge ===
+  [PASS] E1 v3.13 OBJ-layer render (pure-Lua rasterizer): no error
+  [PASS] E1b Lua CPU rasterizer drew the OBJ triangles — tris=2052 (obj file has 2052)
+  [PASS] E1c shmap silhouette fill 0.1-0.95 (cage shape, not solid rect) — fill=0.264 shape=(1280, 1280, 4)
+  [PASS] E2 v3.13 OBJ-layer render (native C-API rasterizer): no error
+  [PASS] E2b native bridge invoked from Lua (upload_mesh + rasterize_shadow) — rast_shadow=1 has_mesh=1 upload_mesh=1
+  [PASS] E2c native rasterizer tris > 0 — tris=2052 backend=D3D11_CS
+  [FAIL] E3 Lua vs native C++ rasterizer shmap consistency — maxdiff=15
+
+==============================================================
+CPU-SANDBOX RESULT: 19/20 checks passed
+==============================================================
