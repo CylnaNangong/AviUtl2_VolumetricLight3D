@@ -1,5 +1,5 @@
 ;===============================================================
-; Target: Volumetric Light (3D) v3.13 (体積光（3D）.obj2)
+; Target: Volumetric Light (3D) v3.13 (VolumetricLight3D.obj2)
 ; Language: English
 ; Place this file in  Language\  (e.g. C:\ProgramData\aviutl2\Language\)
 ;===============================================================
@@ -9,9 +9,9 @@ Information=Volumetric Light (3D) v3.13 English Language Pack
 SubLanguage=English
 
 [Effect]
-体積光（3D）=Volumetric Light (3D)
+VolumetricLight3D=Volumetric Light (3D)
 
-[体積光（3D）]
+[VolumetricLight3D]
 体積光（3D）=Volumetric Light (3D)
 
 ; --- 形 -> Beam Shape ---
