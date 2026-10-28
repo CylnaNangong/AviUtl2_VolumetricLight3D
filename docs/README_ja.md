@@ -116,10 +116,10 @@ C:\ProgramData\aviutl2\
 │   ├── VL3DBridge.aux2                    # [推奨/任意] 無ロック読取＋D3D11 CS 3D影高速化プラグイン（v1.21）
 │   └── VL3DBridge.ini                     # [任意] 安全ホワイトリスト・GPU設定ファイル（.aux2 と同フォルダ）
 └── Language\                              # [任意] 多言語パック（日本語環境では不要・標準内蔵）
-    ├── 简体中文.体積光（3D）.aul2
-    ├── English.体積光（3D）.aul2
-    ├── Deutsch.体積光（3D）.aul2
-    └── community_de.体積光（3D）.aul2
+    ├── 简体中文.VolumetricLight3D.aul2
+    ├── English.VolumetricLight3D.aul2
+    ├── Deutsch.VolumetricLight3D.aul2
+    └── community_de.VolumetricLight3D.aul2
 ```
 
 ### 💡 `VL3DBridge.aux2` 併用有無の比較
