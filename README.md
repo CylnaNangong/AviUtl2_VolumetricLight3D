@@ -113,10 +113,10 @@ C:\ProgramData\aviutl2\
 │   ├── VL3DBridge.aux2                    # [强烈推荐/可选] 无锁读取 + D3D11 CS 硬件 3D 阴影加速插件（v1.21）
 │   └── VL3DBridge.ini                     # [可选] 插件安全白名单与 GPU 开关配置（与 .aux2 同目录）
 └── Language\                              # [按需选装] 多语言界面与参数悬停提示包
-    ├── 简体中文.体積光（3D）.aul2         # 简体中文语言包
-    ├── English.体積光（3D）.aul2          # 英语语言包
-    ├── Deutsch.体積光（3D）.aul2          # 德语语言包
-    └── community_de.体積光（3D）.aul2     # 德语（社区汉化前缀匹配）语言包
+    ├── 简体中文.VolumetricLight3D.aul2         # 简体中文语言包
+    ├── English.VolumetricLight3D.aul2          # 英语语言包
+    ├── Deutsch.VolumetricLight3D.aul2          # 德语语言包
+    └── community_de.VolumetricLight3D.aul2     # 德语（社区汉化前缀匹配）语言包
 ```
 
 ### 💡 是否安装 `VL3DBridge.aux2` 的体验对比
