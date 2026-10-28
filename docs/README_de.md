@@ -114,10 +114,10 @@ C:\ProgramData\aviutl2\
 │   ├── VL3DBridge.aux2                    # [Empfohlen] Lock-Free-Lesung & D3D11-CS-GPU-Schatten-Plugin (v1.21)
 │   └── VL3DBridge.ini                     # [Optional] Probe-Whitelist & GPU-Konfiguration (neben .aux2)
 └── Language\                              # [Optional] UI-Lokalisierungspakete (Japanisch ist eingebaut)
-    ├── 简体中文.体積光（3D）.aul2
-    ├── English.体積光（3D）.aul2           # <-- Übersetzt UI & Tooltips ins Englische („Volumetric Light (3D)“)
-    ├── Deutsch.体積光（3D）.aul2
-    └── community_de.体積光（3D）.aul2
+    ├── 简体中文.VolumetricLight3D.aul2
+    ├── English.VolumetricLight3D.aul2           # <-- Übersetzt UI & Tooltips ins Englische („Volumetric Light (3D)“)
+    ├── Deutsch.VolumetricLight3D.aul2
+    └── community_de.VolumetricLight3D.aul2
 ```
 
 ### 💡 Nur `.obj2` vs. mit `VL3DBridge.aux2` kombiniert
@@ -150,7 +150,7 @@ Layer 5  [Untertitel / UI-Overlay]    Unterhalb von Volumenlicht platziert, blei
 
 ## 5. Vollständiges Parameter-Referenz (Zum Ausklappen klicken)
 
-Alle **47 Parameter in 6 UI-Gruppen** (Deutsche UI-Labels aus `Deutsch.体積光（3D）.aul2` neben den ursprünglichen japanischen Schlüsseln):
+Alle **47 Parameter in 6 UI-Gruppen** (Deutsche UI-Labels aus `Deutsch.VolumetricLight3D.aul2` neben den ursprünglichen japanischen Schlüsseln):
 
 <details>
 <summary><b>📐 Gruppe 1: Strahlform (<code>形</code> — 12 Parameter: Quellebene, 3D-Abstrahlgeometrie, Länge &amp; Abnahme)</b></summary>
