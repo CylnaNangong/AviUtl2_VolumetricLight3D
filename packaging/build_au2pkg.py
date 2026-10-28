@@ -43,7 +43,7 @@ def build_package(repo_root: Path, out_zip: Path, include_plugin: bool = True) -
         entries.append(("Plugin/VL3DBridge.aux2", (repo_root / "Plugin/VL3DBridge.aux2").read_bytes()))
         entries.append(("Plugin/VL3DBridge.ini", to_crlf((repo_root / "Plugin/VL3DBridge.ini").read_bytes())))
 
-    for aul in sorted((repo_root / "Language").glob("*.体積光（3D）.aul2")):
+    for aul in sorted((repo_root / "Language").glob("*.VolumetricLight3D.aul2")):
         entries.append((f"Language/{aul.name}", to_crlf(aul.read_bytes())))
 
     with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
