@@ -1,5 +1,5 @@
 ;===============================================================
-; Target: 体积光（3D） v3.13 (体積光（3D）.obj2)
+; Target: 体积光（3D） v3.13 (VolumetricLight3D.obj2)
 ; Language: 简体中文 (Simplified Chinese)
 ; Place this file in  Language\  (e.g. C:\ProgramData\aviutl2\Language\)
 ;===============================================================
@@ -9,9 +9,9 @@ Information=体积光（3D）v3.13 简体中文语言包
 SubLanguage=简体中文
 
 [Effect]
-体積光（3D）=体积光（3D）
+VolumetricLight3D=体积光（3D）
 
-[体積光（3D）]
+[VolumetricLight3D]
 体積光（3D）=体积光（3D）
 
 ; --- 形 -> 光束形态 ---
