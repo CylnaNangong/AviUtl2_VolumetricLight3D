@@ -1,4 +1,4 @@
---information:体積光（3D）v3.13
+--information:VolumetricLight3D v3.13
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -2486,12 +2486,14 @@ local function is_volume_effect_layer(oln)
             or obj.getvalue(oln, "Volumenlicht (3D)", "Intensität") ~= nil
             or obj.getvalue(lp .. "体積光（3D）.強さ") ~= nil
             or obj.getvalue(lp .. "体积光（3D）.发光强度") ~= nil
+            or obj.getvalue(oln, "VolumetricFog3D", "濃さ") ~= nil
             or obj.getvalue(oln, "体積霧（3D）", "濃さ") ~= nil
             or obj.getvalue(oln, "体積霧（3D）", "霧の濃さ") ~= nil
             or obj.getvalue(oln, "体积雾（3D）", "雾的浓度") ~= nil
             or obj.getvalue(oln, "Volumetric Fog (3D)", "Density") ~= nil
             or obj.getvalue(oln, "Volumennebel (3D)", "Nebeldichte") ~= nil
             or obj.getvalue(oln, "Volumennebel (3D)", "Dichte") ~= nil
+            or obj.getvalue(lp .. "VolumetricFog3D.濃さ") ~= nil
             or obj.getvalue(lp .. "体積霧（3D）.濃さ") ~= nil
             or obj.getvalue(lp .. "体积雾（3D）.雾的浓度") ~= nil
             or obj.getvalue(oln, "体積霧（3D）オブジェクト", "濃さ") ~= nil
