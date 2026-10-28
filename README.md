@@ -1,11 +1,11 @@
 <div align="center">
 
-# 体積光（3D） / 体积光（3D） / Volumetric Light (3D)
+# VolumetricLight3D / 体积光（3D） / Volumetric Light (3D)
 
 🎉 **震撼首发！！！**  
 **面向 AviUtl ExEdit2 的真·3D 丁达尔体积光自定义对象 · 内置 3D 联动「前景融入背景」 · 可选 D3D11 CS 硬件阴影加速插件**
 
-`体積光（3D）.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 语言切换 / Language:** &nbsp; **简体中文** &nbsp;|&nbsp; **[日本語 (Japanese)](docs/README_ja.md)** &nbsp;|&nbsp; **[English](docs/README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](docs/README_de.md)**
 
@@ -71,7 +71,7 @@
 4. **可选原生插件 `VL3DBridge.aux2`：D3D11 ComputeShader 硬件加速 + 无锁直读**
    - **GPU 硬件光栅化（`cs_5_0`）**：在 AviUtl2 `v2.1.15+` 上通过官方 SDK `EDIT_HANDLE::get_direct3d_device()` 调用 Direct3D 11 计算着色器并行渲染 3D 阴影图与相机深度图，面对数万面高模运镜或鼠标实时拖拽时提速 **20×～45×**，全程保持 100% 几何完整度不掉面。
    - **无锁只读桥接**：通过 `SCRIPT_MODULE_PARAM::edit` 实现渲染线程零加锁参数读取，彻底消除开启前景遮挡拖拽图层时的读写锁死锁，修改未保存的文本排版或场景参数无需按 `Ctrl+S` 即可实时生效。
-   - **三级自动回退**：`D3D11_CS (GPU)` → `C++17 -O3 (CPU)` → `纯 LuaJIT FFI`。即使不安装 `VL3DBridge.aux2`，单靠 `体積光（3D）.obj2` 也能独立完整运行！
+   - **三级自动回退**：`D3D11_CS (GPU)` → `C++17 -O3 (CPU)` → `纯 LuaJIT FFI`。即使不安装 `VL3DBridge.aux2`，单靠 `VolumetricLight3D.obj2` 也能独立完整运行！
 
 5. **严守 16M 缓存预算 & 8K 画幅 / 16K 超巨幅素材加固**
    - 全流程严格控制在 AviUtl2 默认 `TemporaryImageCacheSize`（1,600 万像素）与 D3D11 `4096px` 渲染目标上限之内（即使在 **8K UHD `7680×4320`** 画幅或 **5000 万像素 / 16K** 贴图下，峰值缓存仅约 `3.9M～7.2M` 像素，帧末立即缩回 `1×1` 释放）。
@@ -108,7 +108,7 @@
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── 体積光（3D）.obj2                  # [必需] 核心自定义对象脚本（v3.13）
+│   └── VolumetricLight3D.obj2                  # [必需] 核心自定义对象脚本（v3.13）
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [强烈推荐/可选] 无锁读取 + D3D11 CS 硬件 3D 阴影加速插件（v1.21）
 │   └── VL3DBridge.ini                     # [可选] 插件安全白名单与 GPU 开关配置（与 .aux2 同目录）
@@ -121,7 +121,7 @@ C:\ProgramData\aviutl2\
 
 ### 💡 是否安装 `VL3DBridge.aux2` 的体验对比
 
-| 场景 / 功能 | 仅安装 `Script\体積光（3D）.obj2` | 同时安装 `Plugin\VL3DBridge.aux2`（推荐） |
+| 场景 / 功能 | 仅安装 `Script\VolumetricLight3D.obj2` | 同时安装 `Plugin\VL3DBridge.aux2`（推荐） |
 | :--- | :--- | :--- |
 | **纯 2D / 视频 / 文字体积光 + 前景融入背景** | 原生 HLSL GPU 渲染，帧率基本一致 | 原生 HLSL GPU 渲染 + **未保存工程实时直读文本对齐/装饰**（免按 `Ctrl+S`） |
 | **高面数 `.obj` / `.vrm` 3D 模型运镜动画** | 纯 LuaJIT CPU 光栅化（高模下帧率较低） | **D3D11 `cs_5_0` GPU 硬件并行光栅化（提速 `20×～45×`）** |
@@ -268,7 +268,7 @@ AviUtl ExEdit2 目前仍处于活跃迭代阶段，部分高阶宿主内部状�
 
 ### 🛡️ 安全防护与自动降级机制（绝不写内存、绝不崩溃）
 
-1. **100% 纯只读承诺**：无论是 `体積光（3D）.obj2` 还是 `VL3DBridge.aux2`，**严禁向 `aviutl2.exe` 宿主内存写入任何字节**；所有探针均通过操作系统内核级 `ReadProcessMemory` 安全拷贝，即使遇到未映射页或保护页也绝不会触发访问冲突崩溃（`Access Violation`）。
+1. **100% 纯只读承诺**：无论是 `VolumetricLight3D.obj2` 还是 `VL3DBridge.aux2`，**严禁向 `aviutl2.exe` 宿主内存写入任何字节**；所有探针均通过操作系统内核级 `ReadProcessMemory` 安全拷贝，即使遇到未映射页或保护页也绝不会触发访问冲突崩溃（`Access Violation`）。
 2. **PE 指纹白名单 + 机器码特征自检自动降级**：`VL3DBridge.aux2` 启动时会校验 `aviutl2.exe` 的 PE 头/`SHA-256` 白名单及机器码结构不变量。一旦未来新版 AviUtl2 内部结构发生变动导致特征不匹配，插件将**自动关闭内存探针并平滑降级为纯官方 SDK 模式**——核心体积光、2D/3D 遮挡、GPU 硬件阴影加速与前景融入背景均继续正常工作，不会损坏任何 `.aup2` 工程文件。
 3. **手动强制纯白名单模式**：如果你在安全性要求极高的生产环境中使用，可随时打开 `Plugin\VL3DBridge.ini` 将 `strict_whitelist_only = 1` 开启，仅允许经过明确哈希认证的宿主版本启用只读探针。
 
