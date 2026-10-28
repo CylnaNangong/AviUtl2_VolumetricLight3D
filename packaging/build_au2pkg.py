@@ -36,7 +36,7 @@ def build_package(repo_root: Path, out_zip: Path, include_plugin: bool = True) -
     entries: list[tuple[str, bytes]] = [
         ("package.ini", ini_bytes),
         ("package.txt", txt_bytes),
-        ("Script/体積光（3D）.obj2", to_crlf((repo_root / "Script/体積光（3D）.obj2").read_bytes())),
+        ("Script/VolumetricLight3D.obj2", to_crlf((repo_root / "Script/VolumetricLight3D.obj2").read_bytes())),
     ]
 
     if include_plugin:
