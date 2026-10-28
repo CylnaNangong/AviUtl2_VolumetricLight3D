@@ -1,5 +1,5 @@
 ;===============================================================
-; Target: Volumenlicht (3D) v3.13 (体積光（3D）.obj2)
+; Target: Volumenlicht (3D) v3.13 (VolumetricLight3D.obj2)
 ; Language: Deutsch
 ; Place this file in  Language\  (e.g. C:\ProgramData\aviutl2\Language\)
 ;===============================================================
@@ -9,9 +9,9 @@ Information=Volumenlicht (3D) v3.13 Sprachpaket Deutsch
 SubLanguage=English
 
 [Effect]
-体積光（3D）=Volumenlicht (3D)
+VolumetricLight3D=Volumenlicht (3D)
 
-[体積光（3D）]
+[VolumetricLight3D]
 体積光（3D）=Volumenlicht (3D)
 
 ; --- 形 -> Strahlform ---
