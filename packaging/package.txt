@@ -1,4 +1,4 @@
-[ 体積光（3D） / 体积光（3D） / Volumetric Light (3D) — v3.13 ]
+[ VolumetricLight3D / 体积光（3D） / Volumetric Light (3D) — v3.13 ]
 
 [日本語]
 AviUtl ExEdit2 用の真・3D ボリューメトリックライト（ゴッドレイ）カスタムオブジェクトです。
