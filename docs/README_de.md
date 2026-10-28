@@ -6,7 +6,7 @@
 **DAS ECHTE 3D-Volumenlicht (God Rays / Krepuskulare Strahlen / Lichtstrahlen) für AviUtl ExEdit2**  
 **Mit eingebauter 3D-Vordergrund-Einblendung & optionalem D3D11-CS-Hardware-Schattenbeschleuniger**
 
-`体積光（3D）.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Sprache:** &nbsp; **[简体中文 (Chinesisch)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanisch)](README_ja.md)** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **Deutsch**
 
@@ -109,20 +109,20 @@ Kopieren Sie die **`Script`**-, **`Plugin`**- (empfohlen) und **`Language`**-Ord
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── 体積光（3D）.obj2                  # [Erforderlich] Kern-Objekt-Skript (v3.13)
+│   └── VolumetricLight3D.obj2                  # [Erforderlich] Kern-Objekt-Skript (v3.13)
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [Empfohlen] Lock-Free-Lesung & D3D11-CS-GPU-Schatten-Plugin (v1.21)
 │   └── VL3DBridge.ini                     # [Optional] Probe-Whitelist & GPU-Konfiguration (neben .aux2)
 └── Language\                              # [Optional] UI-Lokalisierungspakete (Japanisch ist eingebaut)
-    ├── 简体中文.体積光（3D）.aul2
-    ├── English.体積光（3D）.aul2           # <-- Übersetzt UI & Tooltips ins Englische („Volumetric Light (3D)“)
-    ├── Deutsch.体積光（3D）.aul2
-    └── community_de.体積光（3D）.aul2
+    ├── 简体中文.VolumetricLight3D.aul2
+    ├── English.VolumetricLight3D.aul2           # <-- Übersetzt UI & Tooltips ins Englische („Volumetric Light (3D)“)
+    ├── Deutsch.VolumetricLight3D.aul2
+    └── community_de.VolumetricLight3D.aul2
 ```
 
 ### 💡 Nur `.obj2` vs. mit `VL3DBridge.aux2` kombiniert
 
-| Arbeitsfluss / Szenario | Nur `Script\体積光（3D）.obj2` | Mit `Plugin\VL3DBridge.aux2` kombiniert (Empf.) |
+| Arbeitsfluss / Szenario | Nur `Script\VolumetricLight3D.obj2` | Mit `Plugin\VL3DBridge.aux2` kombiniert (Empf.) |
 | :--- | :--- | :--- |
 | **2D-Bild / Video / Text-Strahlen + Vordergrund-Einblendung** | Volle GPU-HLSL-Geschwindigkeit | Gleiche GPU-Geschwindigkeit + **instantanes Tracking ungespeicherter Textausrichtung & Dekoration** |
 | **Hochpolygone `.obj` / `.vrm`-Kameraflugnahmen** | Reiner LuaJIT-CPU-Rasterizer (stärker bei dichter Mesh-Dichte) | **D3D11 `cs_5_0` GPU-Parallel-Rasterizer (`20x–45x` schneller)** |
@@ -150,7 +150,7 @@ Layer 5  [Untertitel / UI-Overlay]    Unterhalb von Volumenlicht platziert, blei
 
 ## 5. Vollständiges Parameter-Referenz (Zum Ausklappen klicken)
 
-Alle **47 Parameter in 6 UI-Gruppen** (Deutsche UI-Labels aus `Deutsch.体積光（3D）.aul2` neben den ursprünglichen japanischen Schlüsseln):
+Alle **47 Parameter in 6 UI-Gruppen** (Deutsche UI-Labels aus `Deutsch.VolumetricLight3D.aul2` neben den ursprünglichen japanischen Schlüsseln):
 
 <details>
 <summary><b>📐 Gruppe 1: Strahlform (<code>形</code> — 12 Parameter: Quellebene, 3D-Abstrahlgeometrie, Länge &amp; Abnahme)</b></summary>
@@ -264,7 +264,7 @@ Wir offenlegen transparent, welche Funktionen versionssensible sind:
 
 ### 🛡️ crashfreie Sicherheit & automatische Fallback-Garantien
 
-1. **Null Memory-Writes**: Weder `体積光（3D）.obj2` noch `VL3DBridge.aux2` schreiben je in das `aviutl2.exe`-Host-Memory. Alle Probes nutzen kernel-validierte `ReadProcessMemory`-Aufrufe, die sicher Fehlercodes zurückgeben, ohne Access-Violation-Crashs zu verursachen.
+1. **Null Memory-Writes**: Weder `VolumetricLight3D.obj2` noch `VL3DBridge.aux2` schreiben je in das `aviutl2.exe`-Host-Memory. Alle Probes nutzen kernel-validierte `ReadProcessMemory`-Aufrufe, die sicher Fehlercodes zurückgeben, ohne Access-Violation-Crashs zu verursachen.
 2. **PE-Fingerabdruck & Maschinencode-Signatur-Prüfung**: Wenn AviUtl2 aktualisiert wird und eine Binary-Signatur die Prüfung nicht besteht, **schaltet `VL3DBridge.aux2` alle Memory-Probes automatisch ab und geht sauber in den reinen offiziellen SDK-Modus** — Ihre `.aup2`-Projekte  crashen oder korruptieren nicht, und Kern-Volumenlicht, 2D/3D-Abschattung, `cs_5_0`-GPU-Beschleunigung und Vordergrund-Einblendung funktionieren weiterhin.
 3. **Strenge Whitelist-Option**: Stellen Sie in `Plugin\VL3DBridge.ini` `strict_whitelist_only = 1` ein, um Probes ausschließlich auf SHA-256-verifizierte `aviutl2.exe`-Builds zu beschränken.
 

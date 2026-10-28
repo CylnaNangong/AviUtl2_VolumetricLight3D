@@ -6,7 +6,7 @@
 **THE REAL 3D Volumetric Light (God Rays / Crepuscular Rays / Light Shafts) Custom Object for AviUtl ExEdit2**  
 **With Built-in 3D-Linked Foreground Light Blending & Optional D3D11 CS GPU Acceleration**
 
-`体積光（3D）.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanese)](README_ja.md)** &nbsp;|&nbsp; **English** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
@@ -109,20 +109,20 @@ Copy **`Script`**, **`Plugin`** (recommended), and **`Language`** into your AviU
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── 体積光（3D）.obj2                  # [Required] Core custom object script (v3.13)
+│   └── VolumetricLight3D.obj2                  # [Required] Core custom object script (v3.13)
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [Recommended] Lock-free read & D3D11 CS GPU shadow plugin (v1.21)
 │   └── VL3DBridge.ini                     # [Optional] Probe whitelist & GPU config (next to .aux2)
 └── Language\                              # [Optional] UI localization packs (Japanese is built-in)
-    ├── 简体中文.体積光（3D）.aul2
-    ├── English.体積光（3D）.aul2           # <-- Translates UI & tooltips into English ("Volumetric Light (3D)")
-    ├── Deutsch.体積光（3D）.aul2
-    └── community_de.体積光（3D）.aul2
+    ├── 简体中文.VolumetricLight3D.aul2
+    ├── English.VolumetricLight3D.aul2           # <-- Translates UI & tooltips into English ("Volumetric Light (3D)")
+    ├── Deutsch.VolumetricLight3D.aul2
+    └── community_de.VolumetricLight3D.aul2
 ```
 
 ### 💡 Standalone `.obj2` vs. Paired with `VL3DBridge.aux2`
 
-| Workflow / Scene | `Script\体積光（3D）.obj2` Only | Paired with `Plugin\VL3DBridge.aux2` (Rec.) |
+| Workflow / Scene | `Script\VolumetricLight3D.obj2` Only | Paired with `Plugin\VL3DBridge.aux2` (Rec.) |
 | :--- | :--- | :--- |
 | **2D Image / Video / Text Rays + Foreground Blend** | Full GPU HLSL speed | Same GPU speed + **instant unsaved text alignment & decoration tracking** |
 | **High-Poly `.obj` / `.vrm` Camera Flythroughs** | Pure LuaJIT CPU rasterizer (heavier on dense meshes) | **D3D11 `cs_5_0` GPU parallel rasterizer (`20x–45x` faster)** |
@@ -150,7 +150,7 @@ Layer 5  [Subtitles / UI Overlay]     Placed below Volumetric Light so text/UI s
 
 ## 5. Complete Parameter Reference (Click to Expand)
 
-All **47 parameters across 6 UI groups** (showing English UI labels from `English.体積光（3D）.aul2` alongside original Japanese keys):
+All **47 parameters across 6 UI groups** (showing English UI labels from `English.VolumetricLight3D.aul2` alongside original Japanese keys):
 
 <details>
 <summary><b>📐 Group 1: Beam Shape (<code>形</code> — 12 Parameters: Source Layer, 3D Ray Geometry, Length &amp; Falloff)</b></summary>
@@ -264,7 +264,7 @@ We disclose the exact scope of version-sensitivity transparently below:
 
 ### 🛡️ Crash-Free Safety & Automatic Fallback Guarantees
 
-1. **Zero Memory Writes**: Neither `体積光（3D）.obj2` nor `VL3DBridge.aux2` ever writes to or hooks `aviutl2.exe` memory. All probes use kernel-validated `ReadProcessMemory` calls that safely return failure codes without raising access-violation crashes.
+1. **Zero Memory Writes**: Neither `VolumetricLight3D.obj2` nor `VL3DBridge.aux2` ever writes to or hooks `aviutl2.exe` memory. All probes use kernel-validated `ReadProcessMemory` calls that safely return failure codes without raising access-violation crashes.
 2. **PE Fingerprint & Machine-Code Signature Gating**: Whenever AviUtl2 updates and any binary signature fails validation, `VL3DBridge.aux2` **automatically disables all memory probes and falls back cleanly to Pure Official SDK Mode** — your `.aup2` projects will not crash or corrupt, and core volumetric rays, 2D/3D shadows, `cs_5_0` GPU acceleration, and Foreground Blend continue working normally.
 3. **Strict Whitelist Option**: Set `strict_whitelist_only = 1` in `Plugin\VL3DBridge.ini` to restrict probes exclusively to SHA-256-verified `aviutl2.exe` builds.
 

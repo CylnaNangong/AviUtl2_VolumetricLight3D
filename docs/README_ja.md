@@ -1,12 +1,12 @@
 <div align="center">
 
-# 体積光（3D） / 体积光（3D） / Volumetric Light (3D)
+ # VolumetricLight3D / 体积光（3D） / Volumetric Light (3D)
 
 🎉 **衝撃の初公開！！！**  
 **AviUtl ExEdit2 用 真・3D ボリューメトリックライト（ボリュームライト／ゴッドレイ／薄明光線）カスタムオブジェクト**  
 **3D 連動「前景なじませ」内蔵 · D3D11 CS 高速化プラグイン同梱**
 
-`体積光（3D）.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 言語切替 / Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **日本語** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
@@ -74,7 +74,7 @@
 4. **補助プラグイン `VL3DBridge.aux2`：D3D11 ComputeShader 高速化＋無ロック直読（任意併用）**
    - **GPU ハードウェアラスタライザ（`cs_5_0`）**：AviUtl2 `v2.1.15+` の公式 SDK `EDIT_HANDLE::get_direct3d_device()` を通じて Direct3D 11 コンピュートシェーダで 3D 影マップとカメラ深度マップを並列描画。数万ポリゴンの高精細モデルでも **20〜45 倍高速** に動作し、マウスドラッグ中も間引きなし（100% 全ポリゴン）でリアルタイム追従します。
    - **無ロック読取ブリッジ**：`SCRIPT_MODULE_PARAM::edit` により描画スレッドからロックなしでパラメータを取得。前景遮蔽オン時のドラッグ編集デッドロックを解消し、未保存（`Ctrl+S` 前）のテキスト揃え変更等も即座に反映します。
-   - **3 段自動フォールバック**：`D3D11_CS (GPU)` → `C++17 -O3 (CPU)` → `純 LuaJIT FFI`。`VL3DBridge.aux2` を導入しない環境でも、`体積光（3D）.obj2` 単体で全機能が動作します。
+   - **3 段自動フォールバック**：`D3D11_CS (GPU)` → `C++17 -O3 (CPU)` → `純 LuaJIT FFI`。`VL3DBridge.aux2` を導入しない環境でも、`VolumetricLight3D.obj2` 単体で全機能が動作します。
 
 5. **1,600 万ドット予算厳守 ＆ 8K キャンバス／16K 超大素材への耐性**
    - AviUtl2 標準の `TemporaryImageCacheSize`（1,600 万ドット）および D3D11 `4096px` RTV 制限内で厳密に動作（**8K UHD `7680×4320`** 画面や **5,000 万画素／16K** 素材でもライブキャッシュ頂点は約 `3.9M〜7.2M` ドット、フレーム終了時に即時 `1×1` 解放）。
@@ -111,20 +111,20 @@
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── 体積光（3D）.obj2                  # [必須] カスタムオブジェクト本体（v3.13）
+│   └── VolumetricLight3D.obj2                  # [必須] カスタムオブジェクト本体（v3.13）
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [推奨/任意] 無ロック読取＋D3D11 CS 3D影高速化プラグイン（v1.21）
 │   └── VL3DBridge.ini                     # [任意] 安全ホワイトリスト・GPU設定ファイル（.aux2 と同フォルダ）
 └── Language\                              # [任意] 多言語パック（日本語環境では不要・標準内蔵）
-    ├── 简体中文.体積光（3D）.aul2
-    ├── English.体積光（3D）.aul2
-    ├── Deutsch.体積光（3D）.aul2
-    └── community_de.体積光（3D）.aul2
+    ├── 简体中文.VolumetricLight3D.aul2
+    ├── English.VolumetricLight3D.aul2
+    ├── Deutsch.VolumetricLight3D.aul2
+    └── community_de.VolumetricLight3D.aul2
 ```
 
 ### 💡 `VL3DBridge.aux2` 併用有無の比較
 
-| 用途・シーン | `Script\体積光（3D）.obj2` 単体 | `Plugin\VL3DBridge.aux2` 併用（推奨） |
+| 用途・シーン | `Script\VolumetricLight3D.obj2` 単体 | `Plugin\VL3DBridge.aux2` 併用（推奨） |
 | :--- | :--- | :--- |
 | **2D 画像・動画・テキスト光源＋前景なじませ** | ホスト HLSL GPU 描画で同等の高速動作 | 同左 ＋ **未保存時のテキスト揃え・装飾オフセット即時追従**（`Ctrl+S` 不要） |
 | **高ポリゴン `.obj` / `.vrm` のカメラアニメ** | 純 LuaJIT CPU ラスタライズ（高ポリゴン時は負荷大） | **D3D11 `cs_5_0` GPU 並列ラスタライズ（`20〜45倍` 高速）** |
@@ -266,7 +266,7 @@ AviUtl ExEdit2 は現在も活発に更新が続けられており、一部の�
 
 ### 🛡️ 安全設計と自動フォールバック保証（メモリ書き換えゼロ・クラッシュ防止）
 
-1. **ホストメモリへの書き込みは一切行いません**：`体積光（3D）.obj2` および `VL3DBridge.aux2` は **100% 読み取り専用** であり、OS カーネル経由の `ReadProcessMemory` のみを使用します。未マップ領域等によるアクセス違反クラッシュは発生しません。
+1. **ホストメモリへの書き込みは一切行いません**：`VolumetricLight3D.obj2` および `VL3DBridge.aux2` は **100% 読み取り専用** であり、OS カーネル経由の `ReadProcessMemory` のみを使用します。未マップ領域等によるアクセス違反クラッシュは発生しません。
 2. **PE フィンガープリント＆機械語シグネチャ検証による安全な自動縮退**：将来の AviUtl2 更新で内部レイアウトが変化しシグネチャが一致しなくなった場合、`VL3DBridge.aux2` は**自動的にメモリプローブを遮断して「純公式 SDK モード」へ移行**します。プロジェクト（`.aup2`）の破損やクラッシュを起こすことなく、体積光描画・2D/3D 遮蔽・GPU `cs_5_0` 高速化・前景なじませはそのまま継続して利用可能です。
 3. **厳格ホワイトリストモード**：`Plugin\VL3DBridge.ini` にて `strict_whitelist_only = 1` を設定することで、SHA-256 が明示的に許可された本体ビルド以外でのプローブを完全に無効化することも可能です。
 

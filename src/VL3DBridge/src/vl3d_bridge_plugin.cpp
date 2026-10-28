@@ -113,7 +113,7 @@ void OnProjectLoad(PROJECT_FILE*) {
 
 COMMON_PLUGIN_TABLE g_common_plugin_table = {
     L"VL3DBridge",
-    L"VL3DBridge v1.21 - Lock-Free Read-Only Bridge + D3D11 CS 3D Rasterizer for 体積光（3D）",
+    L"VL3DBridge v1.21 - Lock-Free Read-Only Bridge + D3D11 CS 3D Rasterizer for VolumetricLight3D (体積光（3D）)",
 };
 
 }  // namespace

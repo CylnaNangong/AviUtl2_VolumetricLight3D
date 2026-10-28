@@ -8,7 +8,7 @@
 
 - **Author**: nctype
 - **Repository**: <https://github.com/nctype/aviutl2_script_AutoBlendLight>
-- **Scope in this project**: The optional `前景なじませ` (`Foreground Blend` / `前景融入背景`) subsystem in `Script/体積光（3D）.obj2` adapts AutoBlendLight's background color confidence estimation, natural backlight/rim color tuning (`tune_backlight_color`), gradient/outline rim styling, and blurred environment multiply blending into a 3D volumetric-light-aware GPU pipeline.
+- **Scope in this project**: The optional `前景なじませ` (`Foreground Blend` / `前景融入背景`) subsystem in `Script/VolumetricLight3D.obj2` adapts AutoBlendLight's background color confidence estimation, natural backlight/rim color tuning (`tune_backlight_color`), gradient/outline rim styling, and blurred environment multiply blending into a 3D volumetric-light-aware GPU pipeline.
 
 ```text
 MIT License
