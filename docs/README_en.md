@@ -114,10 +114,10 @@ C:\ProgramData\aviutl2\
 │   ├── VL3DBridge.aux2                    # [Recommended] Lock-free read & D3D11 CS GPU shadow plugin (v1.21)
 │   └── VL3DBridge.ini                     # [Optional] Probe whitelist & GPU config (next to .aux2)
 └── Language\                              # [Optional] UI localization packs (Japanese is built-in)
-    ├── 简体中文.体積光（3D）.aul2
-    ├── English.体積光（3D）.aul2           # <-- Translates UI & tooltips into English ("Volumetric Light (3D)")
-    ├── Deutsch.体積光（3D）.aul2
-    └── community_de.体積光（3D）.aul2
+    ├── 简体中文.VolumetricLight3D.aul2
+    ├── English.VolumetricLight3D.aul2           # <-- Translates UI & tooltips into English ("Volumetric Light (3D)")
+    ├── Deutsch.VolumetricLight3D.aul2
+    └── community_de.VolumetricLight3D.aul2
 ```
 
 ### 💡 Standalone `.obj2` vs. Paired with `VL3DBridge.aux2`
@@ -150,7 +150,7 @@ Layer 5  [Subtitles / UI Overlay]     Placed below Volumetric Light so text/UI s
 
 ## 5. Complete Parameter Reference (Click to Expand)
 
-All **47 parameters across 6 UI groups** (showing English UI labels from `English.体積光（3D）.aul2` alongside original Japanese keys):
+All **47 parameters across 6 UI groups** (showing English UI labels from `English.VolumetricLight3D.aul2` alongside original Japanese keys):
 
 <details>
 <summary><b>📐 Group 1: Beam Shape (<code>形</code> — 12 Parameters: Source Layer, 3D Ray Geometry, Length &amp; Falloff)</b></summary>
