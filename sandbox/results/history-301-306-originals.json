@@ -1,0 +1,2555 @@
+{
+  "warning": "Synthetic CPU simulation, not actual AviUtl2/D3D11 output.",
+  "static": {
+    "versions": {
+      "3.00": {
+        "filename": "体積光（3D）_v3.00.txt",
+        "bytes": 422516,
+        "sha256": "843f259a210052f0bd2bf2579cf563cad37a8d9e2a1b7c22ee1d356568ae3c1f",
+        "information": "体積光（3D）v3.00",
+        "ui_parameters": 47,
+        "shader_blocks": 14
+      },
+      "3.01": {
+        "filename": "体積光（3D）_v3.01.txt",
+        "bytes": 425159,
+        "sha256": "3ae627fadfda89e98b1a89e40094da2faa8a7a433d7c9315ea48bff41f30c581",
+        "information": "体積光（3D）v3.01",
+        "ui_parameters": 47,
+        "shader_blocks": 14
+      },
+      "3.02": {
+        "filename": "体積光（3D）_v3.02.txt",
+        "bytes": 430871,
+        "sha256": "c6dd5ec78c65f7e6d69a56ad6ec4c5c2e675d74e7f0a41ee65cf76fe190bba96",
+        "information": "体積光（3D）v3.02",
+        "ui_parameters": 47,
+        "shader_blocks": 14
+      },
+      "3.03_r0_strict_i18n": {
+        "filename": "体積光（3D）_v3.03_r0_strict_i18n.txt",
+        "bytes": 406834,
+        "sha256": "5916e10a6659fc66750320262dde7d9e8bc96e3936131f13539a5005a4eb521a",
+        "information": "体積光（3D）v3.03",
+        "ui_parameters": 47,
+        "shader_blocks": 14
+      },
+      "3.03": {
+        "filename": "体積光（3D）_v3.03.txt",
+        "bytes": 406904,
+        "sha256": "8d222c3bba418b90767fa8225444c81874a9e2b3f85295a5ab6c720d502f25fa",
+        "information": "体積光（3D）v3.03",
+        "ui_parameters": 47,
+        "shader_blocks": 14
+      },
+      "3.04": {
+        "filename": "体積光（3D）_v3.04.txt",
+        "bytes": 407980,
+        "sha256": "d01d9b126df5c45f3ff689c95a40e6cf18a7f3af998c3b1639b1d0c00856c2ce",
+        "information": "体積光（3D）v3.04",
+        "ui_parameters": 47,
+        "shader_blocks": 14
+      },
+      "3.05": {
+        "filename": "体積光（3D）_v3.05.txt",
+        "bytes": 412473,
+        "sha256": "95df187c8a8965b1e50fa8d8622598dbf228f94ed232eed862b87a4fcb8f4ac6",
+        "information": "体積光（3D）v3.05",
+        "ui_parameters": 47,
+        "shader_blocks": 14
+      },
+      "3.06": {
+        "filename": "体積光（3D）_v3.06.txt",
+        "bytes": 418793,
+        "sha256": "b39eb1e12c74b6b9bea1438d223e555cbcc15141ac6debc18ee8e9b5c75d81c6",
+        "information": "体積光（3D）v3.06",
+        "ui_parameters": 47,
+        "shader_blocks": 14
+      }
+    },
+    "adjacent_changes": [
+      {
+        "from": "3.00",
+        "to": "3.01",
+        "hlsl_token_changes": [],
+        "hlsl_noncomment_changes": [],
+        "hlsl_raw_changes": [],
+        "hlsl_added": [],
+        "hlsl_removed": [],
+        "ui_parameter_declaration_changes": []
+      },
+      {
+        "from": "3.01",
+        "to": "3.02",
+        "hlsl_token_changes": [
+          "ps_vl_pool",
+          "ps_vl_prep"
+        ],
+        "hlsl_noncomment_changes": [
+          "ps_vl_pool",
+          "ps_vl_prep"
+        ],
+        "hlsl_raw_changes": [
+          "ps_vl_pool",
+          "ps_vl_prep"
+        ],
+        "hlsl_added": [],
+        "hlsl_removed": [],
+        "ui_parameter_declaration_changes": []
+      },
+      {
+        "from": "3.02",
+        "to": "3.03_r0_strict_i18n",
+        "hlsl_token_changes": [],
+        "hlsl_noncomment_changes": [],
+        "hlsl_raw_changes": [
+          "beamatlas"
+        ],
+        "hlsl_added": [],
+        "hlsl_removed": [],
+        "ui_parameter_declaration_changes": []
+      },
+      {
+        "from": "3.03_r0_strict_i18n",
+        "to": "3.03",
+        "hlsl_token_changes": [],
+        "hlsl_noncomment_changes": [],
+        "hlsl_raw_changes": [],
+        "hlsl_added": [],
+        "hlsl_removed": [],
+        "ui_parameter_declaration_changes": []
+      },
+      {
+        "from": "3.03",
+        "to": "3.04",
+        "hlsl_token_changes": [
+          "ps_vl_pool",
+          "ps_vl_prep"
+        ],
+        "hlsl_noncomment_changes": [
+          "ps_vl_pool",
+          "ps_vl_prep"
+        ],
+        "hlsl_raw_changes": [
+          "ps_vl_pool",
+          "ps_vl_prep"
+        ],
+        "hlsl_added": [],
+        "hlsl_removed": [],
+        "ui_parameter_declaration_changes": []
+      },
+      {
+        "from": "3.04",
+        "to": "3.05",
+        "hlsl_token_changes": [],
+        "hlsl_noncomment_changes": [],
+        "hlsl_raw_changes": [],
+        "hlsl_added": [],
+        "hlsl_removed": [],
+        "ui_parameter_declaration_changes": []
+      },
+      {
+        "from": "3.05",
+        "to": "3.06",
+        "hlsl_token_changes": [],
+        "hlsl_noncomment_changes": [],
+        "hlsl_raw_changes": [],
+        "hlsl_added": [],
+        "hlsl_removed": [],
+        "ui_parameter_declaration_changes": []
+      }
+    ],
+    "beam_shader_noncomment_identical_all": true,
+    "ui_parameter_declarations_identical_all": true
+  },
+  "assets": {
+    "kind": "user images reduced for scene",
+    "window_sha256": "efc1074bb1e19f9e5af185570e8b8c2f54aab5be95a6d30d5403c5d230b8d46a",
+    "character_sha256": "31478245b73f0147949deec20aad3d0f49d9145070ccd68808c9724105989b10",
+    "window_rgba_shape": [
+      158,
+      220,
+      4
+    ],
+    "character_rgba_shape": [
+      120,
+      120,
+      4
+    ],
+    "framebuffer": "resized light image, opaque; synthetic, not the original project"
+  },
+  "factors_at_hud_size": {
+    "v3.01": {
+      "pool": 32,
+      "prep": 11
+    },
+    "v3.02": {
+      "pool": 32,
+      "prep": 11
+    }
+  },
+  "matrix": {
+    "no_occ_no_ab": {
+      "params": {
+        "src_layer": 2,
+        "intensity": 100.0,
+        "threshold": 15.0,
+        "res_mode": 0,
+        "auto_slice": true,
+        "occ_mode": 0,
+        "occ_target": 2,
+        "occ_list": "3",
+        "ab_enable": false,
+        "ab_target": 1,
+        "ab_list": "3",
+        "log_mode": true,
+        "occ_soft": 8.0,
+        "occ_strength": 100.0,
+        "ab_bright": 68.0,
+        "ab_color_mode": 2,
+        "ab_style": 0,
+        "ab_strength": 100.0,
+        "ab_diffusion": 35.0,
+        "ab_bias": -60.0,
+        "ab_color_mix": 131.0,
+        "ab_saturation": 100.0,
+        "ab_luma_link": true,
+        "ab_env_blend": 48.0,
+        "ab_env_blur": 160.0
+      },
+      "versions": {
+        "3.00": {
+          "status": "@info\t体積光（3D）v3.00 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.07M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.01": {
+          "status": "@info\t体積光（3D）v3.01 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.07M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.02": {
+          "status": "@info\t体積光（3D）v3.02 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.07M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.03_r0_strict_i18n": {
+          "status": "@info\t体積光（3D）v3.03 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.07M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.03": {
+          "status": "@info\t体積光（3D）v3.03 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.07M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.04": {
+          "status": "@info\t体積光（3D）v3.04 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.07M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.05": {
+          "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.07M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.06": {
+          "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.07M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        }
+      },
+      "v301_to_v306_beam_atlases_identical": true,
+      "v301_to_v306_beam_geometry_identical": true,
+      "v301_to_v306_preview_identical": true,
+      "v301_to_v306_ab_shader_identical": null
+    },
+    "m1_with_ab": {
+      "params": {
+        "src_layer": 2,
+        "intensity": 100.0,
+        "threshold": 15.0,
+        "res_mode": 0,
+        "auto_slice": true,
+        "occ_mode": 1,
+        "occ_target": 2,
+        "occ_list": "3",
+        "ab_enable": true,
+        "ab_target": 1,
+        "ab_list": "3",
+        "log_mode": true,
+        "occ_soft": 8.0,
+        "occ_strength": 100.0,
+        "ab_bright": 68.0,
+        "ab_color_mode": 2,
+        "ab_style": 0,
+        "ab_strength": 100.0,
+        "ab_diffusion": 35.0,
+        "ab_bias": -60.0,
+        "ab_color_mix": 131.0,
+        "ab_saturation": 100.0,
+        "ab_luma_link": true,
+        "ab_env_blend": 48.0,
+        "ab_env_blur": 160.0
+      },
+      "versions": {
+        "3.00": {
+          "status": "@info\t体積光（3D）v3.00 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "01ec6e3bb85eac4ffac40594235a1495b7dd1cac08bd806fa9b0836463054a44",
+          "ab_shader_sha256": "6e49d9f649bc4ea612d2985b510e697879608e64fdf1a65595146d7277247d32",
+          "ab_shader_hw": [
+            168,
+            168
+          ],
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.01": {
+          "status": "@info\t体積光（3D）v3.01 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+          "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+          "ab_shader_hw": [
+            168,
+            168
+          ],
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.02": {
+          "status": "@info\t体積光（3D）v3.02 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+          "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+          "ab_shader_hw": [
+            168,
+            168
+          ],
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.03_r0_strict_i18n": {
+          "status": "@info\t体積光（3D）v3.03 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+          "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+          "ab_shader_hw": [
+            168,
+            168
+          ],
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.03": {
+          "status": "@info\t体積光（3D）v3.03 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+          "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+          "ab_shader_hw": [
+            168,
+            168
+          ],
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.04": {
+          "status": "@info\t体積光（3D）v3.04 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+          "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+          "ab_shader_hw": [
+            168,
+            168
+          ],
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.05": {
+          "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+          "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+          "ab_shader_hw": [
+            168,
+            168
+          ],
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.06": {
+          "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+          "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+          "ab_shader_hw": [
+            168,
+            168
+          ],
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        }
+      },
+      "v301_to_v306_beam_atlases_identical": true,
+      "v301_to_v306_beam_geometry_identical": true,
+      "v301_to_v306_preview_identical": true,
+      "v301_to_v306_ab_shader_identical": true
+    },
+    "m2_no_ab": {
+      "params": {
+        "src_layer": 2,
+        "intensity": 100.0,
+        "threshold": 15.0,
+        "res_mode": 0,
+        "auto_slice": true,
+        "occ_mode": 2,
+        "occ_target": 2,
+        "occ_list": "3",
+        "ab_enable": false,
+        "ab_target": 1,
+        "ab_list": "3",
+        "log_mode": true,
+        "occ_soft": 8.0,
+        "occ_strength": 100.0,
+        "ab_bright": 68.0,
+        "ab_color_mode": 2,
+        "ab_style": 0,
+        "ab_strength": 100.0,
+        "ab_diffusion": 35.0,
+        "ab_bias": -60.0,
+        "ab_color_mix": 131.0,
+        "ab_saturation": 100.0,
+        "ab_luma_link": true,
+        "ab_env_blend": 48.0,
+        "ab_env_blur": 160.0
+      },
+      "versions": {
+        "3.00": {
+          "status": "@info\t体積光（3D）v3.00 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.01": {
+          "status": "@info\t体積光（3D）v3.01 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.02": {
+          "status": "@info\t体積光（3D）v3.02 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.03_r0_strict_i18n": {
+          "status": "@info\t体積光（3D）v3.03 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.03": {
+          "status": "@info\t体積光（3D）v3.03 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.04": {
+          "status": "@info\t体積光（3D）v3.04 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              6,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.05": {
+          "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.06": {
+          "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        }
+      },
+      "v301_to_v306_beam_atlases_identical": true,
+      "v301_to_v306_beam_geometry_identical": true,
+      "v301_to_v306_preview_identical": true,
+      "v301_to_v306_ab_shader_identical": null
+    }
+  },
+  "ab_300_vs_301": {
+    "shape": [
+      168,
+      168,
+      4
+    ],
+    "max_abs_0_255": 3,
+    "mean_abs_per_channel_0_255": 0.11662060657596372,
+    "changed_pixel_count": 6754
+  },
+  "autoblend_temp_copy_failure": {
+    "versions": {
+      "3.01": {
+        "status": "@info\t体積光（3D）v3.01 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+        "resolve_queries": [
+          [
+            2,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ]
+        ],
+        "scene_camera_queries": [],
+        "injected_blocked_pixeldata_reads": 0,
+        "beam_uniform_p10": [
+          0.0,
+          0.0,
+          -1024.0,
+          0.0
+        ],
+        "beam_quad_count": 66,
+        "beam_atlas_hw": [
+          1080,
+          1080
+        ],
+        "beam_atlas_sha256": [
+          "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+          "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+        ],
+        "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+        "assumed_beam_luma": 0.024996950001829155,
+        "preview_sha256": "30469a79fb897fe5425d9ce35fcb18b2bbcb7cdd896c2243fe905c83edd999a1",
+        "ab_shader_sha256": "1096ee27a2a43c0b0b6fbb4d8f9cb06334ea109a26416e16f8592a7dfa53f0f3",
+        "ab_shader_hw": [
+          168,
+          168
+        ],
+        "pool_factor": 3.0,
+        "prep_factor": 1.0
+      },
+      "3.02": {
+        "status": "@info\t体積光（3D）v3.02 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+        "resolve_queries": [
+          [
+            6,
+            2
+          ],
+          [
+            2,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ]
+        ],
+        "scene_camera_queries": [],
+        "injected_blocked_pixeldata_reads": 0,
+        "beam_uniform_p10": [
+          0.0,
+          0.0,
+          -1024.0,
+          0.0
+        ],
+        "beam_quad_count": 66,
+        "beam_atlas_hw": [
+          1080,
+          1080
+        ],
+        "beam_atlas_sha256": [
+          "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+          "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+        ],
+        "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+        "assumed_beam_luma": 0.024996950001829155,
+        "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+        "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+        "ab_shader_hw": [
+          168,
+          168
+        ],
+        "pool_factor": 3.0,
+        "prep_factor": 1.0
+      },
+      "3.06": {
+        "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+        "resolve_queries": [
+          [
+            2,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ]
+        ],
+        "scene_camera_queries": [],
+        "injected_blocked_pixeldata_reads": 0,
+        "beam_uniform_p10": [
+          0.0,
+          0.0,
+          -1024.0,
+          0.0
+        ],
+        "beam_quad_count": 66,
+        "beam_atlas_hw": [
+          1080,
+          1080
+        ],
+        "beam_atlas_sha256": [
+          "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+          "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+        ],
+        "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+        "assumed_beam_luma": 0.024996950001829155,
+        "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+        "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+        "ab_shader_hw": [
+          168,
+          168
+        ],
+        "pool_factor": 3.0,
+        "prep_factor": 1.0
+      }
+    },
+    "ab_output_equal": false,
+    "ab_mean_absolute_channel_diff_0_255": 0.0417906746031746,
+    "ab_max_absolute_channel_diff_0_255": 2,
+    "ab_changed_pixels": 3570
+  },
+  "v306_vs_candidate_seeded_framebuffer": {
+    "candidate_sha256": "0e0994f929f63364a276e73e7d1f8ba7b4e549ed473a42b9002f7e0d685c8453",
+    "versions": {
+      "v3.06": {
+        "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+        "resolve_queries": [
+          [
+            2,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ]
+        ],
+        "scene_camera_queries": [],
+        "injected_blocked_pixeldata_reads": 0,
+        "beam_uniform_p10": [
+          0.0,
+          0.0,
+          -1024.0,
+          0.0
+        ],
+        "beam_quad_count": 66,
+        "beam_atlas_hw": [
+          1080,
+          1080
+        ],
+        "beam_atlas_sha256": [
+          "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+          "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+        ],
+        "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+        "assumed_beam_luma": 0.024996950001829155,
+        "preview_sha256": "a9bf2152ad3414b2ceb16e617fe750c7e5405ac846c881c81514c85321d7c58d",
+        "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+        "ab_shader_hw": [
+          168,
+          168
+        ],
+        "pool_factor": 3.0,
+        "prep_factor": 1.0
+      },
+      "candidate": {
+        "status": "@info\t体積光（3D）v3.14 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+        "resolve_queries": [
+          [
+            2,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            2
+          ]
+        ],
+        "scene_camera_queries": [],
+        "injected_blocked_pixeldata_reads": 0,
+        "beam_uniform_p10": [
+          0.0,
+          0.0,
+          -1024.0,
+          0.0
+        ],
+        "beam_quad_count": 66,
+        "beam_atlas_hw": [
+          1080,
+          1080
+        ],
+        "beam_atlas_sha256": [
+          "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+          "ec62aed0101305bdb110a85cfbcf03318f1874862efab300a066ee698104052d"
+        ],
+        "beam_geometry_sha256": "e9ff8b6ee63fd45b6d2157f4d74b35c39055baef0ad9155cad99e70cf9c79b12",
+        "assumed_beam_luma": 0.025062584259420508,
+        "preview_sha256": "aee4ca554ccc93ed7cf84b9509b582921db6b1076c31c28b6f5caede243e2865",
+        "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+        "ab_shader_hw": [
+          168,
+          168
+        ],
+        "pool_factor": 3.0,
+        "prep_factor": 1.0
+      }
+    },
+    "ab_output_equal": true,
+    "ab_mean_absolute_channel_diff_0_255": 0.0,
+    "ab_max_absolute_channel_diff_0_255": 0
+  },
+  "delayed_frame": {
+    "3.04": {
+      "status": "@info\t体積光（3D）v3.04 GPU=true 光源=レイヤー2(220x158) 遮蔽=0hit アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.07M",
+      "resolve_queries": [
+        [
+          6,
+          146
+        ],
+        [
+          2,
+          146
+        ],
+        [
+          1,
+          146
+        ],
+        [
+          3,
+          146
+        ],
+        [
+          1,
+          146
+        ],
+        [
+          3,
+          146
+        ]
+      ],
+      "scene_camera_queries": [],
+      "injected_blocked_pixeldata_reads": 0,
+      "beam_uniform_p10": [
+        0.0,
+        0.0,
+        -1024.0,
+        0.0
+      ],
+      "beam_quad_count": 66,
+      "beam_atlas_hw": [
+        1080,
+        1080
+      ],
+      "beam_atlas_sha256": [
+        "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+        "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+      ],
+      "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+      "assumed_beam_luma": 0.024996950001829155,
+      "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+      "ab_shader_sha256": null,
+      "ab_shader_hw": null,
+      "pool_factor": 3.0,
+      "prep_factor": 1.0
+    },
+    "3.05": {
+      "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m3)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+      "resolve_queries": [
+        [
+          2,
+          765
+        ],
+        [
+          1,
+          765
+        ],
+        [
+          3,
+          765
+        ],
+        [
+          1,
+          765
+        ],
+        [
+          3,
+          765
+        ]
+      ],
+      "scene_camera_queries": [],
+      "injected_blocked_pixeldata_reads": 0,
+      "beam_uniform_p10": [
+        0.0,
+        0.0,
+        -1024.0,
+        0.0
+      ],
+      "beam_quad_count": 66,
+      "beam_atlas_hw": [
+        1080,
+        1080
+      ],
+      "beam_atlas_sha256": [
+        "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+        "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+      ],
+      "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+      "assumed_beam_luma": 0.014043676299839377,
+      "preview_sha256": "dda67db2a4e1ff2d4e170f608fe00a400bbb1013b403885b2c69b16c28ba24b9",
+      "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+      "ab_shader_hw": [
+        168,
+        168
+      ],
+      "pool_factor": 3.0,
+      "prep_factor": 1.0
+    },
+    "3.06": {
+      "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m3)+AB(L3) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=268 固有充填=0.69 キャッシュ頂点=1.14M",
+      "resolve_queries": [
+        [
+          2,
+          765
+        ],
+        [
+          1,
+          765
+        ],
+        [
+          3,
+          765
+        ],
+        [
+          1,
+          765
+        ],
+        [
+          3,
+          765
+        ]
+      ],
+      "scene_camera_queries": [],
+      "injected_blocked_pixeldata_reads": 0,
+      "beam_uniform_p10": [
+        0.0,
+        0.0,
+        -1024.0,
+        0.0
+      ],
+      "beam_quad_count": 66,
+      "beam_atlas_hw": [
+        1080,
+        1080
+      ],
+      "beam_atlas_sha256": [
+        "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+        "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+      ],
+      "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+      "assumed_beam_luma": 0.014043676299839377,
+      "preview_sha256": "dda67db2a4e1ff2d4e170f608fe00a400bbb1013b403885b2c69b16c28ba24b9",
+      "ab_shader_sha256": "a9b735d3e62032d8ed25e97625c8c755c23b93efa3c299ca40190fb8d9a6746c",
+      "ab_shader_hw": [
+        168,
+        168
+      ],
+      "pool_factor": 3.0,
+      "prep_factor": 1.0
+    }
+  },
+  "scene_camera_fallback": {
+    "3.04": {
+      "status": "@info\t体積光（3D）v3.04 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x1 スライス=24(dz=125.8) 頂点=96 固有充填=0.69 キャッシュ頂点=0.07M",
+      "resolve_queries": [
+        [
+          6,
+          146
+        ],
+        [
+          2,
+          146
+        ]
+      ],
+      "scene_camera_queries": [
+        146
+      ],
+      "injected_blocked_pixeldata_reads": 0,
+      "beam_uniform_p10": [
+        0.0,
+        0.0,
+        -1024.0,
+        1.0
+      ],
+      "beam_quad_count": 24,
+      "beam_atlas_hw": [
+        1080,
+        1080
+      ],
+      "beam_atlas_sha256": [
+        "4a92a08d2e66cbf733f4c20fe225dd7a7bda7265e6873e5ee5fd07bead64d95c"
+      ],
+      "beam_geometry_sha256": "4eaa9c2c55e3e0f5219dd6eec656f7c788bae06bfe4139896d64dde691e302e8",
+      "assumed_beam_luma": 0.01337150907708799,
+      "preview_sha256": "aa7e7efc2fae61a824b39b52ae4cffd5215a709f2f294913169dcc95729ff5d0",
+      "ab_shader_sha256": null,
+      "ab_shader_hw": null,
+      "pool_factor": 3.0,
+      "prep_factor": 1.0
+    },
+    "3.05": {
+      "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x1 スライス=24(dz=50.5) 頂点=96 固有充填=0.69 キャッシュ頂点=0.07M",
+      "resolve_queries": [
+        [
+          2,
+          765
+        ]
+      ],
+      "scene_camera_queries": [
+        765
+      ],
+      "injected_blocked_pixeldata_reads": 0,
+      "beam_uniform_p10": [
+        260.0,
+        0.0,
+        -1024.0,
+        0.0
+      ],
+      "beam_quad_count": 24,
+      "beam_atlas_hw": [
+        1080,
+        1080
+      ],
+      "beam_atlas_sha256": [
+        "b519bec9bde1271874de5ea3f2bcab6e1858bd5e1f9266fc0b5bade47ed6b072"
+      ],
+      "beam_geometry_sha256": "9c298898763012d4137b0ae92717c4a691e8d487bc1a6009958dd6f60c76d6a3",
+      "assumed_beam_luma": 0.021480199998690185,
+      "preview_sha256": "da82778a1c3d11dcf66f20b8573457f602c07281447b6d1a310e7f71833e7e73",
+      "ab_shader_sha256": null,
+      "ab_shader_hw": null,
+      "pool_factor": 3.0,
+      "prep_factor": 1.0
+    },
+    "3.06": {
+      "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=OFF アトラス=1080x1080x1 スライス=24(dz=50.5) 頂点=96 固有充填=0.69 キャッシュ頂点=0.07M",
+      "resolve_queries": [
+        [
+          2,
+          765
+        ]
+      ],
+      "scene_camera_queries": [
+        765
+      ],
+      "injected_blocked_pixeldata_reads": 0,
+      "beam_uniform_p10": [
+        260.0,
+        0.0,
+        -1024.0,
+        0.0
+      ],
+      "beam_quad_count": 24,
+      "beam_atlas_hw": [
+        1080,
+        1080
+      ],
+      "beam_atlas_sha256": [
+        "b519bec9bde1271874de5ea3f2bcab6e1858bd5e1f9266fc0b5bade47ed6b072"
+      ],
+      "beam_geometry_sha256": "9c298898763012d4137b0ae92717c4a691e8d487bc1a6009958dd6f60c76d6a3",
+      "assumed_beam_luma": 0.021480199998690185,
+      "preview_sha256": "da82778a1c3d11dcf66f20b8573457f602c07281447b6d1a310e7f71833e7e73",
+      "ab_shader_sha256": null,
+      "ab_shader_hw": null,
+      "pool_factor": 3.0,
+      "prep_factor": 1.0
+    }
+  },
+  "opaque_fallback": [
+    {
+      "mode": 1,
+      "injected_effect_opaque_rectangle": false,
+      "versions": {
+        "3.05": {
+          "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.06": {
+          "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        }
+      }
+    },
+    {
+      "mode": 1,
+      "injected_effect_opaque_rectangle": true,
+      "versions": {
+        "3.05": {
+          "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m1) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "feec98629d61460ec627f3dfa9ce64fd8bb96eeef8ed8975de3aaa1cf22a19ad"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.06": {
+          "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3*(m1) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "be97ce85afe959fc4fb2691abf3ad9ce788c549bee40e3de2d3a8c361678b1fc"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.024996950001829155,
+          "preview_sha256": "918dde614944f14cf721b00e42b072f4b461e671b75010365490478a98d81c95",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        }
+      }
+    },
+    {
+      "mode": 2,
+      "injected_effect_opaque_rectangle": false,
+      "versions": {
+        "3.05": {
+          "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.06": {
+          "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        }
+      }
+    },
+    {
+      "mode": 2,
+      "injected_effect_opaque_rectangle": true,
+      "versions": {
+        "3.05": {
+          "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "111b810f8a180d61ca25c53b451910fd265c21c4fc0643dcc87b4b184ae5f4f0"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.007127662640413153,
+          "preview_sha256": "455294523901c07497e3aaec3effa2e8b1c72c47e7f33d695e2fb67b5384d791",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.06": {
+          "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3*(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "23ff9db21d0b092d4548394d91d0164e3cccd32235a97c6de6b1fc2e4cad4455"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.014043676299839377,
+          "preview_sha256": "41d4d3e314ae3c33e47a788bd97d4c4f0dfba46488eca1afbb777a55bfab0d4d",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        }
+      }
+    },
+    {
+      "mode": 2,
+      "injected_effect_opaque_rectangle": false,
+      "control": "genuinely_opaque",
+      "versions": {
+        "3.05": {
+          "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "111b810f8a180d61ca25c53b451910fd265c21c4fc0643dcc87b4b184ae5f4f0"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.007127662640413153,
+          "preview_sha256": "455294523901c07497e3aaec3effa2e8b1c72c47e7f33d695e2fb67b5384d791",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.06": {
+          "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2),opq アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "111b810f8a180d61ca25c53b451910fd265c21c4fc0643dcc87b4b184ae5f4f0"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.007127662640413153,
+          "preview_sha256": "455294523901c07497e3aaec3effa2e8b1c72c47e7f33d695e2fb67b5384d791",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        }
+      }
+    },
+    {
+      "mode": 2,
+      "injected_effect_opaque_rectangle": true,
+      "control": "audit_pixeldata_unavailable",
+      "versions": {
+        "3.05": {
+          "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 0,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "111b810f8a180d61ca25c53b451910fd265c21c4fc0643dcc87b4b184ae5f4f0"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.007127662640413153,
+          "preview_sha256": "455294523901c07497e3aaec3effa2e8b1c72c47e7f33d695e2fb67b5384d791",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        },
+        "3.06": {
+          "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(220x158) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.69 キャッシュ頂点=0.09M",
+          "resolve_queries": [
+            [
+              2,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              3,
+              2
+            ]
+          ],
+          "scene_camera_queries": [],
+          "injected_blocked_pixeldata_reads": 1,
+          "beam_uniform_p10": [
+            0.0,
+            0.0,
+            -1024.0,
+            0.0
+          ],
+          "beam_quad_count": 66,
+          "beam_atlas_hw": [
+            1080,
+            1080
+          ],
+          "beam_atlas_sha256": [
+            "ee44cb56a987e7bf5583809622c426461d980182c85570c03e8e24b9a593afc3",
+            "111b810f8a180d61ca25c53b451910fd265c21c4fc0643dcc87b4b184ae5f4f0"
+          ],
+          "beam_geometry_sha256": "947ea942bab445f5b61ce2834227ba7fc4ba750386628291b488a6b6c2fec3fd",
+          "assumed_beam_luma": 0.007127662640413153,
+          "preview_sha256": "455294523901c07497e3aaec3effa2e8b1c72c47e7f33d695e2fb67b5384d791",
+          "ab_shader_sha256": null,
+          "ab_shader_hw": null,
+          "pool_factor": 3.0,
+          "prep_factor": 1.0
+        }
+      }
+    }
+  ],
+  "high_resolution": {
+    "6501x4751": {
+      "source": {
+        "kind": "user window with synthetic transparent 125px border",
+        "original_size": [
+          6251,
+          4501
+        ],
+        "padded_size": [
+          6501,
+          4751
+        ]
+      },
+      "factors": {
+        "v3.01": {
+          "pool": 32,
+          "prep": 11
+        },
+        "v3.02": {
+          "pool": 32,
+          "prep": 11
+        }
+      },
+      "shaders": {
+        "pool": {
+          "factor": 32,
+          "output_hw": [
+            149,
+            204
+          ],
+          "equal_rgba8": true,
+          "sha256": "e17196ea74936c197aab261145ecedc2489c69aae5bfda1709558c8b71c2f4ad"
+        },
+        "prep": {
+          "factor": 11,
+          "output_hw": [
+            432,
+            591
+          ],
+          "equal_rgba8": true,
+          "sha256": "c73d8f4066d08b541d5945abc01e4f5e2898d2dc4d1e7a2ce1f917f8f77e8194"
+        }
+      }
+    },
+    "16384x8_stripes": {
+      "source": "synthetic alternating white/black columns",
+      "factors": {
+        "v3.01": {
+          "pool": 6,
+          "prep": 16
+        },
+        "v3.02": {
+          "pool": 64,
+          "prep": 26
+        }
+      },
+      "shaders": {
+        "pool": {
+          "v3.01_factor": 6,
+          "v3.02_factor": 64,
+          "v3.01_output_hw": [
+            2,
+            2731
+          ],
+          "v3.02_output_hw": [
+            1,
+            256
+          ],
+          "v3.01_first_rgba": [
+            128,
+            128,
+            255,
+            255
+          ],
+          "v3.02_first_rgba": [
+            255,
+            255,
+            255,
+            255
+          ],
+          "v3.01_mean_red_including_padding": 128.0,
+          "v3.02_mean_red_including_padding": 255.0
+        },
+        "prep": {
+          "v3.01_factor": 16,
+          "v3.02_factor": 26,
+          "v3.01_output_hw": [
+            2,
+            1024
+          ],
+          "v3.02_output_hw": [
+            2,
+            631
+          ],
+          "v3.01_first_rgba": [
+            128,
+            128,
+            128,
+            128
+          ],
+          "v3.02_first_rgba": [
+            255,
+            255,
+            255,
+            255
+          ],
+          "v3.01_mean_red_including_padding": 64.0,
+          "v3.02_mean_red_including_padding": 127.5
+        }
+      }
+    }
+  }
+}

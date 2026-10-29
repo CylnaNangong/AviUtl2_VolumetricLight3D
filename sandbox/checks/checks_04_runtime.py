@@ -18,6 +18,11 @@ def _render(params=None, *, layers=None, w=256, h=144, **kw):
                      p, width=w, height=h, layer_index=4, **kw)
 
 
+def _emission_diff(a, b) -> float:
+    # Equal-depth-weight model; use emitted RGB rather than coverage alpha.
+    return float(np.abs(a.assumed_emission()[..., :3] - b.assumed_emission()[..., :3]).mean() * 255)
+
+
 def _has_notice(r, needle: str) -> bool:
     for c in r.host.draw_calls:
         if c.get("type") == "text" and needle in c.get("text", ""):
@@ -61,8 +66,8 @@ def param_effects():
 
     c = _render({"fog": 0.0})
     d = _render({"fog": 70.0})
-    d_fog = float(np.abs(c.alpha.astype(int) - d.alpha.astype(int)).mean())
-    require(d_fog > 0.2, f"fog had no effect (diff={d_fog})")
+    d_fog = _emission_diff(c, d)
+    require(d_fog > 0.2, f"fog had no effect on assumed emitted RGB (diff={d_fog})")
 
     e = _render({"light_color": 0xFF3020})
     rgb_e = e.rgb.astype(float)
@@ -175,16 +180,84 @@ def restricted():
     return {"alpha_mean": round(r.stats()["alpha_mean"], 4)}
 
 
-@check("runtime: non-zero clip start + sub-scene still occlude (v3.05 regression)", tags=["runtime", "regression"])
+@check("runtime: non-zero clip start passes scene frame to bridge (v3.05 regression)",
+       tags=["runtime", "regression"])
 def scene_frame():
+    # This exercises a synthetic scene timeline, not an actual nested .aup2.
+    # The previous check was a false positive: Host.run_frame reset frame_s to
+    # zero, the bridge ignored its frame argument, and all layers were active.
+    import tempfile
+    from pathlib import Path
+    from vl3dsb.host import Host
+
     layers = standard_scene(128, 128, occluder_z=-200.0)
-    r = run_frame(layers, {"src_layer": 1, "intensity": 180.0, "slices": 20.0,
-                           "occ_mode": 3.0, "occ_target": 2.0, "occ_list": "3"},
-                  width=256, height=144, frame=146, frame_s=619, scene_id=1)
+    for layer in layers:
+        layer.start, layer.end = 619, 1000
+    params = {"src_layer": 1, "intensity": 180.0, "slices": 20.0,
+              "occ_mode": 3.0, "occ_target": 2.0, "occ_list": "3", "log_mode": True,
+              "ab_enable": True, "ab_target": 2.0, "ab_list": "3"}
+
+    class QueryHost(Host):
+        def __init__(self, *args, **kwargs):
+            self.resolve_queries = []
+            super().__init__(*args, **kwargs)
+
+        def _api_br_resolve_layer(self, layer_idx, frame=0):
+            self.resolve_queries.append((int(layer_idx), int(frame)))
+            return super()._api_br_resolve_layer(layer_idx, frame)
+
+    def render(path=None):
+        def factory(cfg):
+            return QueryHost(session.script(path), layers, cfg, params=params,
+                             shader_lib=session.shader_library(path), native=session.native())
+        return run_frame(layers, params, width=256, height=144, frame=146, frame_s=619,
+                         scene_id=1, script_path=path, host_factory=factory)
+
+    r = render()
     require(not r.host.errors, f"raised: {r.host.errors[:1]}")
+    require(r.host.frame_s == 619 and r.host.lua.eval("obj.frame_s") == 619,
+            "configured scene start was not passed to Lua")
+    require((3, 765) in r.host.resolve_queries,
+            f"expected scene frame 619+146=765, got {r.host.resolve_queries}")
     desc = next((p for p in r.log if "GPU=" in p), "")
-    require("L3" in desc, f"occluder not detected at frame_s=619: {desc}")
-    return {"status_line": desc[:120]}
+    require("L3(m3)+AB(L3)" in desc, f"active occluder / blend target not detected: {desc}")
+
+    # Negative control: change only the scene-frame expression to local frame.
+    # This is an intentionally broken variant, NOT an original v3.04 script.
+    source = session.script().text
+    needle = "local sf = (fs or 0) + f"
+    require(source.count(needle) == 1, "scene-frame expression not found exactly once")
+    OUT_ROOT.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="vl-frame-control-", dir=OUT_ROOT) as td:
+        control_path = Path(td) / "relative-frame-only.obj2"
+        control_path.write_text(source.replace(needle, "local sf = f", 1), encoding="utf-8")
+        control = render(control_path)
+    require(not control.host.errors, f"negative control raised: {control.host.errors[:1]}")
+    control_desc = next((p for p in control.log if "GPU=" in p), "")
+    require((3, 146) in control.host.resolve_queries and "0hit" in control_desc
+            and "+AB(" not in control_desc,
+            f"negative control should miss both targets: {control.host.resolve_queries}, {control_desc}")
+    return {"scene_frame": 765, "positive": "L3(m3)+AB(L3)",
+            "relative_frame_control": "0hit, no AB"}
+
+
+@check("host: synthetic effect-only opaque failure preserves raw layer alpha",
+       tags=["runtime", "regression"])
+def effect_only_opaque_simulation():
+    # This checks the simulator's injected failure, not the real AviUtl2 host.
+    from vl3dsb.host import Host, HostConfig
+    img = assets.silhouette(32, 32)
+    layer = Layer(index=3, image=img, fx_name="synthetic effect",
+                  effects={"__fx_opaque_bug__": {"on": True}})
+    host = Host(session.script(), [layer], HostConfig(screen_w=32, screen_h=32),
+                shader_lib=session.shader_library())
+    require(host._api_load("layer", 3, True), "effect load failed")
+    require(np.all(host.buf("object")[..., 3] == 255), "failure injection did not trigger")
+    for effect in (None, False):
+        require(host._api_load("layer", 3, effect), "raw load failed")
+        require(np.array_equal(host.buf("object"), img),
+                "effect-only failure leaked into raw load")
+    return {"effect_alpha_min": 255, "raw_alpha_min": int(img[..., 3].min())}
 
 
 @check("runtime: @水面 (water surface) source path executes ps_vl_water", tags=["runtime", "feature"])
@@ -213,8 +286,8 @@ def camera_modes():
     # the default camera is a -Z camera at 1024, so an explicit identical camera must match
     d_same = float(np.abs(default.alpha.astype(int) - centered.alpha.astype(int)).mean())
     require(d_same < 0.01, f"explicit default camera differs from the implicit one (diff={d_same})")
-    d = float(np.abs(centered.alpha.astype(int) - moved.alpha.astype(int)).mean())
-    require(d > 0.5, f"moving the camera had no visible effect (diff={d})")
+    d = _emission_diff(centered, moved)
+    require(d > 0.5, f"moving the camera did not change modeled emission (diff={d})")
     return {"diff_default_vs_moved": round(d, 3), "diff_default_vs_explicit": round(d_same, 4)}
 
 
@@ -271,3 +344,49 @@ def high_threshold():
         # a bright stained-glass source may still pass; that is acceptable but must be dim
         require(r.stats()["alpha_mean"] < 0.02, "threshold=99 did not dim the beam")
     return {"alpha_max": int(r.alpha.max()) if r.volume is not None else 0}
+
+
+# ---------------------------------------------------------------------------
+# Host discard margin
+#
+# Project notes and the archived GPU sandbox model a fragment cutoff near
+# `tex.a * vertex_alpha <= 0.001` (not an official host specification). The script
+# encodes slice coverage in `tex.a` (either the constant token `min_opt_a` or a
+# proportional value) and the per-slice weight in the drawpoly alpha, so the
+# *product* has to stay above that threshold -- otherwise the whole beam
+# silently disappears with no error (this is exactly what v3.14's constant-alpha
+# token sits on: min_opt_a*poly_alpha ~= 0.00103-0.0014).
+# ---------------------------------------------------------------------------
+_P12_Z = 12 * 4 + 2      # min_opt_a
+_P26_W = 26 * 4 + 3      # wboit_ka
+
+
+@check("runtime: slice alpha clears the assumed 0.001 discard threshold", tags=["runtime", "core"])
+def discard_margin():
+    from vl3dsb.raster import DISCARD_W
+    rows = []
+    worst = None
+    worst_weight = float("inf")
+    for params in ({"intensity": 60.0}, {"intensity": 180.0}, {"intensity": 600.0},
+                   {"intensity": 180.0, "res_mode": 2.0}, {"intensity": 180.0, "fog": 80.0}):
+        r = _render(params)
+        require(r.volume is not None, f"no geometry for {params}")
+        tr = r.host.shader_traces.get("beamatlas")
+        require(tr is not None, "beamatlas never ran")
+        # In the proportional path this is a lower bound, not the actual alpha
+        # for every texel. In the constant-token path it is the emitted value.
+        token = float(tr["params"][_P12_Z])
+        ka = float(tr["params"][_P26_W])
+        quad_a = min((q["alpha"] for q in r.host.quads), default=0.0)
+        w = token * quad_a
+        rows.append({"params": params, "min_opt_a": round(token, 6), "poly_alpha": round(quad_a, 6),
+                     "w": w, "wboit_ka": ka,
+                     "alpha_mean": round(r.stats()["alpha_mean"], 5)})
+        require(r.stats()["alpha_mean"] > 0.0,
+                f"frame is black for {params} (slice weight {w:.5f} vs discard {DISCARD_W})")
+        if w < worst_weight:
+            worst, worst_weight = rows[-1], w
+    require(worst_weight > DISCARD_W,
+            f"thinnest slice weight {worst_weight:.7f} is at/below the assumed discard {DISCARD_W}")
+    return {"discard_w": DISCARD_W, "worst": worst,
+            "margin_x": round(worst_weight / DISCARD_W, 3), "rows": len(rows)}

@@ -13,10 +13,10 @@ can reach through the host is emulated here:
   obj.drawpoly / obj.draw (recorded and software-rasterised)
   obj.node-wide helpers used by the script's own fallbacks
 
-Aim: high fidelity for *script logic* (parameter handling, caching, occlusion
-decisions, error paths) and good-but-approximate fidelity for *host rendering*
-(AviUtl2's WBOIT 3D compositor is replaced by a simple front-to-back alpha
-composite - see raster.py).
+Aim: exercise script logic (parameter handling, caching, occlusion decisions,
+error paths). Host rendering is only approximated: raster.py provides a legacy
+RGBA8 preview and two explicit floating-point models, none of which implements
+AviUtl2's actual 3D compositor, lighting, or depth weighting.
 """
 from __future__ import annotations
 
@@ -457,9 +457,13 @@ class Host:
             return float(self.layer_index)
         return None
 
-    def _layer(self, idx: int) -> Optional[Layer]:
+    def _layer(self, idx: int, scene_frame: Optional[int] = None) -> Optional[Layer]:
+        # Layer start/end describe the scene timeline, whereas obj.frame is
+        # relative to this effect's start. Bridge lookups can request a
+        # different explicit scene frame; regular obj.load/getvalue use now.
+        frame = self.frame_s + self.frame if scene_frame is None else int(scene_frame)
         for lay in self.layers:
-            if lay.index == idx and lay.enabled and lay.start <= self.frame <= lay.end:
+            if lay.index == idx and lay.enabled and lay.start <= frame <= lay.end:
                 return lay
         return None
 
@@ -631,7 +635,7 @@ class Host:
         if layer is None or layer.image is None:
             return False
         img = layer.image
-        if layer.fx_name and self._fx_bug(layer):
+        if layer.fx_name and bool(effect) and self._fx_bug(layer):
             alpha = np.full(img.shape[:2], 255, np.uint8)
             img = np.concatenate([img[..., :3], alpha[..., None]], axis=-1)
         self.buffers["object"] = np.array(img, copy=True)
@@ -723,7 +727,13 @@ class Host:
                 self.errors.append(f"drawpoly: mixed vertex tuple widths {sorted(widths)}")
                 return False
         self.draw_calls.append({"type": "poly", "n": len(prims), "alpha": float(alpha)})
-        self.quads.extend([{"verts": q, "alpha": float(alpha)} for q in prims])
+        # Each draw call uses the object image as it exists *now*. A later
+        # shader dispatch may replace or clear it for the next 64-slice atlas.
+        # Snapshot once per call (shared by all its quads), rather than using
+        # the last atlas for every recorded slice at the end of the frame.
+        texture = self.buf("object")
+        atlas = None if texture is None else np.array(texture, copy=True)
+        self.quads.extend([{"verts": q, "alpha": float(alpha), "atlas": atlas} for q in prims])
         return True
 
     def _api_draw(self, x=0, y=0, z=0, zoom=1.0, alpha=1.0, rx=0.0, ry=0.0, rz=0.0):
@@ -739,7 +749,7 @@ class Host:
         return bool(self.cfg.bridge and self.native is not None)
 
     def _api_br_resolve_layer(self, layer_idx, frame=0):
-        lay = self._layer(int(layer_idx))
+        lay = self._layer(int(layer_idx), scene_frame=int(frame))
         if lay is None:
             return ("EMPTY", "", "", 0, self.scene_id, -1, "BRIDGE", False,
                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
@@ -761,7 +771,7 @@ class Host:
                 float(align.get("pad_t", 0.0)), float(align.get("pad_b", 0.0)))
 
     def _api_br_get_water_color(self, layer_idx, frame=0):
-        lay = self._layer(int(layer_idx))
+        lay = self._layer(int(layer_idx), scene_frame=int(frame))
         return lay.water_color if lay is not None else -1
 
     def _api_br_get_edit_camera(self):
@@ -883,7 +893,7 @@ class Host:
     def run_frame(self, frame: int, time_s: Optional[float] = None):
         self.frame = int(frame)
         self.time = float(time_s if time_s is not None else frame / 30.0)
-        self.frame_s = 0
+        # Preserve the effect's configured scene start; obj.frame is relative.
         self.quads = []
         self.draw_calls = []
         self.sync_fields()
@@ -908,7 +918,7 @@ class Host:
         if not self.quads:
             return None
         atlas = self.buf("object")
-        if atlas is None:
+        if atlas is None and not any(q.get("atlas") is not None for q in self.quads):
             return None
         return rasterize_quads(atlas, self.quads, self.cfg.screen_w, self.cfg.screen_h)
 

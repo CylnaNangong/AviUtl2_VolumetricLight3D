@@ -25,13 +25,14 @@ README_DEFAULTS = {
 
 @check("obj2: header / identity", tags=["static"])
 def header():
+    """Validate the banner without pinning the suite to one release."""
     s = script()
     require(s.information.startswith("VolumetricLight3D v"), f"unexpected header: {s.information!r}")
-    require(s.version == "v3.13", f"version mismatch: {s.version}")
+    require(bool(re.fullmatch(r"v\d+\.\d\d", s.version or "")), f"unparsable version: {s.version}")
     txt = s.text
     require("MIT" in txt or "License" in txt, "license line missing")
     require("--information:" in txt, "information directive missing")
-    return {"detail": s.information}
+    return {"detail": s.information, "version": s.version}
 
 
 @check("obj2: parameter surface (groups/params/defaults)", tags=["static"])
@@ -210,7 +211,7 @@ def changelog():
     versions = re.findall(r"-- v(\d\.\d\d) ", body)
     require(versions, "no changelog entries found")
     top = versions[0]
-    require(top == "3.13", f"newest changelog entry is v{top}, banner says {s.version}")
+    require("v" + top == s.version, f"newest changelog entry is v{top}, banner says {s.version}")
     require(len(versions) >= 10, f"only {len(versions)} changelog entries")
     return {"entries": len(versions), "top": "v" + top}
 

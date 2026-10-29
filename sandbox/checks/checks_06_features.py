@@ -36,14 +36,24 @@ def _diff(a, b) -> float:
     return float(np.abs(a.alpha.astype(int) - b.alpha.astype(int)).mean())
 
 
+def _emission_diff(a, b) -> float:
+    """RGB difference in the equal-depth assumed model, on a 0..255 scale."""
+    return float(np.abs(a.assumed_emission()[..., :3] - b.assumed_emission()[..., :3]).mean() * 255)
+
+
+def _modeled_luma(r) -> float:
+    """Mean emitted RGB luma in the simplified model; not a host measurement."""
+    return float(np.mean(r.assumed_emission()[..., :3] @ np.array([.2126, .7152, .0722])))
+
+
 @check("occlusion: mode 2 (2D foreground mask) darkens the beam", tags=["occlusion", "core"])
 def occ_2d():
     off = _render({"occ_mode": 0.0})
     on = _render({"occ_mode": 2.0})
     d = _diff(off, on)
     require(d > 0.2, f"2D occlusion changed nothing (diff={d})")
-    require(on.stats()["alpha_mean"] < off.stats()["alpha_mean"],
-            "the occluded frame should be darker on average")
+    require(_modeled_luma(on) < _modeled_luma(off),
+            "the occluded frame should have less modeled emitted light")
     require(any("L3" in p for p in on.log), "HUD did not report the occluder layer")
     save_png(composite(None, off.volume, 1.0), OUT_ROOT / "features" / "occ_off.png")
     save_png(composite(None, on.volume, 1.0), OUT_ROOT / "features" / "occ_2d.png")
@@ -119,13 +129,13 @@ def autoblend():
 def photometry():
     near = _render({"decay": 0.0})
     far = _render({"decay": 90.0})
-    require(near.stats()["alpha_mean"] > far.stats()["alpha_mean"],
-            "higher decay must dim the beam")
+    require(_modeled_luma(near) > _modeled_luma(far),
+            "higher decay must dim modeled emitted light")
     short = _render({"length": 600.0})
     long_ = _render({"length": 4000.0})
-    require(long_.stats()["alpha_mean"] > 0, "long beam vanished")
-    require(short.stats()["alpha_mean"] < long_.stats()["alpha_mean"],
-            "a shorter beam should collect less light")
+    require(_modeled_luma(long_) > 0, "long beam vanished")
+    require(_modeled_luma(short) < _modeled_luma(long_),
+            "in this controlled scene a shorter beam should collect less modeled light")
     warm = _render({"light_color": 0xFFB060})
     cool = _render({"light_color": 0x6090FF})
     require(_diff(warm, cool) > 0.1 or
@@ -139,21 +149,25 @@ def photometry():
             return 0.0
         return float((rgb[..., 0][mask] + 1).mean() / (rgb[..., 2][mask] + 1).mean())
     require(rb(warm) > rb(cool), f"warm light ratio r/b {rb(warm):.2f} <= cool {rb(cool):.2f}")
-    return {"alpha_decay0": round(near.stats()["alpha_mean"], 4),
-            "alpha_decay90": round(far.stats()["alpha_mean"], 4)}
+    return {"model": "equal-weight OIT approximation",
+            "luma_decay0": round(_modeled_luma(near), 6),
+            "luma_decay90": round(_modeled_luma(far), 6),
+            "luma_length600": round(_modeled_luma(short), 6),
+            "luma_length4000": round(_modeled_luma(long_), 6)}
 
 
 @check("features: fog / wind / seed modulate the beam", tags=["feature"])
 def fog_and_seed():
     clear = _render({"fog": 0.0})
     foggy = _render({"fog": 80.0})
-    d = _diff(clear, foggy)
-    require(d > 0.05, f"fog had no effect (diff={d})")
+    d = _emission_diff(clear, foggy)
+    require(d > 0.05, f"fog had no effect on modeled emitted RGB (diff={d})")
     a = _render({"fog": 80.0, "seed": 1.0})
     b = _render({"fog": 80.0, "seed": 2.0})
-    require(_diff(a, b) > 0.01, "seed did not change the fog pattern")
+    seed_diff = _emission_diff(a, b)
+    require(seed_diff > 0.01, "seed did not change the modeled fog pattern")
     save_png(composite(None, foggy.volume, 1.0), OUT_ROOT / "features" / "fog.png")
-    return {"fog_diff": round(d, 3), "seed_diff": round(_diff(a, b), 3),
+    return {"fog_diff": round(d, 3), "seed_diff": round(seed_diff, 3),
             "artifacts": [str(OUT_ROOT / "features" / "fog.png")]}
 
 

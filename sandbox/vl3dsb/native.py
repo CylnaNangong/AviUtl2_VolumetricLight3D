@@ -21,7 +21,7 @@ from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from .config import REPO_ROOT
 SRC_DIR = REPO_ROOT / "src" / "VL3DBridge"
 OUT_DIR = Path(__file__).resolve().parents[1] / "out" / "build" / "native"
 

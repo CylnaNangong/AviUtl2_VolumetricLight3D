@@ -27,7 +27,7 @@ class HlslError(Exception):
 TOKEN_RE = re.compile(
     r"""
     (?P<ws>\s+)
-  | (?P<num>(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?[uUfF]?)
+  | (?P<num>0[xX][0-9a-fA-F]+[uU]?|(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?[uUfF]?)
   | (?P<id>[A-Za-z_][A-Za-z0-9_]*)
   | (?P<op><<=|>>=|<<|>>|\+\+|--|\+=|-=|\*=|/=|%=|&=|\|=|\^=|==|!=|<=|>=|&&|\|\||[-+*/%&|^~!<>=?:.,;(){}\[\]])
     """,
@@ -532,7 +532,12 @@ class CodeGen:
         k = e[0]
         if k == "num":
             txt: str = e[1]
-            if "u" in txt.lower() and not txt.lower().endswith("f"):
+            low = txt.lower()
+            if low.startswith("0x"):
+                # Hex digits e/f are not exponent/float suffixes.
+                val = int(low.rstrip("u"), 16)
+                return ("u", 1) if low.endswith("u") or val > 0x7fffffff else ("i", 1)
+            if "u" in low and not low.endswith("f"):
                 return ("u", 1)
             if any(c in txt for c in ".eE") or txt.lower().endswith("f"):
                 return ("f", 1)
@@ -651,9 +656,19 @@ class CodeGen:
     # -- number literals --
     def num_literal(self, txt: str, want: Tuple[str, int]) -> str:
         low = txt.lower()
-        is_float_lit = any(c in txt for c in ".eE") or low.endswith("f")
+        if low.startswith("0x"):
+            # HLSL hex literals (e.g. the PCG hash constants `0x5bd1u`)
+            val = int(txt.rstrip("uU"), 16)
+            if want[1] > 1:
+                return f"{VEC_CTYPE[want[0]]}({self.num_literal(txt, (want[0], 1))})"
+            return {"f": f"{float(val)}f", "u": f"{val}u", "i": str(val),
+                    "b": "(true)" if val else "(false)"}[want[0]]
         if want[1] > 1:
             return f"{VEC_CTYPE[want[0]]}({self.num_literal(txt, (want[0], 1))})"
+        return self._num_literal_decimal(txt, low, want)
+
+    def _num_literal_decimal(self, txt: str, low: str, want: Tuple[str, int]) -> str:
+        is_float_lit = any(c in txt for c in ".eE") or low.endswith("f")
         if want[0] == "f":
             if is_float_lit:
                 return txt if low.endswith("f") else txt + "f"

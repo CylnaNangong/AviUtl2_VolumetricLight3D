@@ -1,0 +1,306 @@
+{
+  "warning": "Synthetic CPU checks, not original v3.01–v3.05 releases or AviUtl2/D3D11.",
+  "archive_sha256": "42063c23a9ee8eb96e90318aa15c97a9e4e86b854c653e7437347a2108d44206",
+  "v306_script_sha256": "b39eb1e12c74b6b9bea1438d223e555cbcc15141ac6debc18ee8e9b5c75d81c6",
+  "synthetic_reverse_sha256": "95df187c8a8965b1e50fa8d8622598dbf228f94ed232eed862b87a4fcb8f4ac6",
+  "patch_round_trip_exact": true,
+  "patch_direct_replacements": 9,
+  "patch_version_replacements": 8,
+  "hud_source_buffer": [
+    6501,
+    4751
+  ],
+  "v306_factors_for_hud_buffer": {
+    "pool": 32,
+    "prep": 11
+  },
+  "shaders": {
+    "cached_stride_arithmetic_float32": {
+      "pool": {
+        "factor_min": 1,
+        "factor_max": 16384,
+        "equal_count": 16384
+      },
+      "prep": {
+        "factor_min": 1,
+        "factor_max": 16384,
+        "equal_count": 16384
+      }
+    },
+    "forced_same_factor_shader_runs": {
+      "pool": {
+        "factor": 32,
+        "output_hw": [
+          2,
+          2
+        ],
+        "equal_rgba8": true,
+        "sha256": "5ac6a5945f16500911219129984ba8b387a06f24fe383ce4e81a73294065461b"
+      },
+      "prep": {
+        "factor": 11,
+        "output_hw": [
+          6,
+          6
+        ],
+        "equal_rgba8": true,
+        "sha256": "db5fd97ac0a26f85f9a1efba15676a1d5d33d64e63829770be0b9a49f465d0ca"
+      }
+    },
+    "integer_vs_float_shader_cases": [
+      {
+        "shader": "pool",
+        "factor": 1,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "pool",
+        "factor": 11,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "pool",
+        "factor": 16,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "pool",
+        "factor": 17,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "pool",
+        "factor": 32,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "pool",
+        "factor": 33,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "pool",
+        "factor": 65,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "prep",
+        "factor": 1,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "prep",
+        "factor": 11,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "prep",
+        "factor": 16,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "prep",
+        "factor": 17,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "prep",
+        "factor": 32,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "prep",
+        "factor": 33,
+        "equal_rgba8": true
+      },
+      {
+        "shader": "prep",
+        "factor": 65,
+        "equal_rgba8": true
+      }
+    ],
+    "adversarial_sampling_examples": [
+      {
+        "shader": "pool",
+        "factor": 33,
+        "bright_columns": "even",
+        "no_stride_rgba8": [
+          128,
+          128,
+          255,
+          255
+        ],
+        "stride_rgba8": [
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      {
+        "shader": "pool",
+        "factor": 33,
+        "bright_columns": "odd",
+        "no_stride_rgba8": [
+          128,
+          128,
+          255,
+          255
+        ],
+        "stride_rgba8": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "shader": "prep",
+        "factor": 17,
+        "bright_columns": "even",
+        "no_stride_rgba8": [
+          128,
+          128,
+          128,
+          128
+        ],
+        "stride_rgba8": [
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      {
+        "shader": "prep",
+        "factor": 17,
+        "bright_columns": "odd",
+        "no_stride_rgba8": [
+          128,
+          128,
+          128,
+          128
+        ],
+        "stride_rgba8": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    ]
+  },
+  "v306_patch_ablation": {
+    "shader_blocks_identical": 14,
+    "rows": [
+      {
+        "occ_mode": 1,
+        "injected_fx_opaque_rect": false,
+        "versions": {
+          "v306": {
+            "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー1(160x120) 遮蔽=L3(m1) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.60 キャッシュ頂点=0.06M",
+            "quads": 66,
+            "modeled_emission_luma": 0.020174675838716297
+          },
+          "v306_minus_patch": {
+            "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー1(160x120) 遮蔽=L3(m1) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.60 キャッシュ頂点=0.06M",
+            "quads": 66,
+            "modeled_emission_luma": 0.020174675838716297
+          }
+        },
+        "same_rgba8_preview": true,
+        "atlas_comparison": {
+          "comparable": true,
+          "chunks": 2,
+          "identical_quad_geometry": true,
+          "shared_lit_texels": 40137,
+          "before_only_lit_texels": 0,
+          "after_only_lit_texels": 0,
+          "different_rgb_on_shared_texels": 0,
+          "different_alpha_on_shared_texels": 0
+        }
+      },
+      {
+        "occ_mode": 1,
+        "injected_fx_opaque_rect": true,
+        "versions": {
+          "v306": {
+            "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー1(160x120) 遮蔽=L3*(m1) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.60 キャッシュ頂点=0.06M",
+            "quads": 66,
+            "modeled_emission_luma": 0.020174675838716297
+          },
+          "v306_minus_patch": {
+            "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー1(160x120) 遮蔽=L3(m1) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.60 キャッシュ頂点=0.06M",
+            "quads": 66,
+            "modeled_emission_luma": 0.020174675838716297
+          }
+        },
+        "same_rgba8_preview": true,
+        "atlas_comparison": {
+          "comparable": true,
+          "chunks": 2,
+          "identical_quad_geometry": true,
+          "shared_lit_texels": 40137,
+          "before_only_lit_texels": 0,
+          "after_only_lit_texels": 0,
+          "different_rgb_on_shared_texels": 0,
+          "different_alpha_on_shared_texels": 0
+        }
+      },
+      {
+        "occ_mode": 2,
+        "injected_fx_opaque_rect": false,
+        "versions": {
+          "v306": {
+            "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー1(160x120) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.60 キャッシュ頂点=0.06M",
+            "quads": 66,
+            "modeled_emission_luma": 0.00617372595200944
+          },
+          "v306_minus_patch": {
+            "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー1(160x120) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.60 キャッシュ頂点=0.06M",
+            "quads": 66,
+            "modeled_emission_luma": 0.00617372595200944
+          }
+        },
+        "same_rgba8_preview": true,
+        "atlas_comparison": {
+          "comparable": true,
+          "chunks": 2,
+          "identical_quad_geometry": true,
+          "shared_lit_texels": 32320,
+          "before_only_lit_texels": 0,
+          "after_only_lit_texels": 0,
+          "different_rgb_on_shared_texels": 0,
+          "different_alpha_on_shared_texels": 0
+        }
+      },
+      {
+        "occ_mode": 2,
+        "injected_fx_opaque_rect": true,
+        "versions": {
+          "v306": {
+            "status": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー1(160x120) 遮蔽=L3*(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.60 キャッシュ頂点=0.06M",
+            "quads": 66,
+            "modeled_emission_luma": 0.00617372595200944
+          },
+          "v306_minus_patch": {
+            "status": "@info\t体積光（3D）v3.05 GPU=true 光源=レイヤー1(160x120) 遮蔽=L3(m2) アトラス=1080x1080x2 スライス=66(dz=16.4) 頂点=264 固有充填=0.60 キャッシュ頂点=0.06M",
+            "quads": 66,
+            "modeled_emission_luma": 0.003005905711003512
+          }
+        },
+        "same_rgba8_preview": false,
+        "atlas_comparison": {
+          "comparable": true,
+          "chunks": 2,
+          "identical_quad_geometry": true,
+          "shared_lit_texels": 29285,
+          "before_only_lit_texels": 0,
+          "after_only_lit_texels": 3035,
+          "different_rgb_on_shared_texels": 34,
+          "different_alpha_on_shared_texels": 0
+        }
+      }
+    ]
+  }
+}

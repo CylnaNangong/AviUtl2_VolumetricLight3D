@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,13 +11,16 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 
 from . import assets
+from .config import REPO_ROOT
 from .hlsl.executor import ShaderLibrary, extract_shaders
 from .host import Host, HostConfig, Layer
 from .native import NativeBridge
 from .obj2 import Obj2Script, parse_obj2
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SCRIPT = REPO_ROOT / "Script" / "VolumetricLight3D.obj2"
+# The script may be overridden separately, e.g. for a historical version.
+# Language packs and the native bridge still come from REPO_ROOT.
+DEFAULT_SCRIPT = Path(os.environ.get("VL3DSB_SCRIPT") or
+                      REPO_ROOT / "Script" / "VolumetricLight3D.obj2").expanduser().resolve()
 OUT_ROOT = Path(__file__).resolve().parents[1] / "out"
 
 
@@ -82,6 +86,17 @@ class RenderResult:
     @property
     def rgb(self) -> np.ndarray:
         return self.volume[..., :3] if self.volume is not None else np.zeros((0, 0, 3), np.uint8)
+
+    def assumed_emission(self, mode: str = "weighted") -> np.ndarray:
+        """Premultiplied float RGBA from an explicitly approximate OIT model.
+
+        Unlike the RGBA8 preview, this preserves HDR emission until composition.
+        It still lacks real 3D perspective, host lighting and depth weighting;
+        relative values are evidence about this model, not AviUtl2 measurements.
+        """
+        from .raster import rasterize_emission
+        return rasterize_emission(None, self.host.quads, self.host.cfg.screen_w,
+                                  self.host.cfg.screen_h, mode=mode)
 
     def stats(self) -> Dict[str, float]:
         a = self.alpha.astype(np.float32) / 255.0

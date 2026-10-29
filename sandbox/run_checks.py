@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -32,8 +33,31 @@ def main(argv=None) -> int:
     ap.add_argument("--verbose", "-v", action="store_true")
     ap.add_argument("--json", default=str(OUT_DIR / "results.json"), help="write machine readable results here")
     ap.add_argument("--allow-fail", default="", help="comma separated check-name substrings allowed to fail")
+    ap.add_argument("--repo", default=os.environ.get("VL3DSB_REPO", ""),
+                    help="repository to test (script, Language and src/VL3DBridge)")
+    ap.add_argument("--script", default=os.environ.get("VL3DSB_SCRIPT", ""),
+                    help="override only the .obj2 script; other files come from --repo")
     args = ap.parse_args(argv)
 
+    # discover() imports the check modules (and hence the target paths), so set
+    # the environment only after argument parsing and before calling discover.
+    if args.repo:
+        target_repo = Path(args.repo).expanduser().resolve()
+        required = (target_repo / "Script" / "VolumetricLight3D.obj2",
+                    target_repo / "Language", target_repo / "src" / "VL3DBridge")
+        missing = [str(p) for p in required if not p.exists()]
+        if missing:
+            print("--repo is missing required paths: " + ", ".join(missing), file=sys.stderr)
+            return 2
+        os.environ["VL3DSB_REPO"] = str(target_repo)
+        print(f"== target repository: {target_repo}")
+    if args.script:
+        target = Path(args.script).expanduser().resolve()
+        if not target.is_file():
+            print(f"--script {target} does not exist or is not a file", file=sys.stderr)
+            return 2
+        os.environ["VL3DSB_SCRIPT"] = str(target)
+        print(f"== target script: {target} (other files from target repository)")
     only = [x.strip() for x in args.only.split(",") if x.strip()]
     tags = [x.strip() for x in args.tags.split(",") if x.strip()]
     specs = discover(only=only, tags=tags)
@@ -63,6 +87,8 @@ def main(argv=None) -> int:
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(
         {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+         "target_repo": os.environ.get("VL3DSB_REPO", str(HERE.parent)),
+         "target_script": os.environ.get("VL3DSB_SCRIPT", "Script/VolumetricLight3D.obj2"),
          "seconds": round(total, 2), "counts": counts,
          "results": [r.to_dict() for r in results]},
         ensure_ascii=False, indent=2), encoding="utf-8")

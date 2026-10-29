@@ -5,8 +5,8 @@
     python3 render_demo.py --only fog      # a single preset
     python3 render_demo.py --list
 
-Each PNG is an RGBA composite of the volume layer over a dark backdrop, using
-the same Weight-Blended-OIT approximation the test-suite validates.
+Each PNG uses the legacy RGBA8 preview over a dark backdrop. It is only a
+qualitative illustration, not the host's HDR/WBOIT output or a brightness test.
 """
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ def render(name: str) -> Path:
     img = composite(_bg(), r.volume, spec.get("gain", 3.0))
     out = save_png(img, DEMO_DIR / f"{name}.png")
     st = r.stats()
-    print(f"{name:18s} alpha_mean={st['alpha_mean']:.3f} max={st['alpha_max']:.0f} "
+    print(f"{name:18s} alpha_mean={st['alpha_mean']:.3f} max={st['alpha_max']:.3f} "
           f"quads={int(st['quads'])} {r.seconds:.2f}s -> {out}")
     return out
 

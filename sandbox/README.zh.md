@@ -1,9 +1,9 @@
 # 体积光（3D）测试沙箱 · 使用说明
 
 `AviUtl2_VolumetricLight3D` 的**可复用离线测试沙箱**。它不依赖 Windows、AviUtl2、D3D11 或 GPU：
-在本机用 **LuaJIT（与 AviUtl2 同款）** 真机执行 `Script/VolumetricLight3D.obj2`，用 **NumPy 编译器**
-执行脚本内嵌的 14 段 HLSL，用 **g++ 编译仓库自带 C++17 源码** 提供 `VL3DBridge` 的原生光栅器，
-从而复现从「参数 → 着色器 → 切片几何 → 合成」的完整一帧。
+在本机用 **LuaJIT** 执行 `Script/VolumetricLight3D.obj2`，将内嵌 HLSL 转译成 C++ 并用 **g++** 编译，
+用 NumPy 管理图像缓冲，并编译仓库自带的 `VL3DBridge` C++17 原生光栅器。
+这能跑通「参数 → 着色器 → 切片几何 → 近似合成」，但**不是 AviUtl2 真机渲染**。
 
 ```
 参数(47 个) → vl_run_frame() → pool/prep/blur(mip) → 遮挡(shmap/occ/camocc)
@@ -18,21 +18,26 @@
 sandbox/
 ├── run_checks.py          # 测试运行器（发现并执行 checks/ 下全部用例）
 ├── render_demo.py         # 渲染示例图（out/demo/*.png + gallery.png）
+├── compare_brightness.py  # 多版本 / 两种假设合成模型下的光束比较
+├── ablate_brightness.py   # 配对消融 v3.13 alpha 编码与低 alpha 门
+├── compare_screenshots.py # 截图区域测量与指定几何配准
+├── probe_observed_scene.py # 按实机界面可见设置构造 CPU 假设场景
 ├── requirements.txt       # lupa / numpy / pillow
 ├── vl3dsb/                # 沙箱核心
 │   ├── obj2.py            # .obj2 / .aul2 解析器（参数、分组、hide 规则、HLSL 块、i18n）
 │   ├── luasurface.py      # 扫描 Lua 里的 obj.* 调用 / 字段读 / 字面量键（不执行）
 │   ├── apidoc.py          # 官方宿主 API 签名与键表（docs.aviutl2.jp/lua 的转录）
 │   ├── api_lint.py        # 宿主 API 契约 linter（脚本 ⇄ 文档 ⇄ 模拟宿主）
+│   ├── config.py          # 被测试仓库与沙箱本身的路径
 │   ├── host.py            # AviUtl2 宿主模拟器（obj.* API + LuaJIT 运行时 + 缓冲区/缓存）
 │   ├── native.py          # 编译并调用 src/VL3DBridge 的 C++17 测试库（ctypes）
-│   ├── hlsl/              # HLSL→NumPy 转译器（transpile.py）与执行器（executor.py）
+│   ├── hlsl/              # HLSL→C++ 转译器（transpile.py）与执行器（executor.py）
 │   │   └── interface.py   # 静态接口校验：cbuffer 布局 ⇄ Lua 调用点（Astra 规则移植）
-│   ├── raster.py          # 切片四边形光栅化（Weight-Blended OIT 近似）
+│   ├── raster.py          # 四边形近似光栅化（RGBA8 预览 / 两种浮点假设模型）
 │   ├── assets.py          # 测试素材：彩窗、剪影、渐变、单位立方体 .obj
 │   ├── session.py         # 高层 API：build scene → run_frame → PNG/统计
 │   └── harness.py         # 极简测试框架（@check / require / skip）
-├── checks/                # 8 组、85 个用例
+├── checks/                # 9 组、90 个用例
 │   ├── checks_01_script.py     # .obj2 静态分析（参数语法/分组/默认值/hide 语义/i18n/安全）
 │   ├── checks_02_language.py   # 4 个 .aul2 语言包完整性
 │   ├── checks_03_hlsl.py       # 14 段 HLSL 编译、数值行为、静态 uniform 布局
@@ -40,7 +45,8 @@ sandbox/
 │   ├── checks_05_bridge.py     # C++ 桥（自测、光栅器、白名单、网格缓存）
 │   ├── checks_06_features.py   # 端到端特性（2D/3D 遮挡、AutoBlend、雾…）
 │   ├── checks_07_perf.py       # 性能与显存/缓存预算
-│   └── checks_08_api.py        # 宿主 API 契约（文档签名/键/返回值 ⇄ 模拟宿主）
+│   ├── checks_08_api.py        # 宿主 API 契约（文档签名/键/返回值 ⇄ 模拟宿主）
+│   └── checks_09_raster.py     # 低 alpha 阈值、图集快照及十六进制 HLSL 回归
 └── out/                   # 全部产物（.gitignore 已忽略，可随时删除重建）
     ├── results.json       # 最近一次测试的机器可读结果
     ├── demo/ features/ hlsl/ bridge/ runtime/   # 各类 PNG / 日志
@@ -58,17 +64,18 @@ g++ --version                                          # 需要支持 C++17（�
   只有 `lupa.lua51` 时脚本会退化到「无 FFI」路径，部分用例会 SKIP。
 * 首次运行会自动用 g++ 编译 `src/VL3DBridge/{core,rast,selftest,test_capi}.cpp`，
   产物按源码 SHA-256 命名缓存到 `out/build/native/`，源码不变不会重复编译。
-* 全部用例约 **2–3 分钟**（CPU 软件光栅 + NumPy 着色器，比真实 GPU 慢 2 个数量级；2 核 / 3 GB 实测约 100–110 s）。
+* 全部用例约 **2–3 分钟**（CPU HLSL 转译执行 + 软件光栅；本次 2 核环境实测约 124–130 s）。
 
 ## 3. 快速开始
 
 ```bash
 cd sandbox
 
-python3 run_checks.py                  # 跑全部 85 个用例，输出 PASS/FAIL/WARN + out/results.json
+python3 run_checks.py                  # 跑全部 91 个用例，输出 PASS/FAIL/WARN + out/results.json
+python3 run_checks.py --repo /path/to/other-checkout  # 用本沙箱检验另一个仓库快照
 python3 run_checks.py --list           # 列出全部用例
 python3 run_checks.py --only hlsl      # 名字含 "hlsl" 的用例
-python3 run_checks.py --tags occ       # 按标签筛选（可有多个 --tags a,b）
+python3 run_checks.py --tags occlusion # 按标签筛选（可有多个 --tags a,b）
 python3 run_checks.py -v               # 失败时打印完整 traceback
 echo $?                                # 0 = 全通过；1 = 有 FAIL；2 = 没有匹配用例
 
@@ -81,8 +88,55 @@ CI 里只需 `python3 run_checks.py --json out/results.json`：JSON 中每条用
 
 用例状态有四种：`PASS` / `FAIL` / `SKIP` / `WARN`。**只有 `FAIL` 会让退出码变 1**；
 `WARN` 表示「源码里存在一个只能由真机裁决的问题」，它会写进 `results.json` 的 `detail` 但不阻塞 CI。
-当前 85 项全部 `PASS`（两个原有的 WARN 疑点已在 2026-10-29 用官方文档 + 真机实测裁决，见 5.1 节；
-模拟宿主与官方文档的 3 处不一致见 5.2 节）。
+2026-10-29 修正模拟场景帧和 effect/raw 加载后，对本仓库 v3.13 与候选 v3.14 快照各执行 **91 PASS / 0 FAIL / 0 SKIP / 0 WARN**。
+之前的非零起点测试因沙箱重置 `frame_s` 且桥忽略查询帧而是假阳性；修正后的测试使用场景帧、活动时间范围与负对照，但并未模拟真实嵌套工程。
+这是 CPU 沙箱结果，不代表真机像素一致（详见 [分支审查报告](docs/BRANCH_REVIEW_262ea6ab.zh.md)和 [v3.01～v3.06 历史分析](docs/HISTORY_301_306.zh.md)）。
+两个原有的 WARN 疑点已在 2026-10-29 用官方文档 + 真机实测裁决，见 5.1 节；
+模拟宿主与官方文档的 3 处不一致见 5.2 节。
+
+### 3.1 比较分支和自带素材
+
+`--repo` 同时切换被测 `.obj2`、`Language/` 和 `src/VL3DBridge/`；编译产物仍在当前沙箱 `out/`。
+`--script PATH` 只替换脚本，语言包和桥依然来自 `--repo`（默认本仓库）。输出 JSON 含被测路径。
+例如把目标提交导出为**只读快照**，不必切换当前分支：
+
+```bash
+# 在仓库根目录；先 fetch 所需提交，然后：
+mkdir -p sandbox/out/candidate
+git archive <目标提交> | tar -x -C sandbox/out/candidate
+python3 sandbox/run_checks.py --repo sandbox/out/candidate --json sandbox/out/candidate-results.json
+```
+
+用真实素材构造同一小场景，比较脚本变化（素材路径可位于仓库之外，**不会被复制或提交**）：
+
+```bash
+python3 sandbox/compare_brightness.py \
+  --reference /path/to/v306.obj2 \
+  --before Script/VolumetricLight3D.obj2 \
+  --after sandbox/out/candidate/Script/VolumetricLight3D.obj2 \
+  --window /path/to/window.jpg --character /path/to/character.png \
+  --camera-probes --intensity-sweep --json sandbox/out/brightness.json
+```
+
+不提供 `--window/--character` 则使用沙箱生成素材；可省略 `--reference`。
+脚本固定 256×144、缩放素材并自设参数，不会读取 `.aup2`；两种浮点模型不含真实宿主光照和深度权重。
+输出的亮度代理只用于对比**该模型和该场景**，不能直接声称真机提升百分比。
+
+如需分离比例/常量 alpha 与 HLSL 低 alpha 门的作用，可运行：
+
+```bash
+python3 sandbox/ablate_brightness.py \
+  --after sandbox/out/candidate/Script/VolumetricLight3D.obj2 \
+  --window /path/to/window.jpg --character /path/to/character.png \
+  --intensities 180 30 5 --json sandbox/out/brightness-ablation.json
+```
+
+它仅在 `out/` 中创建并自动清理脚本临时副本；不提供素材时使用沙箱素材。
+这是配对反事实实验，保留其他着色器门和假设的宿主片元阈值，不代表真机完整合成。
+
+实机截图可用 `compare_screenshots.py --help` 计算相同区域的屏幕像素代理，并可在显式给定缩放/平移后比较预览与播放器截图；它不自动保证同帧或同色彩管线。`probe_observed_scene.py --help` 使用界面上可见的一部分设置跑 CPU 参考场景，**不是** `.aup2` 重现。2026-10-29 截图的具体证据、配准参数与局限见 [分支审查报告](docs/BRANCH_REVIEW_262ea6ab.zh.md)。
+
+用户提供 v3.00～v3.06 八份原版之后，可用 `compare_original_versions.py` 直接逐版执行并注入特定故障；`--versions-dir` 接受原版 `.obj2` 或上传改名的 `.txt`，`--window` 和 `--character` 可使用仓库外素材，`--candidate` 可与 v3.06 比较，`--hires` 追加大尺寸 shader 对照。输出和复现命令见 [历史分析报告](docs/HISTORY_301_306.zh.md)，本次 [机器结果](results/history-301-306-originals.json) 持久保留。测试使用模拟 framebuffer 和场景，不代表真实宿主或工程。
 
 ## 4. 作为库使用（最小示例）
 
@@ -117,7 +171,8 @@ session.save_png(session.composite(bg, r.volume, gain=4.0), "out/comp.png")  # �
 | --- | --- |
 | `session.run_frame(layers, params, ...)` | 跑一帧，返回 `RenderResult(volume, host, seconds, log)` |
 | `session.standard_scene(w,h,...)` | 标准场景（彩窗 + 剪影） |
-| `session.composite(bg, volume, gain)` | 按 host 的 WBOIT 语义合成到背景上 |
+| `session.composite(bg, volume, gain)` | 把旧 RGBA8 **近似预览**叠到背景；不是宿主 WBOIT 的精确重现 |
+| `r.assumed_emission("weighted" / "over")` | 计算两种假设合成下的预乘 float RGBA，可保留 HDR，结果仍不是实机测量 |
 | `session.shader_library()` / `native()` | 复用的着色器库 / 原生桥（带缓存） |
 | `RenderResult.stats()` | alpha 均值/最大值/覆盖率、四边形数、缓存峰值 |
 | `r.host.shader_traces[name]` | 每个着色器**最后一次**调用的 uniforms + 输入纹理（调试神器） |
@@ -164,14 +219,18 @@ session.save_png(session.composite(bg, r.volume, gain=4.0), "out/comp.png")  # �
 
 | 项目 | 沙箱做法 | 影响 |
 | --- | --- | --- |
-| 3D OIT 合成 | WBOIT 近似：`Reveal *= (1-w)`，`rgb = Σ(c·w)/Σw` | 光的形状/颜色比例/遮挡正确，**绝对亮度偏高或偏低** |
-| 深度权重 `w(z)` | 未实现（视为 1） | 前后切片次序正确，逐切片权重不精确 |
-| D3D11 Compute Shader | 仅 C++ CPU 后端（`CPP_CPU`） | 结果应与 GPU 一致（自测覆盖），但慢 |
+| RGBA8 预览 | 旧版近似按 `tex.a × drawpoly_alpha` 加权颜色并计算覆盖率 | 不能表示超亮 HDR；**既不是宿主精确 WBOIT，也不能据此比较亮度** |
+| 浮点对照模型 | `weighted` 假设切片等深度权重；`over` 假设录制顺序的预乘叠加；都保留 HDR | 两种模型均非宿主实现，差异只说明假设模型下的趋势 |
+| 深度、透视与照明 | 四边形只做正交投影；浮点模型不模拟真实相机光照 / 深度权重 | 形状、边缘、遮挡和颜色都有偏差，不能当真机像素结论 |
+| 低 alpha 片元阈值 | 依据项目逆向记录，暂假设 `tex.a × drawpoly_alpha <= 0.001` 丢弃 | 此值不是官方 API 规范，不同宿主版本需核对 |
+| D3D11 Compute Shader | 仅 C++ CPU 后端（`CPP_CPU`） | 无法验证 GPU 后端行为或与 CPU 逐像素一致 |
 | AviUtl2 官方 SDK 内存读取 | `resolve_layer` 由 Python 场景表提供 | 无法验证对 aviutl2.exe 的内存布局 |
 | `copybuffer` | **默认开启**（`obj.copybuffer` 是官方 API）；`copybuffer=False` 可强制走 `obj.load` 回退路径 | 两条路径逐像素一致（用例 `api: obj.copybuffer is documented+on, and both buffer paths agree`） |
-| 时间/帧 | 固定 `time`、可控 `frame`/`frame_s` | 动画类用例可复现 |
+| 时间/帧 | 固定 `time`、可控局部 `frame` 和起点 `frame_s`；模拟图层起止与桥查询采用场景帧 | 可复现模拟动画；不等于验证真实嵌套工程 |
 
-> 因此请把 PNG 当作「结构正确、亮度近似」的预览。审核亮度/色彩时请以真机为准。
+> 不要把 PNG 或本沙箱的数值当作真机亮度、色彩或边缘一致的证明。审核观感请以同工程、同帧的 AviUtl2 导出为准。
+> 每次 `obj.drawpoly` 已保存当时的图集快照；多于 64 切片时不会误把最后一批纹理用于全部切片。
+> 快照是沙箱进程额外使用的内存，不计入模拟的宿主 `cache_pixels` 指标。
 
 ### 5.1 静态接口校验（AviUtl2_Astra 规则移植）
 

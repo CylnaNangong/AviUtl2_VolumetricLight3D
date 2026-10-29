@@ -315,13 +315,14 @@ python3 packaging/build_au2pkg.py
 
 ## 10. 测试沙箱与模块分析（`sandbox/`）
 
-仓库自带一个**跨平台离线测试沙箱**：用 LuaJIT 真机执行 `Script/VolumetricLight3D.obj2`、用 NumPy 执行其中 14 段内嵌 HLSL、
-用 g++ 编译 `src/VL3DBridge` 的跨平台部分，从而在不启动 AviUtl2 的情况下复现「参数 → 着色器 → 切片几何 → 遮挡 → 合成」整条链路。
+仓库自带一个**跨平台离线测试沙箱**：用 LuaJIT 执行 `Script/VolumetricLight3D.obj2`，将 14 段内嵌 HLSL 转译为 C++ 并用 g++ 执行，
+同时编译 `src/VL3DBridge` 的跨平台部分，在不启动 AviUtl2 的情况下测试「参数 → 着色器 → 切片几何 → 遮挡 → 近似合成」。
+沙箱不是 AviUtl2 真机渲染，亮度与色彩请以实际导出为准。
 
 ```bash
 cd sandbox
 python3 -m pip install -r requirements.txt
-python3 run_checks.py          # 85 个用例：静态分析 / 静态接口校验 / 宿主 API 契约 / HLSL / 运行时 / 遮挡 / 桥 / 性能
+python3 run_checks.py          # 91 个用例：静态分析 / 静态接口校验 / 宿主 API 契约 / HLSL / 运行时 / 遮挡 / 桥 / 性能
 python3 render_demo.py         # 渲染示例图到 out/demo/gallery.png
 ```
 
