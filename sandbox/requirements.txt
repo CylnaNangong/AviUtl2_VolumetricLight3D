@@ -1,0 +1,4 @@
+# VolumetricLight3D test sandbox — Python dependencies
+lupa>=2.0        # LuaJIT 2.1 runtime (lupa.luajit21) with FFI support
+numpy>=1.24      # image buffers / numeric checks
+pillow>=10.0     # PNG output (optional but recommended)

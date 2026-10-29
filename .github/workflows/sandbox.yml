@@ -1,0 +1,45 @@
+name: sandbox
+
+on:
+  push:
+    branches: ["main", "arena/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++
+          python -m pip install --upgrade pip
+          python -m pip install -r sandbox/requirements.txt
+
+      - name: Run sandbox test suite
+        working-directory: sandbox
+        run: python3 run_checks.py --json out/results.json
+
+      - name: Render demo gallery
+        working-directory: sandbox
+        run: python3 render_demo.py
+
+      - name: Upload artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vl3d-sandbox-output
+          path: |
+            sandbox/out/results.json
+            sandbox/out/bridge/selftest.log
+            sandbox/out/demo/
+            sandbox/out/features/
+            sandbox/out/hlsl/
+          if-no-files-found: warn

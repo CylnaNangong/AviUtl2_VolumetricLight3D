@@ -1,0 +1,4 @@
+# generated artefacts (safe to delete, reproducible with render_demo.py / run_checks.py)
+out/
+__pycache__/
+*.pyc
