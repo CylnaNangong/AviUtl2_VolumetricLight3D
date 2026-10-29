@@ -46,7 +46,8 @@
 - [7. 未来发展方向（Roadmap）](#7-未来发展方向roadmap)
 - [8. 问题反馈（Bug 报告途径）](#8-问题反馈bug-报告途径)
 - [9. 从源码构建 `VL3DBridge.aux2` 与打包](#9-从源码构建-vl3dbridgeaux2-与打包)
-- [10. 作者、致谢与开源许可](#10-作者致谢与开源许可)
+- [10. 测试沙箱与模块分析（`sandbox/`）](#10-测试沙箱与模块分析sandbox)
+- [11. 作者、致谢与开源许可](#11-作者致谢与开源许可)
 
 ---
 
@@ -312,7 +313,24 @@ python3 packaging/build_au2pkg.py
 
 ---
 
-## 10. 作者、致谢与开源许可
+## 10. 测试沙箱与模块分析（`sandbox/`）
+
+仓库自带一个**跨平台离线测试沙箱**：用 LuaJIT 真机执行 `Script/VolumetricLight3D.obj2`、用 NumPy 执行其中 14 段内嵌 HLSL、
+用 g++ 编译 `src/VL3DBridge` 的跨平台部分，从而在不启动 AviUtl2 的情况下复现「参数 → 着色器 → 切片几何 → 遮挡 → 合成」整条链路。
+
+```bash
+cd sandbox
+python3 -m pip install -r requirements.txt
+python3 run_checks.py          # 70 个用例：静态分析 / HLSL / 运行时 / 遮挡 / 桥 / 性能
+python3 render_demo.py         # 渲染示例图到 out/demo/gallery.png
+```
+
+* 使用说明：[`sandbox/README.zh.md`](sandbox/README.zh.md)
+* 各模块全面分析与评估（含风险清单与改进建议）：[`sandbox/docs/ANALYSIS.zh.md`](sandbox/docs/ANALYSIS.zh.md)
+
+---
+
+## 11. 作者、致谢与开源许可
 
 ### 👩‍💻 作者与维护者
 - **南宫若馨Cylna（Cylna Nangong）**
