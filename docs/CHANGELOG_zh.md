@@ -1,5 +1,31 @@
 # 更新历史 — 体积光（3D） / VL3DBridge
 
+## 测试沙箱扩充（2026-10-29）· 本体代码未变更
+
+> 本节只记录**测试与文档**改动：`Script/VolumetricLight3D.obj2`、`src/VL3DBridge`、`Language/*.aul2`
+> 均**未修改**（脚本版本仍为 `v3.13`，插件仍为 `v1.21`），因此不影响任何已发布产物的行为。
+
+- **沙箱用例 70 → 76（75 PASS / 0 FAIL / 1 WARN）**，新增「静态接口校验」层：
+  - `hlsl: cbuffer layout matches every Lua call site (static)`：新增 `sandbox/vl3dsb/hlsl/interface.py`，
+    静态比对 14 段 HLSL 的 cbuffer 布局与 25 个 `obj.pixelshader()` 调用点，区分
+    `declared`（cbuffer 声明浮点数）/ `required`（函数体真实读取）/ `supplied`（Lua 实传），
+    并顺着 `local consts = {…}` + `for oi = 1, MAX_OCC*16` 求出 `beamatlas` 的 236 个 uniform。
+    实测：`beamatlas` 236 = 236 = 236；`ps_vl_blur` / `ps_vl_occ_blur` 声明 8 实传 6（尾部 2 个填充确实未被读取）。
+  - `hlsl: interface lint rejects deliberately broken call sites`：变异测试（少传 / 多传 / 调用不存在的
+    shader），确保上述规则真的会报错。
+  - `hlsl: every block declares a matching entry point and explicit registers`：入口点同名、
+    `register(b0)`、纹理 `tN`、`SV_Position` / `SV_Target`。
+  - `obj2: property annotations obey the strict AviUtl2 grammar`：按 AviUtl2_Astra 的属性校验规则
+    逐条检查 47 个参数（track step ∈ 10^-k、`min ≤ 初值 ≤ max`、select 选项值与标签唯一且默认值在选项内、
+    check 初值 ∈ {true,false,0,1}、color 0–0xffffff、属性 ID 不得重复、不得混入 Astra 方言）。
+  - `obj2: --hide@ rules target parameters declared before them` 与
+    `obj2: --hide@ host semantics audit`（WARN）：后者记录两个**需真机裁决**的现象——
+    `occ_list` / `ab_list` 各有两条 `--hide@`；14 条规则用 `==0`/`==1` 比较 `--check@` 布尔参数。
+- **文档**：`sandbox/README.zh.md` 新增 §5.1「静态接口校验（AviUtl2_Astra 规则移植）」与
+  `WARN` 状态说明；`sandbox/docs/ANALYSIS.zh.md` 新增 §3.5 与风险 #10，
+  并把原风险 #2（`beamatlas` 236 uniform 手工对齐）由「高」下调为「中（已由用例门禁）」。
+- 主 `README.md` §10 的用例数同步更新为 76。
+
 ## v3.13（2026-10-26）
 - **修复 3D 摄像机 / 编辑摄像机下「画面显示状态HUD（画面に状態表示）」不显示的问题**
   - **根因定位**：`v3.12` 为彻底隔离 HUD 阴影投射，将其微缩投影至 `z_cam = 32`（`k_hud = 32 / focal_d`）；但 AviUtl / ExEdit2 的 3D 相机透视投影矩阵近裁剪面 `zn` 约为 `102.4～128`（`z_cam < zn` 的几何体均位于视锥近平面前方），导致 HUD 公告板被 D3D11 硬件视锥裁剪整块剔除。

@@ -24,14 +24,15 @@ sandbox/
 │   ├── host.py            # AviUtl2 宿主模拟器（obj.* API + LuaJIT 运行时 + 缓冲区/缓存）
 │   ├── native.py          # 编译并调用 src/VL3DBridge 的 C++17 测试库（ctypes）
 │   ├── hlsl/              # HLSL→NumPy 转译器（transpile.py）与执行器（executor.py）
+│   │   └── interface.py   # 静态接口校验：cbuffer 布局 ⇄ Lua 调用点（Astra 规则移植）
 │   ├── raster.py          # 切片四边形光栅化（Weight-Blended OIT 近似）
 │   ├── assets.py          # 测试素材：彩窗、剪影、渐变、单位立方体 .obj
 │   ├── session.py         # 高层 API：build scene → run_frame → PNG/统计
 │   └── harness.py         # 极简测试框架（@check / require / skip）
-├── checks/                # 7 组、70 个用例
-│   ├── checks_01_script.py     # .obj2 静态分析（参数/分组/默认值/i18n/安全）
+├── checks/                # 7 组、76 个用例
+│   ├── checks_01_script.py     # .obj2 静态分析（参数语法/分组/默认值/hide 语义/i18n/安全）
 │   ├── checks_02_language.py   # 4 个 .aul2 语言包完整性
-│   ├── checks_03_hlsl.py       # 14 段 HLSL 编译与数值行为
+│   ├── checks_03_hlsl.py       # 14 段 HLSL 编译、数值行为、静态 uniform 布局
 │   ├── checks_04_runtime.py    # 脚本运行时行为（分支、边界、确定性、HUD）
 │   ├── checks_05_bridge.py     # C++ 桥（自测、光栅器、白名单、网格缓存）
 │   ├── checks_06_features.py   # 端到端特性（2D/3D 遮挡、AutoBlend、雾…）
@@ -53,14 +54,14 @@ g++ --version                                          # 需要支持 C++17（�
   只有 `lupa.lua51` 时脚本会退化到「无 FFI」路径，部分用例会 SKIP。
 * 首次运行会自动用 g++ 编译 `src/VL3DBridge/{core,rast,selftest,test_capi}.cpp`，
   产物按源码 SHA-256 命名缓存到 `out/build/native/`，源码不变不会重复编译。
-* 全部用例约 **3 分钟**（CPU 软件光栅 + NumPy 着色器，比真实 GPU 慢 2 个数量级）。
+* 全部用例约 **2–3 分钟**（CPU 软件光栅 + NumPy 着色器，比真实 GPU 慢 2 个数量级；2 核 / 3 GB 实测约 100–110 s）。
 
 ## 3. 快速开始
 
 ```bash
 cd sandbox
 
-python3 run_checks.py                  # 跑全部 70 个用例，输出 PASS/FAIL + out/results.json
+python3 run_checks.py                  # 跑全部 76 个用例，输出 PASS/FAIL/WARN + out/results.json
 python3 run_checks.py --list           # 列出全部用例
 python3 run_checks.py --only hlsl      # 名字含 "hlsl" 的用例
 python3 run_checks.py --tags occ       # 按标签筛选（可有多个 --tags a,b）
@@ -73,6 +74,10 @@ python3 render_demo.py --only fog,water
 
 CI 里只需 `python3 run_checks.py --json out/results.json`：JSON 中每条用例都有
 `status / seconds / metrics / artifacts`，便于趋势对比。
+
+用例状态有四种：`PASS` / `FAIL` / `SKIP` / `WARN`。**只有 `FAIL` 会让退出码变 1**；
+`WARN` 表示「源码里存在一个只能由真机裁决的问题」（例如下面 5.1 的 `--hide@` 求值语义），
+它会被完整写进 `results.json` 的 `detail`，但不会阻塞 CI。
 
 ## 4. 作为库使用（最小示例）
 
@@ -113,6 +118,7 @@ session.save_png(session.composite(bg, r.volume, gain=4.0), "out/comp.png")  # �
 | `r.host.shader_traces[name]` | 每个着色器**最后一次**调用的 uniforms + 输入纹理（调试神器） |
 | `r.host.buffers` | 帧结束时的全部缓冲区（`object` + `cache:vl3d/*`） |
 | `r.host.shader_param_mismatches` | Lua 传入浮点数 ≠ HLSL cbuffer 大小的记录 |
+| `vl3dsb.hlsl.interface.audit(shaders, text)` | **静态**比对 cbuffer 布局与全部 Lua 调用点，不跑任何代码 |
 
 ### 4.2 `Layer` 字段
 
@@ -160,6 +166,63 @@ session.save_png(session.composite(bg, r.volume, gain=4.0), "out/comp.png")  # �
 
 > 因此请把 PNG 当作「结构正确、亮度近似」的预览。审核亮度/色彩时请以真机为准。
 
+### 5.1 静态接口校验（AviUtl2_Astra 规则移植）
+
+沙箱除了「跑一帧然后看像素」，还有一层**不执行任何代码**的静态校验，规则来自
+[AviUtl2_Astra](https://github.com/korarei/AviUtl2_Astra) 在 `astra build` 时执行的检查
+（uniform 布局校验、属性注释校验）。这里是**规则移植**而不是依赖 Astra：Astra 只发布 Windows
+二进制、没有 `check` 子命令、也没有结构化诊断输出，因此它的规则被重写成 Python，
+可以在任何 Linux CI 上跑（实现见 `vl3dsb/hlsl/interface.py` 与 `checks_01_script.py`）。
+
+**(a) cbuffer 布局 ⇄ Lua 调用点**（用例 `hlsl: cbuffer layout matches every Lua call site`）
+
+三个数字决定结论，缺一不可：
+
+| 量 | 含义 | 来源 |
+| --- | --- | --- |
+| `declared` | D3D11 cbuffer 的浮点总数 | `float4 x[n]` → `4*n`，累加 |
+| `required` | 着色器**函数体真的读**到的最远下标 +1 | 扫描 `p1.y` / `occ[i]` 等访问，**排除 cbuffer 声明本身** |
+| `supplied` | Lua `obj.pixelshader(...)` 第 4 个实参的浮点个数 | 解析实参表；变量表会顺着 `local consts = {…}` + `for oi = 1, MAX_OCC*16` 追加循环求值 |
+
+判定：`supplied < required` → **FAIL**（着色器读到垃圾）；`required ≤ supplied ≤ declared` → PASS，
+差额记入 `trailing_padding_floats`（未使用的尾部填充，无害但有记录价值）；`supplied > declared` → **FAIL**。
+另有变异测试 `hlsl: interface lint rejects deliberately broken call sites`，用 3 个人造缺陷
+（少传一个 uniform / 多传 / 调用不存在的 shader）证明这条规则真的会报错，而不是永远 PASS。
+
+对当前 `v3.13` 的结论：
+
+```
+shader                declared  required  supplied   备注
+beamatlas                  236       236       236   含 occ[32]×4 = 128 的追加循环
+ps_vl_ab_shade              52        52        52
+ps_vl_ab_mask_proj          36        35        36   1 float 尾部未使用
+ps_vl_pack / water       12 / 16   12 / 16   12 / 16
+ps_vl_ab_blur               12        11        12   1 float 尾部未使用
+ps_vl_prep / ab_sil_h     8 / 8     8 / 8     8 / 8
+ps_vl_blur / occ_blur        8         6         6   2 float 尾部未使用
+ps_vl_ab_env_init            4         3         4   1 float 尾部未使用
+ps_vl_ab_sil_v / pool / white  4     4         4
+```
+
+也就是说：**`beamatlas` 那条“最容易静默错位”的 236 段打包现在有机器门禁了**。
+
+**(b) 属性注释语法**（用例 `obj2: property annotations obey the strict AviUtl2 grammar`）
+
+| 指令 | 规则 |
+| --- | --- |
+| 全部 | ID 必须匹配 `[A-Za-z_]\w*`；**同名属性不得重复声明**；注释必须独占一行（不允许 `local x = 1 --track@_` 这种 Astra 方言）；不得出现 `--#include/--#define/--#if` 等 Astra 预处理指令 |
+| `--track@` | 必须 4 个参数（标签,min,max,初值）+ 可选 1 个 step；`min ≤ 初值 ≤ max`；step 必须是 `10^-k`(k≤9)；参数过多报警 |
+| `--check@` | 初值只能是 `true/false/0/1` |
+| `--select@` | 首项必须是 `标签=默认值`；选项整数值唯一、标签唯一且非空；**默认值必须是某个选项** |
+| `--color@` | `nil` 或 `0..0xffffff` |
+| `--string@` | 标签 + 初值 |
+| `--hide@` | 目标必须已声明且**声明在前**；空条件报错；运算符只允许 `== ~= >= <= > <` |
+
+附加一条**信息性**用例 `obj2: --hide@ host semantics audit`（状态 `WARN`）：它会列出两类
+「源码本身无法裁决、必须在 AviUtl2 里看一眼」的情况——
+① 同一参数有两条 `--hide@`（`occ_list` / `ab_list`）；② 用 `==0` / `==1` 去比较 `--check@`
+参数（共 14 条）。详见 `docs/ANALYSIS.zh.md` 风险 #10。
+
 ## 6. 扩展：写一个新用例
 
 ```python
@@ -188,6 +251,7 @@ def mine():
 | 遮挡「无效」 | 2D 遮挡要求遮挡层在光源平面 **前方**（`z` 更小，如 -200）；3D 遮挡需要 `kind="obj"` 且 `occ_list` 指定图层号 |
 | 编译很慢 | 首次 g++ 编译约 20 秒；之后按源码 hash 复用 `out/build/native/libvl3d_test_*.so` |
 | `lupa` 报 FFI 不可用 | 安装带 LuaJIT 的 lupa（`lupa.luajit21`），或接受相关用例 SKIP |
+| 有一条 `[WARN] obj2: --hide@ host semantics audit` | **正常**，这是提示去真机确认 `--hide@` 条件语义（见 5.1 节），不影响退出码 |
 
 ## 8. 参考：参数速查（47 个，默认值来自 `.obj2`）
 

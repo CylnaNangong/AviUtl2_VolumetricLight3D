@@ -1,5 +1,33 @@
 # 更新履歴 — 体積光（3D） / VL3DBridge
 
+## テストサンドボックス拡張（2026-10-29）・本体コードは未変更
+
+> 本節は**テストとドキュメントのみ**の変更を記録する。`Script/VolumetricLight3D.obj2`、
+> `src/VL3DBridge`、`Language/*.aul2` はいずれも**未修正**（スクリプトは `v3.13`、プラグインは `v1.21` のまま）で、
+> 公開済み成果物の挙動には影響しない。
+
+- **サンドボックスのテスト 70 → 76 件（75 PASS / 0 FAIL / 1 WARN）**、「静的インターフェース検証」層を追加：
+  - `hlsl: cbuffer layout matches every Lua call site (static)`：`sandbox/vl3dsb/hlsl/interface.py` を新設し、
+    14 段の HLSL の cbuffer レイアウトと 25 箇所の `obj.pixelshader()` 呼び出しを静的に突き合わせる。
+    `declared`（cbuffer 宣言の float 数）/ `required`（関数本体が実際に読む最大位置）/ `supplied`（Lua の実引数）を分離し、
+    `local consts = {…}` と `for oi = 1, MAX_OCC*16` を追跡して `beamatlas` の 236 uniform を算出。
+    実測：`beamatlas` 236 = 236 = 236、`ps_vl_blur` / `ps_vl_occ_blur` は宣言 8・実引数 6（末尾 2 個のパディングは確かに未読）。
+  - `hlsl: interface lint rejects deliberately broken call sites`：変異テスト（不足 / 過多 / 存在しないシェーダ名）で
+    上記ルールが実際に検出することを保証。
+  - `hlsl: every block declares a matching entry point and explicit registers`：エントリポイント名の一致、
+    `register(b0)`、テクスチャ `tN`、`SV_Position` / `SV_Target`。
+  - `obj2: property annotations obey the strict AviUtl2 grammar`：AviUtl2_Astra のプロパティ検証規則に沿って
+    47 パラメータを検査（track の step は 10^-k、`min ≤ 初期値 ≤ max`、select の値・ラベルは一意で初期値が項目内、
+    check の初期値は {true,false,0,1}、color は 0–0xffffff、ID の重複禁止、Astra 方言の混入禁止）。
+  - `obj2: --hide@ rules target parameters declared before them` と
+    `obj2: --hide@ host semantics audit`（WARN）：後者は**実機でしか裁定できない**2 点を記録する——
+    `occ_list` / `ab_list` に `--hide@` が 2 本ずつあること、14 本の規則が `--check@` の真偽値パラメータを
+    `==0`/`==1` で比較していること。
+- **ドキュメント**：`sandbox/README.zh.md` に §5.1「静的インターフェース検証（AviUtl2_Astra 規則の移植）」と
+  `WARN` 状態の説明を追加。`sandbox/docs/ANALYSIS.zh.md` に §3.5 とリスク #10 を追加し、
+  旧リスク #2（`beamatlas` 236 uniform の手動整合）を「高」から「中（テストで門禁済み）」へ引き下げ。
+- ルート `README.md` §10 のテスト件数を 76 に更新。
+
 ## v3.13（2026-10-26）
 - **3D カメラ／編集カメラ下で「画面に状態表示（HUD）」が表示されなくなっていた不具合を修正**
   - **原因特定**：`v3.12` で HUD 自身の影焼き込みを防ぐため `z_cam = 32`（`k_hud = 32 / focal_d`）へ配置した際、AviUtl / ExEdit2 の 3D カメラ透視投影における近クリップ面 `zn`（`約 102.4〜128`）より手前に入ったため、D3D11 視錐台クリッピングによって HUD ビルボード全体が破棄されていた。

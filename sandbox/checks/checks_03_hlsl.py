@@ -292,3 +292,92 @@ def no_nan():
         out2 = l.run(name, params1, texs1, size=(8, 8))
         require(out2.dtype == np.uint8, f"{name}: bad output dtype")
     return {"shaders": len(l.names) - 1}
+
+
+# ---------------------------------------------------------------------------
+# Static interface lint (uniform layout vs Lua call sites)
+#
+# Ported from the rule set AviUtl2_Astra applies during `astra build`
+# (cbuffer layout validation), re-implemented in Python so it runs here
+# without the Windows-only Astra binary.  See sandbox/docs/ANALYSIS.zh.md.
+# ---------------------------------------------------------------------------
+@check("hlsl: cbuffer layout matches every Lua call site (static)", tags=["hlsl", "static"])
+def uniform_layout_static():
+    from vl3dsb.hlsl.interface import audit
+
+    s = script()
+    res = audit(s.shaders, s.text)
+    require(not res["problems"], "; ".join(res["problems"]))
+    rows = res["rows"]
+    # every shader that is called must have been measured
+    called = {c.name for c in res["calls"] if c.name}
+    unresolved = [r["shader"] for r in rows if not r["supplied"]]
+    require(not unresolved, f"uniform tables could not be resolved: {unresolved}")
+    padding = {r["shader"]: r["unused_tail"] for r in rows if r["unused_tail"]}
+    dynamic = sorted({c.name for c in res["calls"] if c.dynamic_uniforms})
+    return {
+        "call_sites": len(res["calls"]),
+        "shaders_called": len(called),
+        "trailing_padding_floats": padding,
+        "resolved_dynamic_tables": dynamic,
+        "detail": f"{len(res['calls'])} call sites / {len(rows)} blocks verified",
+    }
+
+
+@check("hlsl: interface lint rejects deliberately broken call sites", tags=["hlsl", "static"])
+def uniform_layout_mutation():
+    """Mutation test: the lint must actually bite, not just always pass."""
+    from vl3dsb.hlsl.interface import audit
+
+    s = script()
+    base = audit(s.shaders, s.text)
+    require(not base["problems"], "baseline is dirty; mutation test is meaningless")
+
+    # (1) drop one uniform the shader really reads
+    src = s.text
+    dropped = src.replace("{ 1.0 / 128.0, 1.0 / 128.0, shape_mode, r_lim_arg }",
+                          "{ 1.0 / 128.0, shape_mode, r_lim_arg }")
+    require(dropped != src, "mutation target for ps_vl_white not found")
+    p1 = audit(s.shaders, dropped)["problems"]
+    require(any("ps_vl_white" in x and "reads" in x for x in p1),
+            f"under-supplied uniforms were not detected: {p1}")
+
+    # (2) bind more floats than the block declares
+    over = src.replace("{ pw, ph, 1.0, 0.0, sig_x, rad_x }",
+                       "{ pw, ph, 1.0, 0.0, sig_x, rad_x, 0.0, 0.0, 0.0 }")
+    require(over != src, "mutation target for ps_vl_blur not found")
+    p2 = audit(s.shaders, over)["problems"]
+    require(any("declares" in x for x in p2), f"over-supply was not detected: {p2}")
+
+    # (3) call a shader that does not exist
+    ghost = src.replace('obj.pixelshader("ps_vl_white"', 'obj.pixelshader("ps_vl_white_x"')
+    require(ghost != src, "mutation target for the shader name not found")
+    p3 = audit(s.shaders, ghost)["problems"]
+    require(any("without a shader block" in x for x in p3),
+            f"unknown shader names were not detected: {p3}")
+    return {"detail": "3/3 mutations detected (under-supply / over-supply / unknown name)"}
+
+
+@check("hlsl: every block declares a matching entry point and explicit registers", tags=["hlsl", "static"])
+def entry_points():
+    s = script()
+    bad = []
+    for name, src in s.shaders.items():
+        code = re.sub(r"//[^\n]*", "", src)
+        if not re.search(rf"\bfloat4\s+{re.escape(name)}\s*\(", code) and \
+           not re.search(rf"\bvoid\s+{re.escape(name)}\s*\(", code):
+            bad.append(f"{name}: no function named like the block")
+        if len(re.findall(rf"\b(?:float4|void)\s+{re.escape(name)}\s*\(", code)) > 1:
+            bad.append(f"{name}: entry point defined twice")
+        if "cbuffer" in code and not re.search(r"register\s*\(\s*b0\s*\)", code):
+            bad.append(f"{name}: cbuffer without an explicit register(b0)")
+        for i, _tex in enumerate(re.findall(r"Texture2D\s+(\w+)", code)):
+            if f"t{i}" not in code:
+                bad.append(f"{name}: texture binding t{i} not declared")
+                break
+        if "SV_Position" not in code:
+            bad.append(f"{name}: missing SV_Position input")
+        if "SV_Target" not in code:
+            bad.append(f"{name}: missing SV_Target output")
+    require(not bad, "; ".join(bad))
+    return {"shaders": len(s.shaders)}

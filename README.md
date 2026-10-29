@@ -321,7 +321,7 @@ python3 packaging/build_au2pkg.py
 ```bash
 cd sandbox
 python3 -m pip install -r requirements.txt
-python3 run_checks.py          # 70 个用例：静态分析 / HLSL / 运行时 / 遮挡 / 桥 / 性能
+python3 run_checks.py          # 76 个用例：静态分析 / 静态接口校验 / HLSL / 运行时 / 遮挡 / 桥 / 性能
 python3 render_demo.py         # 渲染示例图到 out/demo/gallery.png
 ```
 
