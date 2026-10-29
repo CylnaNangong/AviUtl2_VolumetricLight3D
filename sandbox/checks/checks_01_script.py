@@ -112,7 +112,18 @@ def hide_exprs():
                 continue
             bad.append(f"{name}: unknown identifier {ident!r} in {expr!r}")
     require(not bad, "; ".join(bad))
-    return {"hide_rules": len(s.hide_rules), "targets": len(s.hides)}
+    # rules whose condition compares a boolean-declared --check@ numerically:
+    # these rely on the host treating 0/1 as numbers in the condition context
+    # (verified in AviUtl2 2026-10-29 for `ab_enable==0`; keep the list visible
+    # so a newly added rule of this shape is noticed and re-verified).
+    bool_checks = {p.name for p in s.params if p.kind == "check"}
+    numeric_on_bool = sorted({f"{t}:{e}" for t, e in s.hide_rules
+                              if any(v in bool_checks for v in re.findall(r"[A-Za-z_]\w*", e))
+                              and re.search(r"[=~<>]=\s*[01]\b", e)})
+    return {"hide_rules": len(s.hide_rules), "targets": len(s.hides),
+            # (harness drops lists with >=12 items; keep it as one string)
+            "numeric_comparison_of_boolean_check": f"{len(numeric_on_bool)} 条: " +
+                                                   ", ".join(numeric_on_bool)}
 
 
 @check("obj2: every parameter is reachable in the Lua body", tags=["static"])
