@@ -40,6 +40,44 @@
   并把原风险 #2（`beamatlas` 236 uniform 手工对齐）由「高」下调为「中（已由用例门禁）」。
 - 主 `README.md` §10 的用例数同步更新为 76。
 
+### 第三轮（同日）· 宿主 API 契约层（官方文档 ⇄ 脚本 ⇄ 模拟宿主）
+
+> 仍然是**测试与文档**改动：脚本 `v3.13`、插件 `v1.21`、`Language/*.aul2` 均未修改。
+> 本轮只动 `sandbox/` 与 `README.md` 第 10 节的一行计数（故在此补记更新记录）。
+
+- **沙箱用例 76 → 85（85 PASS / 0 FAIL / 0 SKIP / 0 WARN，104 s）**，新增第 3 层静态校验
+  `checks_08_api.py`（7 项）+ `checks_01_script.py` 的 2 项结构校验。
+- **新增单一事实来源 `sandbox/vl3dsb/apidoc.py`**：把 [docs.aviutl2.jp/lua](https://docs.aviutl2.jp/lua/)
+  的 `obj.*` 函数（30 个，含实参区间与返回值说明）、`obj.getinfo/getoption/setoption/load` 的文档键表、
+  缓冲区名、blend/sampler 枚举、以及**文档列出的 38 个 `obj` 字段**逐条抄成 Python 常量（文件头记录核对日期）。
+- **新增 `sandbox/vl3dsb/luasurface.py`**（静态扫描 `obj.foo(...)` 调用、实参原文、`obj.field` 读/写、
+  字面量键；正确跳过注释/长字符串/字符串拼接）与 **`sandbox/vl3dsb/api_lint.py`**（规则引擎）。
+- **新增用例**：
+  - `api: every obj.* call is documented and emulated by the host`（脚本用到的 16 个函数全部有文档 + 有实现）
+  - `api: argument counts and enum keys match the documented signatures`
+  - `api: the emulated host exposes the documented obj.* field table`（恰好 38 个字段，多一个/少一个都 FAIL）
+  - `api: the fake returns the documented values (arity + enum probe)`（19 个探针）
+  - `api: obj.getpixel and obj.getpixeldata agree on the same buffer`
+  - `api: obj.copybuffer is documented+on, and both buffer paths agree`
+  - `api: API linter catches seeded drift (rule self-test)`（10 条人造缺陷全部报出，2 条合法行不误报）
+  - `obj2: setting items, groups and --hide@ targets follow the documented structure`（标签全局唯一、分组闭合、
+    `--hide@` 目标必须是有值的设定项）
+  - `obj2: structure linter catches seeded setting-item damage`（6 条变异）
+- **修复 3 处模拟宿主与官方规范不一致的「假阳性绿」**（脚本本身无责，仅 `sandbox/vl3dsb/host.py`）：
+  1. `obj.getinfo("image_max")` 只返回 1 个值 → 官方规范是 **2 个值** `max_x, max_y`；此前脚本
+     `local mw, mh = …` 会得到 `mw=table, mh=nil`，尺寸上限逻辑静默失效。
+  2. `obj.getinfo("clock")` 返回 `nil` → 官方规范是开机以来秒数；此前脚本 perf 主路径恒假、只能走 `os.clock` 回退。
+  3. `obj.copybuffer` 默认标记为「AviUtl2 不支持」 → 它**是**文档化 API（返回 `true/false`）；此前所有用例
+     默认只测 `obj.load` 回退路径，真机主路径从未被执行。现默认开启，并有用例证明两条路径逐像素一致。
+- **按文档修正的接口细节**：`obj.setfont` 第 3 参数是**装饰类型 0–6**（旧代码误名为 `weight`；AviUtl2 无字重参数）、
+  `obj.draw` 为 8 个参数（`rx,ry,rz`）、`obj.drawpoly` 支持「顶点表 + `vertex_num`」与「扁平 20 浮点 + alpha」
+  两种写法且**禁止混用**（`vertex_num` 只有 3/4）、`obj.load` 接受文档化的 4 个实参（figure 颜色+尺寸）、
+  `obj.getpixel([x,y[,type]])` 支持 `col/rgb/yc` 三种返回、`obj.setanchor` 返回锚点数；
+  并删除模拟宿主里**未文档化**的 `obj.scene` 别名（文档只有 `obj.scene_id`）。
+- **文档**：`sandbox/README.zh.md` 新增 §5.2「宿主 API 契约」；`sandbox/docs/ANALYSIS.zh.md` 新增 §3.5(c)
+  与风险 #11（模拟宿主与文档漂移，已闭环），并修正 §2.3 中「AviUtl2 不支持 `obj.copybuffer`」的错误结论
+  （该结论来自早期 Astra 方言推断，现以官方规范为准）、更新 `obj.*` 调用统计（257 处，已剔除注释/字符串）。
+
 ## v3.13（2026-10-26）
 - **修复 3D 摄像机 / 编辑摄像机下「画面显示状态HUD（画面に状態表示）」不显示的问题**
   - **根因定位**：`v3.12` 为彻底隔离 HUD 阴影投射，将其微缩投影至 `z_cam = 32`（`k_hud = 32 / focal_d`）；但 AviUtl / ExEdit2 的 3D 相机透视投影矩阵近裁剪面 `zn` 约为 `102.4～128`（`z_cam < zn` 的几何体均位于视锥近平面前方），导致 HUD 公告板被 D3D11 硬件视锥裁剪整块剔除。

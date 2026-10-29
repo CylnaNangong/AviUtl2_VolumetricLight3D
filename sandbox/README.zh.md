@@ -21,6 +21,9 @@ sandbox/
 ├── requirements.txt       # lupa / numpy / pillow
 ├── vl3dsb/                # 沙箱核心
 │   ├── obj2.py            # .obj2 / .aul2 解析器（参数、分组、hide 规则、HLSL 块、i18n）
+│   ├── luasurface.py      # 扫描 Lua 里的 obj.* 调用 / 字段读 / 字面量键（不执行）
+│   ├── apidoc.py          # 官方宿主 API 签名与键表（docs.aviutl2.jp/lua 的转录）
+│   ├── api_lint.py        # 宿主 API 契约 linter（脚本 ⇄ 文档 ⇄ 模拟宿主）
 │   ├── host.py            # AviUtl2 宿主模拟器（obj.* API + LuaJIT 运行时 + 缓冲区/缓存）
 │   ├── native.py          # 编译并调用 src/VL3DBridge 的 C++17 测试库（ctypes）
 │   ├── hlsl/              # HLSL→NumPy 转译器（transpile.py）与执行器（executor.py）
@@ -29,14 +32,15 @@ sandbox/
 │   ├── assets.py          # 测试素材：彩窗、剪影、渐变、单位立方体 .obj
 │   ├── session.py         # 高层 API：build scene → run_frame → PNG/统计
 │   └── harness.py         # 极简测试框架（@check / require / skip）
-├── checks/                # 7 组、76 个用例
+├── checks/                # 8 组、85 个用例
 │   ├── checks_01_script.py     # .obj2 静态分析（参数语法/分组/默认值/hide 语义/i18n/安全）
 │   ├── checks_02_language.py   # 4 个 .aul2 语言包完整性
 │   ├── checks_03_hlsl.py       # 14 段 HLSL 编译、数值行为、静态 uniform 布局
 │   ├── checks_04_runtime.py    # 脚本运行时行为（分支、边界、确定性、HUD）
 │   ├── checks_05_bridge.py     # C++ 桥（自测、光栅器、白名单、网格缓存）
 │   ├── checks_06_features.py   # 端到端特性（2D/3D 遮挡、AutoBlend、雾…）
-│   └── checks_07_perf.py       # 性能与显存/缓存预算
+│   ├── checks_07_perf.py       # 性能与显存/缓存预算
+│   └── checks_08_api.py        # 宿主 API 契约（文档签名/键/返回值 ⇄ 模拟宿主）
 └── out/                   # 全部产物（.gitignore 已忽略，可随时删除重建）
     ├── results.json       # 最近一次测试的机器可读结果
     ├── demo/ features/ hlsl/ bridge/ runtime/   # 各类 PNG / 日志
@@ -61,7 +65,7 @@ g++ --version                                          # 需要支持 C++17（�
 ```bash
 cd sandbox
 
-python3 run_checks.py                  # 跑全部 76 个用例，输出 PASS/FAIL/WARN + out/results.json
+python3 run_checks.py                  # 跑全部 85 个用例，输出 PASS/FAIL/WARN + out/results.json
 python3 run_checks.py --list           # 列出全部用例
 python3 run_checks.py --only hlsl      # 名字含 "hlsl" 的用例
 python3 run_checks.py --tags occ       # 按标签筛选（可有多个 --tags a,b）
@@ -77,7 +81,8 @@ CI 里只需 `python3 run_checks.py --json out/results.json`：JSON 中每条用
 
 用例状态有四种：`PASS` / `FAIL` / `SKIP` / `WARN`。**只有 `FAIL` 会让退出码变 1**；
 `WARN` 表示「源码里存在一个只能由真机裁决的问题」，它会写进 `results.json` 的 `detail` 但不阻塞 CI。
-当前 76 项全部 `PASS`（两个原有的 WARN 疑点已在 2026-10-29 用官方文档 + 真机实测裁决，见 5.1 节）。
+当前 85 项全部 `PASS`（两个原有的 WARN 疑点已在 2026-10-29 用官方文档 + 真机实测裁决，见 5.1 节；
+模拟宿主与官方文档的 3 处不一致见 5.2 节）。
 
 ## 4. 作为库使用（最小示例）
 
@@ -119,6 +124,8 @@ session.save_png(session.composite(bg, r.volume, gain=4.0), "out/comp.png")  # �
 | `r.host.buffers` | 帧结束时的全部缓冲区（`object` + `cache:vl3d/*`） |
 | `r.host.shader_param_mismatches` | Lua 传入浮点数 ≠ HLSL cbuffer 大小的记录 |
 | `vl3dsb.hlsl.interface.audit(shaders, text)` | **静态**比对 cbuffer 布局与全部 Lua 调用点，不跑任何代码 |
+| `vl3dsb.api_lint.lint(text, shader_names)` | **静态**比对脚本用到的 `obj.*` 与官方文档签名/键表，返回 `issues` / `notes` |
+| `vl3dsb.luasurface.scan(text)` | 提取 `obj.foo(...)` 调用（含实参原文）、`obj.field` 读/写、字面量键 |
 
 ### 4.2 `Layer` 字段
 
@@ -161,7 +168,7 @@ session.save_png(session.composite(bg, r.volume, gain=4.0), "out/comp.png")  # �
 | 深度权重 `w(z)` | 未实现（视为 1） | 前后切片次序正确，逐切片权重不精确 |
 | D3D11 Compute Shader | 仅 C++ CPU 后端（`CPP_CPU`） | 结果应与 GPU 一致（自测覆盖），但慢 |
 | AviUtl2 官方 SDK 内存读取 | `resolve_layer` 由 Python 场景表提供 | 无法验证对 aviutl2.exe 的内存布局 |
-| `copybuffer` | 默认不支持（与 AviUtl2 一致），可 `copybuffer=True` 打开 | 两条代码路径都跑通 |
+| `copybuffer` | **默认开启**（`obj.copybuffer` 是官方 API）；`copybuffer=False` 可强制走 `obj.load` 回退路径 | 两条路径逐像素一致（用例 `api: obj.copybuffer is documented+on, and both buffer paths agree`） |
 | 时间/帧 | 固定 `time`、可控 `frame`/`frame_s` | 动画类用例可复现 |
 
 > 因此请把 PNG 当作「结构正确、亮度近似」的预览。审核亮度/色彩时请以真机为准。
@@ -241,10 +248,40 @@ Astra 的附加严格性只作为补充（有冲突时以官方为准）。
 > **中文 UI**：属性面板的语言由 `Language/` 下的 `.aul2` 决定。界面为简体中文时显示的是 8.1 节的中文列，
 > 例如「启用前景融入背景」「融入目标图层」「前景遮挡模式」，而不是上面这些日文原文。
 
+### 5.2 宿主 API 契约（官方文档 ⇄ 脚本 ⇄ 模拟宿主）
+
+沙箱最容易被忽视的失真点不是脚本，而是**模拟宿主本身**：如果 `host.py` 对某个 `obj.*` 的返回值个数、
+参数含义猜错了，脚本照样能跑、像素照样能出，但测的已经不是真机上的那个 AviUtl2。
+`checks_08_api.py` 的 7 个用例把这条链路钉死（单一事实来源：`vl3dsb/apidoc.py`，
+逐条抄自 [`docs.aviutl2.jp/lua`](https://docs.aviutl2.jp/lua/)，文件头记录核对日期 `2026-10-29`）：
+
+| 用例 | 断言 |
+| --- | --- |
+| `api: every obj.* call is documented and emulated` | 脚本用到的 16 个函数全部在文档里，且 `host.py` 都实现了 |
+| `api: argument counts and enum keys match the documented signatures` | 每个调用点实参个数落在文档区间；`load` 的 kind、`setoption/getoption` 的键、缓冲区名都是文档枚举 |
+| `api: the emulated host exposes the documented obj.* field table` | 模拟 `obj` 表**恰好**暴露文档列出的 38 个字段（少一个/多一个都 FAIL） |
+| `api: the fake returns the documented values` | 19 个探针：`getinfo("image_max")` 必须返回 **2 个**值、`getpixel()` 2 个、`getpixel(x,y,"rgb")` 4 个、`getinfo("clock")` 是数字、`setanchor` 返回数字、`draw` 接受 8 个参数、`setfont` 第 3 参数是装饰类型 0–6、`drawpoly` 三种写法且拒绝混用 |
+| `api: obj.getpixel and obj.getpixeldata agree` | 同一 texel 经 `getpixel` 与经 FFI 指针（`getpixeldata`）读出的值一致 |
+| `api: obj.copybuffer is documented+on, and both paths agree` | 默认开启 + 两条缓冲路径逐像素一致（α 最大差 ≤ 2） |
+| `api: API linter catches seeded drift` | 10 条人造缺陷（未知函数/多传参数/未知键/非法 blend/装饰类型越界…）必须全部报出，同一片段里 2 条合法行不得误报 |
+
+**这一层当场揪出并修好了 3 个「假阳性绿」**（都是模拟宿主的问题，不是脚本的问题）：
+
+| 现象 | 真实规范 | 后果（修复前） | 修复 |
+| --- | --- | --- | --- |
+| `obj.getinfo("image_max")` 只返回一个值（一个 `(1920,1080)` 元组） | 返回**两个**值 `max_x, max_y` | 脚本 `local mw, mh = obj.getinfo("image_max")` 拿到 `mw=table, mh=nil`，尺寸上限逻辑整条失效 | 解包为两个整数 |
+| `obj.getinfo("clock")` 返回 `nil` | 返回开机以来的秒数（number） | 脚本的 perf 主路径 `if type(c) == "number"` 永远为假，只能走 `os.clock` 回退 | 返回确定性浮点（可用 `HostConfig(fake_clock=…)` 固定） |
+| `obj.copybuffer` 默认「不支持」 | **是文档化 API**，返回 `true/false` | 所有用例默认只测 `obj.load` 回退路径，真机主路径（帧缓冲备份）从未被执行 | 默认开启，并加用例证明两条路径一致 |
+
+顺带修正的规范细节：`obj.setfont` 第 3 个参数是**装饰类型 0–6**（旧代码误称 `weight`，而 AviUtl2 没有字重参数）、
+`obj.draw` 是 8 个参数（`rx,ry,rz`）、`obj.drawpoly` 同时支持「顶点表 + `vertex_num`」与「扁平 20 个浮点 + alpha」两种写法且**禁止混用**、
+`obj.load` 的 kind 共 12 种（`movie/movie.frame/movie.info/image/text/text.layout/textlayout/figure/framebuffer/tempbuffer/layer/before`）。
+这些若猜错，脚本不会报错，只会「安静地走到另一条分支」——正是静态契约层要拦的东西。
+
 ## 6. 扩展：写一个新用例
 
 ```python
-# sandbox/checks/checks_08_mine.py
+# sandbox/checks/checks_09_mine.py
 from vl3dsb.harness import check, require
 from vl3dsb.session import run_frame
 

@@ -91,8 +91,13 @@ class HostConfig:
     fake_clock: Optional[float] = None   # deterministic vl_wall_time_sec()
     inject_test_hooks: bool = True       # expose _G.VL3D_TEST_* hooks the script documents
     restricted_env: bool = False         # emulate the official script sandbox (os == nil, io == nil)
-    copybuffer_supported: bool = False   # force the obj.load() capture path
+    # `obj.copybuffer(dst,src)` IS part of the documented API
+    # (https://docs.aviutl2.jp/lua/ § obj.copybuffer), so it is on by default;
+    # set it to False to emulate hosts/scripts without it (the script's
+    # `type(obj.copybuffer) ~= "function"` guard then takes the obj.load path).
+    copybuffer_supported: bool = True
     image_max: Tuple[int, int] = (1920, 1080)
+    version: str = "2.1.15"             # obj.getinfo("version")
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +223,10 @@ class Host:
         self.time = 0.0
         self.layer_index = 0
         self.text_image: Optional[np.ndarray] = None
-        self.font = {"name": "", "size": 18, "weight": 0, "color": 0xFFFFFF, "shadow": 0}
+        # obj.setfont(name,size[,type,col1,col2,bold,italic,charspacing,linespacing])
+        self.font = {"name": "", "size": 18, "type": 0, "col1": 0xFFFFFF,
+                     "col2": 0x000000, "bold": False, "italic": False,
+                     "charspacing": 0.0, "linespacing": 0.0}
         self._start = time.time()
         self.native = native
         self._shader_lib = shader_lib
@@ -252,13 +260,25 @@ class Host:
         msg = "\t".join(str(a) for a in args)
         self.prints.append(msg)
 
+    def _obj_span(self) -> int:
+        """Object length in frames (`obj.totalframe`).
+
+        `session.run_frame` uses `frame_e = 10**9` as "unbounded"; a real
+        AviUtl2 object always has a finite length, so the sentinel maps to a
+        deterministic 10 s @ 30 fps instead of leaking a huge number into the
+        script.
+        """
+        span = int(self.frame_e - self.frame_s)
+        return 300 if span >= 10 ** 8 else max(0, span)
+
     def sync_fields(self):
+        _obj = self.buf("object")
+        obj_w, obj_h = (0, 0) if _obj is None else (_obj.shape[1], _obj.shape[0])
         fields = {
             "frame": self.frame,
             "frame_s": self.frame_s,
             "frame_e": self.frame_e,
             "scene_id": self.scene_id,
-            "scene": self.scene_id,
             "time": self.time,
             "layer": self.layer_index,
             "x": 0.0, "y": 0.0, "z": 0.0,
@@ -268,6 +288,17 @@ class Host:
             "cx": 0.0, "cy": 0.0,
             "screen_w": float(self.cfg.screen_w),
             "screen_h": float(self.cfg.screen_h),
+            # remaining documented read-only fields (docs § 変数)
+            "aspect": 0.0, "sx": 1.0, "sy": 1.0, "sz": 1.0, "cz": 0.0,
+            "w": float(obj_w), "h": float(obj_h),
+            "framerate": 30.0,
+            "totalframe": float(self._obj_span()),
+            "totaltime": float(self._obj_span()) / 30.0,
+            "index": 1.0, "num": 1.0,
+            "id": float(self.layer_index * 1000 + 1),
+            "effect_id": float(self.layer_index * 1000 + 1),
+            "effect_layer": float(self.layer_index),
+            "originframe": 0.0,
         }
         self.lua.eval("__vl3d_sync")(self.lua.table_from(fields))
 
@@ -433,16 +464,40 @@ class Host:
         return None
 
     def _api_getinfo(self, key):
+        """obj.getinfo(name) -- keys per https://docs.aviutl2.jp/lua/ § obj.getinfo."""
         if isinstance(key, bytes):
             key = key.decode()
-        if key == "script_path":
-            return self.cfg.script_path or str(self.script.path)
-        if key == "project_path":
-            return self.cfg.project_path or None
+        if key in ("script_path", "project_path"):
+            # project_path is not part of the documented key list; it is kept
+            # because the script probes it defensively.
+            return (self.cfg.script_path or str(self.script.path)) if key == "script_path" \
+                else (self.cfg.project_path or None)
         if key == "image_max":
-            return self.cfg.image_max
+            # docs: max_x, max_y = obj.getinfo("image_max")  (TWO values)
+            mx, my = self.cfg.image_max
+            return int(mx), int(my)
         if key == "clock":
-            return None
+            # docs: seconds since the application started (performance counter)
+            return float(self.cfg.fake_clock) if self.cfg.fake_clock is not None \
+                else float(1.0 + self.time)
+        if key == "script_time":
+            return 0.0
+        if key == "version":
+            return self.cfg.version
+        if key in ("filter", "saving", "reference_frame"):
+            return False
+        if key == "bpm":
+            return 120.0, 4.0, 0.0
+        if key == "bpm_list":
+            return self.lua.table_from([self.lua.table_from(
+                {"tempo": 120.0, "beat": 4.0, "start": 0.0, "offset": 0.0})])
+        if key == "frame_max":
+            finite = [lay.end for lay in self.layers if lay.end < 10 ** 8]
+            return max(finite) if finite else int(self.frame_s + self._obj_span())
+        if key == "layer_max":
+            return max((lay.index for lay in self.layers), default=0)
+        if key in ("origin_scene_id", "rendering_id"):
+            return int(self.scene_id)
         return None
 
     def _api_getoption(self, key):
@@ -464,13 +519,31 @@ class Host:
         self.setoptions[str(key)] = value
         return True
 
-    def _api_setfont(self, name="", size=18, weight=0, color=0xFFFFFF, shadow=0x000000):
-        self.font = {"name": str(name), "size": int(size), "weight": int(weight),
-                     "color": int(color), "shadow": int(shadow)}
+    def _api_setfont(self, name="", size=18, type=0, col1=0xFFFFFF, col2=0x000000,  # noqa: A002
+                     bold=None, italic=None, charspacing=None, linespacing=None):
+        """obj.setfont(name,size[,type 0-6,col1,col2,bold,italic,charspacing,linespacing]).
+
+        The third argument is the *decoration type* documented as 0..6 -- in an
+        earlier version of this fake it was mislabelled "weight" (there is no
+        weight parameter in the AviUtl2 API).
+        """
+        self.font = {
+            "name": str(name), "size": int(size), "type": int(type),
+            "col1": int(col1), "col2": int(col2),
+            "bold": bool(bold), "italic": bool(italic),
+            "charspacing": float(charspacing or 0.0),
+            "linespacing": float(linespacing or 0.0),
+        }
         return True
 
-    def _api_setanchor(self, name, mode=0):
-        return True
+    def _api_setanchor(self, name, num=0, *options):
+        """obj.setanchor(name,num[,option,...]) -> number of anchor points."""
+        if isinstance(name, bytes):
+            name = name.decode()
+        try:
+            return int(num)
+        except (TypeError, ValueError):
+            return 0
 
     # ---- buffers -----------------------------------------------------------
     def _api_clearbuffer(self, name, w=1, h=1):
@@ -489,11 +562,39 @@ class Host:
         self.buffers[self._norm_name(str(dst))] = np.array(s, copy=True)
         return True
 
-    def _api_getpixel(self):
+    def _api_getpixel(self, x=None, y=None, type=None):  # noqa: A002
+        """obj.getpixel([x,y[,type]]) -- docs § obj.getpixel.
+
+        No arguments returns the object size (w,h).  With coordinates it
+        returns `col,alpha` / `r,g,b,a` / `y,cb,cr,a` depending on the type
+        (`"col"` default).  Buffers are premultiplied internally, so the RGB
+        channels are un-premultiplied before they are reported.
+        """
         b = self.buf("object")
+        kind = str(type or "col")
         if b is None:
-            return 0, 0
-        return b.shape[1], b.shape[0]
+            if x is None:
+                return 0, 0
+            return (0, 0.0) if kind == "col" else (0, 0, 0, 0)
+        if x is None or y is None:
+            return b.shape[1], b.shape[0]
+        px, py = int(x), int(y)
+        if not (0 <= px < b.shape[1] and 0 <= py < b.shape[0]):
+            return (0, 0.0) if kind == "col" else (0, 0, 0, 0)
+        r8, g8, b8, a8 = (int(v) for v in b[py, px])
+        alpha = a8 / 255.0
+        if a8:
+            r8 = min(255, int(round(r8 * 255.0 / a8)))
+            g8 = min(255, int(round(g8 * 255.0 / a8)))
+            b8 = min(255, int(round(b8 * 255.0 / a8)))
+        if kind == "rgb":
+            return r8, g8, b8, a8
+        if kind == "yc":
+            yy = 0.299 * r8 + 0.587 * g8 + 0.114 * b8
+            cb = 128.0 - 0.168736 * r8 - 0.331264 * g8 + 0.5 * b8
+            cr = 128.0 + 0.5 * r8 - 0.418688 * g8 - 0.081312 * b8
+            return float(yy), float(cb), float(cr), a8
+        return (r8 << 16) | (g8 << 8) | b8, alpha
 
     def _api_getpixeldata(self, name="object", fmt="rgba"):
         b = self.buf(str(name))
@@ -511,7 +612,14 @@ class Host:
         self.pixel_uploads += 1
         return True
 
-    def _api_load(self, kind, arg=None, effect=None):
+    def _api_load(self, kind, arg=None, effect=None, size=None):
+        """obj.load(kind,...) -- docs § obj.load.
+
+        Handles the documented call shapes: `("text",txt)`,
+        `("layer",n)`, `("text.layout",txt,col,size?)`-style extra arguments are
+        accepted (never a Python TypeError) and the kinds this sandbox does not
+        emulate return `False`, exactly like a host that cannot load them.
+        """
         kind = kind.decode() if isinstance(kind, bytes) else str(kind)
         if kind == "text":
             self._render_text(str(arg))
@@ -542,7 +650,7 @@ class Host:
         h = max(8, line_h * len(lines) + 4)
         im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         dr = ImageDraw.Draw(im)
-        col = self.font.get("color", 0xFFFFFF)
+        col = self.font.get("col1", 0xFFFFFF)
         rgb = ((col >> 16) & 255, (col >> 8) & 255, col & 255, 255)
         for i, ln in enumerate(lines):
             dr.text((2, 2 + i * line_h), ln, fill=rgb, font=font)
@@ -555,27 +663,74 @@ class Host:
         self.text_content = text
 
     # ---- drawing -----------------------------------------------------------
-    def _api_drawpoly(self, verts, n=4, alpha=1.0):
-        quads = []
+    def _api_drawpoly(self, verts, second=None, third=None):
+        """obj.drawpoly(...) -- both documented shapes.
+
+        * `obj.drawpoly({x,y,z,u,v}, ..., vertex_num, alpha)`  (vertex tables)
+        * `obj.drawpoly(flat_numbers[, alpha])`                 (flat 20 floats)
+
+        `vertex_num` is 4 (quads, default) or 3 (triangles); mixing tuple
+        lengths in one call is rejected by the host (docs: 異なる形式を混在).
+        """
         try:
             count = len(verts)
         except TypeError:
             return False
-        i = 1
-        while i + 3 <= count:
-            quad = []
-            for k in range(4):
-                v = verts[i + k]
-                quad.append([float(v[j]) for j in range(1, len(v) + 1)])
-            quads.append(quad)
-            i += 4
-        self.draw_calls.append({"type": "poly", "n": len(quads), "alpha": float(alpha)})
-        self.quads.extend([{"verts": q, "alpha": float(alpha)} for q in quads])
+        if count == 0:
+            return True
+        first = verts[1]
+        prims = []
+        if isinstance(first, (int, float)):
+            # flat form: groups of 5 floats (x,y,z,u,v) per vertex, 4 per quad
+            alpha = float(second) if isinstance(second, (int, float)) else 1.0
+            flat = []
+            for i in range(1, count + 1):
+                v = verts[i]
+                if not isinstance(v, (int, float)):
+                    self.errors.append("drawpoly: mixed flat/table vertex data")
+                    return False
+                flat.append(float(v))
+            per_vert = 5
+            n_vert = len(flat) // per_vert
+            if n_vert < 4:
+                self.errors.append(f"drawpoly: flat form needs 4 vertices, got {n_vert}")
+                return False
+            for base in range(0, n_vert - 3, 4):
+                prims.append([flat[(base + k) * per_vert:(base + k + 1) * per_vert]
+                              for k in range(4)])
+        else:
+            n = int(second) if isinstance(second, (int, float)) else 4
+            alpha = float(third) if isinstance(third, (int, float)) else 1.0
+            if n not in (3, 4):
+                self.errors.append(f"drawpoly: vertex_num must be 3 or 4, got {n}")
+                return False
+            widths = set()
+            i = 1
+            while i + n - 1 <= count:
+                prim = []
+                for k in range(n):
+                    v = verts[i + k]
+                    try:
+                        row = [float(v[j]) for j in range(1, len(v) + 1)]
+                    except TypeError:
+                        self.errors.append("drawpoly: mixed flat/table vertex data")
+                        return False
+                    widths.add(len(row))
+                    prim.append(row)
+                prims.append(prim)
+                i += n
+            if len(widths) > 1:
+                self.errors.append(f"drawpoly: mixed vertex tuple widths {sorted(widths)}")
+                return False
+        self.draw_calls.append({"type": "poly", "n": len(prims), "alpha": float(alpha)})
+        self.quads.extend([{"verts": q, "alpha": float(alpha)} for q in prims])
         return True
 
-    def _api_draw(self, x=0, y=0, z=0, zoom=1.0, alpha=1.0):
+    def _api_draw(self, x=0, y=0, z=0, zoom=1.0, alpha=1.0, rx=0.0, ry=0.0, rz=0.0):
+        """obj.draw([ox,oy,oz,zoom,alpha,rx,ry,rz]) -- docs § obj.draw."""
         self.draw_calls.append({"type": "text", "x": float(x), "y": float(y), "z": float(z),
                                 "zoom": float(zoom), "alpha": float(alpha),
+                                "rx": float(rx), "ry": float(ry), "rz": float(rz),
                                 "text": getattr(self, "text_content", "")})
         return True
 

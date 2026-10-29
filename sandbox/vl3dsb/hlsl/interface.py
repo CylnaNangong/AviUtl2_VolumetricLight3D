@@ -268,6 +268,11 @@ def analyze(name: str, src: str) -> ShaderLayout:
     return layout
 
 
+def array_fields(layout: ShaderLayout) -> Dict[str, int]:
+    """{field: floats} for the `float4 name[N]` members (N > 1)."""
+    return {f.name: f.floats for f in layout.fields if f.count > 1}
+
+
 def analyze_all(shaders: Dict[str, str]) -> Dict[str, ShaderLayout]:
     return {n: analyze(n, s) for n, s in shaders.items()}
 

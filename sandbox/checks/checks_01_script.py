@@ -507,3 +507,149 @@ def hide_semantics():
     return {"multi_rule_targets": multi, "numeric_comparison_of_check": numeric_bool,
             "detail": (f"{len(multi)} targets carry 2 rules (OR, host verified); "
                        f"{numeric_bool} rules compare a boolean --check@ numerically")}
+
+
+# ---------------------------------------------------------------------------
+# Documented *structure* of the setting items
+#
+# The grammar check above validates one directive at a time.  The manual also
+# makes cross-item promises that a per-line rule cannot see:
+#   * 設定項目の名称はスクリプト毎にユニーク (docs § 設定項目),
+#   * `--group:名前` opens a group and a bare `--group` closes it,
+#   * `--hide@変数名` may only target an item that *has* a value.
+# ---------------------------------------------------------------------------
+_DIRECT_RE = re.compile(r"^--([a-z]+)(?:@([^:]*))?:(.*)$")
+_STRUCT_VALUE_KINDS = {"track", "check", "check0", "select", "color", "string",
+                       "text", "value", "file", "folder", "font", "figure"}
+_BARE_DIRECT_RE = re.compile(r"^--([a-z]+)\s*$")
+
+
+def _structure_issues(text):
+    """Cross-item violations of the documented setting-item structure."""
+    issues = []
+    labels = {}                      # label -> [line, ...] for value items
+    kinds = {}                       # ident -> kind
+    id_line = {}
+    open_group = None
+    group_closed = {}
+    group_names = set()
+    hides = []
+
+    for i, raw in enumerate(text.splitlines(), 1):
+        s = raw.strip()
+        if not s.startswith("--") or s.startswith("--[["):
+            continue
+        m = _DIRECT_RE.match(s)
+        if not m:
+            bare = _BARE_DIRECT_RE.match(s)     # bare `--group` closes a group
+            if not bare:
+                continue
+            kind, ident, rest = bare.group(1), "", ""
+            if kind != "group":
+                issues.append(f"L{i}: directive --{kind} without ':' and arguments")
+                continue
+        else:
+            kind = m.group(1)
+            ident = (m.group(2) or "").strip()
+            rest = m.group(3)
+
+        if kind == "group":
+            # `--group:名前[,true|false]` opens, a bare `--group` closes
+            name = rest.split(",")[0].strip()
+            if name:
+                if open_group is not None and not group_closed.get(open_group):
+                    issues.append(f"L{i}: group {open_group!r} was never closed by a bare --group")
+                open_group = name
+                group_closed.setdefault(name, False)
+                group_names.add(name)
+                if name in group_names and group_closed.get(name):
+                    issues.append(f"L{i}: group {name!r} reopened after it was closed")
+            else:
+                if open_group is None:
+                    issues.append(f"L{i}: bare --group without an open group")
+                else:
+                    group_closed[open_group] = True
+                    open_group = None
+            continue
+        if kind == "hide":
+            hides.append((i, ident, rest.strip()))
+            continue
+        if kind in ("information", "separator", "label", "require", "script",
+                    "filter", "hidemenu", "trackgroup", "data"):
+            continue
+        if kind not in _STRUCT_VALUE_KINDS:
+            issues.append(f"L{i}: unknown setting-item directive --{kind}")
+            continue
+        if not ident:
+            issues.append(f"L{i}: --{kind} without a variable name")
+            continue
+        label = rest.split(",")[0].split("=")[0].strip()
+        if kind == "select":
+            label = rest.split("=")[0].split(",")[0].strip()
+        if label:
+            labels.setdefault(label, []).append(i)
+        if ident in kinds:
+            issues.append(f"L{i}: variable {ident!r} declared twice (also L{id_line[ident]})")
+        kinds[ident] = kind
+        id_line[ident] = i
+
+    if open_group is not None and not group_closed.get(open_group):
+        issues.append(f"group {open_group!r} is still open at the end of the file")
+    for label, lns in labels.items():
+        if len(lns) > 1:
+            issues.append(f"setting-item label {label!r} is used {len(lns)}x "
+                          f"(L{', L'.join(str(x) for x in lns)}) -- the manual requires unique names")
+    for line_no, target, expr in hides:
+        if target in group_names:
+            issues.append(f"L{line_no}: --hide@ targets the group {target!r}, not a setting item")
+        elif target not in kinds:
+            issues.append(f"L{line_no}: --hide@ targets undeclared item {target!r}")
+    return issues, {"labels": len(labels), "items": len(kinds), "groups": len(group_names),
+                    "hide_rules": len(hides),
+                    "duplicate_labels": [l for l, v in labels.items() if len(v) > 1]}
+
+
+@check("obj2: setting items, groups and --hide@ targets follow the documented structure",
+       tags=["static"])
+def property_structure():
+    s = script()
+    issues, stats = _structure_issues(s.text)
+    require(not issues, "structure violations:\n  " + "\n  ".join(issues[:12]))
+    require(stats["labels"] == 47, f"expected 47 setting-item labels, found {stats['labels']}")
+    require(stats["groups"] == 6, f"expected 6 setting groups, found {stats['groups']}")
+    require(stats["hide_rules"] == 28, f"expected 28 --hide@ rules, found {stats['hide_rules']}")
+    return stats
+
+
+@check("obj2: structure linter catches seeded setting-item damage", tags=["static"])
+def structure_bites():
+    good = """--information:demo v1.0
+--group:形,true
+--track@a:光源X,0,100,0,1
+--group
+--group:光,true
+--check@b:启用,false
+--hide@a:b==0
+--group
+"""
+    issues, stats = _structure_issues(good)
+    require(not issues, f"clean fixture reported {issues}")
+    require(stats["duplicate_labels"] == [], "clean fixture reports duplicate labels")
+
+    seeds = {
+        "duplicate label": ("--track@a:光源X,0,100,0,1", "--track@a:光源X,0,100,0,1\n--check@c:光源X,false", "光源X"),
+        "unclosed group": ("--group\n--group:光,true", "--group:光,true\n--group:光2,true", "never closed"),
+        "unknown directive": ("--check@b:启用,false", "--slider@b:启用,false", "unknown setting-item directive"),
+        "hide targets a group": ("--hide@a:b==0", "--hide@光:b==0", "targets the group"),
+        "hide targets nothing": ("--hide@a:b==0", "--hide@zzz:b==0", "undeclared item"),
+        "duplicate variable": ("--check@b:启用,false",
+                               "--check@b:启用,false\n--track@b:其他,0,10,0,1", "declared twice"),
+    }
+    caught = []
+    for name, (old, new, needle) in seeds.items():
+        mutated = good.replace(old, new, 1)
+        found, _ = _structure_issues(mutated)
+        ok = any(needle in x for x in found)
+        require(ok, f"seed {name!r} not caught (got {found})")
+        caught.append(name)
+    return {"seeds": caught}

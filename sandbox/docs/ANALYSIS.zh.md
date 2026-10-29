@@ -1,8 +1,8 @@
 # 体积光（3D）· 各模块全面分析与评估
 
 > 对象：`CylnaNangong/AviUtl2_VolumetricLight3D` @ `b179e64`（`VolumetricLight3D.obj2 v3.13` / `VL3DBridge v1.21`）
-> 方法：**沙箱实跑**（LuaJIT 执行真实 `.obj2`、NumPy 执行真实 HLSL、g++ 编译真实 C++）+ 静态审阅 + 76 条自动化用例
-> 第二轮（2026-10-29）新增：**静态接口校验**（AviUtl2_Astra 规则移植，见 §3.5）——cbuffer 布局 ⇄ Lua 调用点、属性注释严格语法
+> 方法：**沙箱实跑**（LuaJIT 执行真实 `.obj2`、NumPy 执行真实 HLSL、g++ 编译真实 C++）+ 静态审阅 + 85 条自动化用例
+> 第二轮（2026-10-29）新增：**静态接口校验**（AviUtl2_Astra 规则移植，见 §3.5）——cbuffer 布局 ⇄ Lua 调用点、属性注释严格语法；**宿主 API 契约层**（官方文档 ⇄ 脚本 ⇄ 模拟宿主，见 §3.5(c)）
 > 结论先行：**工程完成度极高（A-），算法设计优秀，主要风险集中在“单文件 9555 行”的可维护性与宿主内存读取的兼容性。**
 
 ---
@@ -17,20 +17,21 @@
 | 语言包（4 个 `.aul2`） | 4×212 行 | ★★★★★ | **A** | 87 个键全量覆盖、带 Tips 提示、UTF-8/CRLF 规范 |
 | 构建与发布 | CMake + mingw 脚本 + ini | ★★★★☆ | **B+** | 可复现性尚可；缺少 CI、版本号分散在 3 处、`sandbox` 未被主 README 索引 |
 
-**测试结果（本沙箱，76 项：76 PASS / 0 FAIL / 0 SKIP / 0 WARN，104 s / 2 核 CPU）**
+**测试结果（本沙箱，85 项：85 PASS / 0 FAIL / 0 SKIP / 0 WARN，104 s / 2 核 CPU）**
 
 > 两个原先挂 `WARN` 的疑点都已在真机上裁决并写回规则（`--hide@` 的求值语义与多规则合并，见 §2.2）：
 > `--hide@` 条件按官方规范 `(変数名)(比較演算子)(数値)` 求值、同一目标的多条规则按「或」合并。
 
 | 组 | 用例 | 时间 | 覆盖点 |
 | --- | --- | --- | --- |
-| `checks_01_script` | 13 | 0.1 s | 版本、47 参数/6 分组、默认值 vs README、**属性注释严格语法**、hide 顺序与宿主语义、缓存释放、安全红线 |
+| `checks_01_script` | 15 | 0.1 s | 版本、47 参数/6 分组、默认值 vs README、**属性注释严格语法**、**设定项结构（标签唯一/分组闭合/hide 目标）**、hide 顺序与宿主语义、缓存释放、安全红线 |
 | `checks_02_language` | 6 | 0.0 s | 4 个语言包解析、87 键全覆盖、Tips、编码、`[Effect]` 映射 |
-| `checks_03_hlsl` | 17 | 5.3 s | 14 段 HLSL 编译 + 逐段数值行为 + **静态 uniform 布局门禁**（含 3 例变异测试）+ 入口点/寄存器检查 |
-| `checks_04_runtime` | 16 | 44 s | 全流程执行、3 种光源、边界（未选/自身/空层/0 强度）、HUD 门控、受限沙箱、多帧复用、预算 |
-| `checks_05_bridge` | 10 | 0.1 s | C++ 自测、SHA-256/白名单、网格缓存、阴影/相机深度光栅器、非法输入 |
-| `checks_06_features` | 9 | 38 s | 2D/3D 遮挡、AutoBlend 全链路、颜色/衰减/长度、雾/风/种子、变换、程序化光源 |
+| `checks_03_hlsl` | 17 | 4.5 s | 14 段 HLSL 编译 + 逐段数值行为 + **静态 uniform 布局门禁**（含 3 例变异测试）+ 入口点/寄存器检查 |
+| `checks_04_runtime` | 16 | 42 s | 全流程执行、3 种光源、边界（未选/自身/空层/0 强度）、HUD 门控、受限沙箱、多帧复用、预算 |
+| `checks_05_bridge` | 10 | 0.0 s | C++ 自测、SHA-256/白名单、网格缓存、阴影/相机深度光栅器、非法输入 |
+| `checks_06_features` | 9 | 34 s | 2D/3D 遮挡、AutoBlend 全链路、颜色/衰减/长度、雾/风/种子、变换、程序化光源 |
 | `checks_07_perf` | 5 | 21 s | 帧时、切片线性度、16M 缓存上限、着色器派发数、绘制批处理 |
+| `checks_08_api` | 7 | 2.0 s | **宿主 API 契约**：函数/实参数/枚举键全部对官方文档、`obj` 字段表恰好一致、返回值个数探针、`getpixel` ⇄ `getpixeldata`、两条缓冲路径一致 |
 
 ---
 
@@ -85,7 +86,7 @@ drawpoly     = 2 次（共 66 个四边形）
 | `pcall(...)` 保护点 | **172 处**（其中 17 处 `pcall(require,"ffi")`） |
 | 注释行 | 583 行，含 60+ 条版本变更记录（v2.2x → v3.13） |
 | 内嵌 HLSL 块 | 14 段，约 1.4 千行 |
-| `obj.*` API 调用 | getvalue 60 / clearbuffer 54 / setoption 35 / getpixeldata 25 / pixelshader 25 / load 24 / getpixel 18 / putpixeldata 14 / copybuffer 11 / module 4 / drawpoly 3 |
+| `obj.*` API 调用 | 共 257 处：getvalue 56 / clearbuffer 54 / setoption 35 / pixelshader 25 / load 19 / getpixel 18 / getpixeldata 15 / copybuffer 9 / putpixeldata 7 / getinfo 6 / draw 3 / setfont 3 / getoption 3 / drawpoly 2 / module 1 / setanchor 1（`luasurface.scan` 统计，已剔除注释与字符串） |
 | 缓存键 | 14 个 `cache:vl3d/*`，全部在帧尾释放（有专门用例校验） |
 
 **评价**：单文件承载全部逻辑，好处是「复制即安装、零依赖、无加载顺序问题」，也是 AviUtl2 生态的通行做法；
@@ -154,7 +155,7 @@ AviUtl2 grammar`），当前 `v3.13` **全部通过**：
 | --- | --- | --- |
 | `obj.load("layer", n)` | 失败返回 `false` | 24 处调用全部包在 `pcall` 内，并检查返回值 |
 | `obj.getpixeldata(name,"rgba")` | 返回 `(ptr, w, h)`；缓冲区不存在返回 `nil` | 25 处使用，均先判 `ptr ~= nil` 再判尺寸 |
-| `obj.copybuffer` | **AviUtl2 不支持** | 脚本先探测 `type(obj.copybuffer) == "function"`，缺失走 `obj.load` 路径；两条路径沙箱都已跑通 |
+| `obj.copybuffer` | **是官方 API**（`docs.aviutl2.jp/lua` § obj.copybuffer，返回 `true/false`） | 脚本仍先探测 `type(obj.copybuffer) == "function"`（兼容旧版/禁用环境），缺失时走 `obj.load` 路径；两条路径沙箱都已跑通且**逐像素一致**（§3.5(c)） |
 | `obj.module("VL3DBridge")` | 插件未装返回 `nil` | `vl3d_bridge()` 返回 `nil` → 纯 Lua 回退（用例覆盖 `bridge=False`） |
 | `obj.getoption("gui")` | 导出时 `false` | HUD/未选中提示自动隐藏（v3.13 特性，用例覆盖） |
 | `obj.clearbuffer(name,w,h)` | 分配/重分配 | 14 个缓存键，帧尾全部缩到 1×1（**内存不泄漏**，用例覆盖） |
@@ -358,6 +359,27 @@ ab_bias/ab_color_mix/ab_saturation/ab_luma_link` 合成），最终输出到 fra
 `obj2: --hide@ conditions follow the documented grammar`、
 `obj2: --hide@ multi-rule targets are OR'ed (spec + host verified)`。
 
+**(c) 宿主 API 契约（官方文档 ⇄ 脚本 ⇄ 模拟宿主，2026-10-29 新增）**
+
+(a)(b) 校验的是**脚本**；第三层校验的是**沙箱自己**。若 `host.py` 对某个 `obj.*` 的返回值个数或参数含义猜错，
+脚本照样跑、像素照样出，但测的已不是真机上的 AviUtl2 —— 这类失真不会自己暴露。实现：
+`vl3dsb/apidoc.py`（官方签名/键表的唯一事实来源，抄自 `docs.aviutl2.jp/lua`，文件头记录核对日期）
++ `vl3dsb/luasurface.py`（静态扫描 `obj.*` 调用/字段/字面量键）+ `vl3dsb/api_lint.py`（规则引擎），
+用例见 `checks_08_api.py`（7 项，含 19 个返回值探针与「10 条缺陷 + 2 条合法行」的 linter 自检）。
+
+当场揪出并修好的 **3 处「假阳性绿」**（全是模拟宿主的问题，脚本无责）：
+
+| 现象 | 官方规范 | 修复前的后果 | 修复 |
+| --- | --- | --- | --- |
+| `obj.getinfo("image_max")` 返回 1 个值（`(1920,1080)` 元组） | 返回 **2 个**值 `max_x, max_y` | `local mw, mh = obj.getinfo("image_max")` 得到 `mw=table, mh=nil`，尺寸上限逻辑整条失效 | 解包成两个整数 |
+| `obj.getinfo("clock")` 返回 `nil` | 返回开机以来秒数（number） | 脚本 perf 主路径 `type(c) == "number"` 恒假，只能落到 `os.clock` 回退 | 返回确定性浮点（`HostConfig(fake_clock=…)` 可固定） |
+| `obj.copybuffer` 默认标记为「宿主不支持」 | **文档化 API** | 所有用例默认只测 `obj.load` 回退路径，真机主路径（帧缓冲备份）从未被执行 | 默认开启 + 用例证明两条路径逐像素一致 |
+
+同时按文档修正：`setfont` 第 3 参数是**装饰类型 0–6**（旧代码误作 `weight`，AviUtl2 无字重参数）、
+`draw` 是 8 参数（含 `rx,ry,rz`）、`drawpoly` 支持「顶点表 + `vertex_num`」与「扁平 20 浮点 + alpha」两种写法且禁止混用、
+`load` 的 kind 共 12 种、`obj` 字段表**恰好** 38 个（模拟宿主曾多暴露一个未文档化的 `scene` 别名，已删除）。
+新增规则：设定项**标签全局唯一**、分组必须闭合、`--hide@` 目标必须是「有值的设定项」，并各配变异测试。
+
 **仍未被静态覆盖的部分**（诚实边界）：`VL_BF.occ_flat` 内部 16-float/对象的排布语义、
 `beamatlas` 里 `p0..p26` 的字段含义、`--hide@` 的条件求值语义（风险 #10）——这三项只能靠
 人工审阅或真机验证。
@@ -446,7 +468,7 @@ camdepth raster : 近处 code 0.92 > 远处 0.68（距离单调）
 
 * 仓库原有测试：仅 `vl3d_bridge_selftest.cpp`（C++ 侧）。
   **Lua 侧 9555 行、14 段 HLSL、4 个语言包此前没有任何自动化测试**。
-* 本次沙箱补齐 76 条用例，形成「静态分析 → 静态接口门禁 → 单元行为 → 集成 → 特性 → 性能」六层。
+* 本次沙箱补齐 85 条用例，形成「静态分析 → 静态接口门禁 → 单元行为 → 集成 → 特性 → 性能」六层。
 * 遗留：Windows/D3D11 路径、真实 aviutl2.exe 内存读取无法离线验证（需 Windows CI + 真机）。
 
 ### 6.5 文档与发布
@@ -472,6 +494,7 @@ camdepth raster : 近处 code 0.92 > 远处 0.68（距离单调）
 | 8 | 🟡 低 | 德语包重复 | 翻译维护 | 内容漂移 | 合并或标注差异 |
 | 9 | 🟡 低 | 16M 缓存预算依赖默认值 | 用户改过 `TemporaryImageCacheSize` | 大分辨率 + 3D 遮挡可能超限 | 已在代码侧自适应，建议 HUD 显示峰值 |
 | 10 | ✅ 已排除（原 🟡 低） | 14 条 `--hide@` 用数值比较 `--check@`；`occ_list`/`ab_list` 各有两条 `--hide@` | — | 无（曾被怀疑规则失效） | 官方规范明确规定条件为 `(変数名)(演算子)(数値)`；真机实测多次规则亦按「或」合并（§2.2）。保留用例防回归 |
+| 11 | ✅ 已闭环 | 模拟宿主与官方文档不一致（返回值个数/参数含义/能力开关） | 沙箱升级、宿主行为记忆偏差 | 测试全绿但测的不是真机行为（**最危险的一类绿**） | 已由 `apidoc.py` + `checks_08_api.py`（7 项，含 19 个返回值探针与 12 条变异）门禁；文档键表更新需同步该文件 |
 
 ---
 
@@ -482,6 +505,8 @@ camdepth raster : 近处 code 0.92 > 远处 0.68（距离单调）
    无需改动脚本。建议把这条结论留在代码注释里，避免下次又被当成 bug 反复怀疑。
 1. `.github/workflows/ci.yml`：`g++` 编译自测 + `python3 sandbox/run_checks.py`（沙箱已备好 `--json`）。
 2. 主 README 增加「测试 / Test sandbox」一节，指向 `sandbox/README.zh.md`。
+2b. `vl3dsb/apidoc.py` 是官方文档的**手抄副本**：升级 AviUtl2 后若文档新增 `obj.*`/`obj.getinfo` 键，
+    需同步该文件（`api: every obj.* call is documented and emulated` 会在脚本用到新键时立刻报错，作为提醒）。
 3. `occ_list` 解析失败时输出 `@warn`；HUD 增加 `prox` 峰值显示。
 
 **短期（1~2 天）**
@@ -512,7 +537,9 @@ camdepth raster : 近处 code 0.92 > 远处 0.68（距离单调）
 | cbuffer 布局与 25 个调用点一致 | `--only "cbuffer layout"`（metrics 里给出每个着色器的 declared/required/supplied） |
 | 该静态规则确实会报错（变异测试） | `--only "interface lint rejects"` |
 | 属性注释严格语法（Astra 规则） | `--only "property annotations"` |
-| `--hide@` 的宿主语义隐患 | `--only "host semantics audit"`（WARN + metrics 里的行号清单） |
+| `--hide@` 的求值语义与多规则合并 | `--only "--hide@"`（metrics 给出 `multi_rule_targets` 与数值比较次数） |
+| 设定项结构（标签唯一 / 分组闭合 / hide 目标） | `--only "structure"` |
+| 宿主 API 契约（签名 / 键 / 返回值个数 / 两条缓冲路径） | `--only "api:"` |
 
 > 所有 PNG（`out/demo`、`out/features`、`out/hlsl`、`out/bridge`）都是本轮沙箱真实渲染的结果；
 > 亮度为近似值（WBOIT 简化），结构与遮挡关系与真机一致。

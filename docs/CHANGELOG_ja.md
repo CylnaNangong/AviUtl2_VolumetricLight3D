@@ -42,6 +42,44 @@
   旧リスク #2（`beamatlas` 236 uniform の手動整合）を「高」から「中（テストで門禁済み）」へ引き下げ。
 - ルート `README.md` §10 のテスト件数を 76 に更新。
 
+### 第 3 ラウンド（同日）· ホスト API 契約層（公式ドキュメント ⇄ スクリプト ⇄ 模擬ホスト）
+
+> これも**テストとドキュメントのみ**の変更。スクリプト `v3.13`、プラグイン `v1.21`、`Language/*.aul2` は未修正。
+> 本ラウンドで変更した本体側ファイルは `README.md` 第 10 節の件数 1 行のみ（そのためここに記録する）。
+
+- **サンドボックスのテスト 76 → 85 件（85 PASS / 0 FAIL / 0 SKIP / 0 WARN、104 秒）**。第 3 の静的検証層
+  `checks_08_api.py`（7 件）と `checks_01_script.py` の構造検証 2 件を追加。
+- **単一の情報源 `sandbox/vl3dsb/apidoc.py` を新設**：[docs.aviutl2.jp/lua](https://docs.aviutl2.jp/lua/) の
+  `obj.*` 関数 30 個（引数範囲・戻り値の説明つき）、`obj.getinfo/getoption/setoption/load` の文書化キー、
+  バッファ名、blend/sampler 列挙、**文書化された 38 個の `obj` フィールド**を Python 定数として転記（確認日を明記）。
+- **`sandbox/vl3dsb/luasurface.py`**（`obj.foo(...)` 呼び出し・実引数原文・`obj.field` の読み書き・リテラルキーを
+  静的走査。コメント/長文字列/文字列連結を正しく除外）と **`sandbox/vl3dsb/api_lint.py`**（ルールエンジン）を新設。
+- **追加したテスト**：`api: every obj.* call is documented and emulated by the host`、
+  `api: argument counts and enum keys match the documented signatures`、
+  `api: the emulated host exposes the documented obj.* field table`（38 個ちょうど）、
+  `api: the fake returns the documented values (arity + enum probe)`（19 プローブ）、
+  `api: obj.getpixel and obj.getpixeldata agree on the same buffer`、
+  `api: obj.copybuffer is documented+on, and both buffer paths agree`、
+  `api: API linter catches seeded drift`（12 行のうち 10 個の人工欠陥をすべて検出し、合法な 2 行は誤検出しない）、
+  `obj2: setting items, groups and --hide@ targets follow the documented structure`、
+  `obj2: structure linter catches seeded setting-item damage`（6 変異）。
+- **模擬ホストと公式仕様の不一致 3 件を修正**（スクリプト側の責任ではない。`sandbox/vl3dsb/host.py` のみ）：
+  1. `obj.getinfo("image_max")` が 1 個しか返さない → 公式は **2 個**（`max_x, max_y`）。従来は
+     `local mw, mh = …` が `mw=table, mh=nil` となり、サイズ上限のロジックが無言で無効化されていた。
+  2. `obj.getinfo("clock")` が `nil` → 公式は起動からの経過秒数。従来は perf の主経路が常に偽で `os.clock` に落ちていた。
+  3. `obj.copybuffer` を既定で「非対応」としていた → **文書化された API**（`true/false` を返す）。従来は全テストが
+     `obj.load` のフォールバック経路だけを実行し、実機の主経路（フレームバッファ退避）は一度も通っていなかった。
+     現在は既定で有効化し、両経路がピクセル一致することをテストで保証。
+- **仕様に合わせて修正した細部**：`obj.setfont` の第 3 引数は**装飾タイプ 0–6**（旧コードは `weight` と誤記。
+  AviUtl2 にウェイト引数は無い）、`obj.draw` は 8 引数（`rx,ry,rz`）、`obj.drawpoly` は
+  「頂点テーブル + `vertex_num`」と「フラット 20 float + alpha」の 2 形式（**混在禁止**、`vertex_num` は 3/4 のみ）、
+  `obj.load` は文書化された 4 引数（figure の色+サイズ）を受ける、`obj.getpixel([x,y[,type]])` は `col/rgb/yc` の 3 種、
+  `obj.setanchor` はアンカー数を返す。さらに模擬ホストの**未文書化** `obj.scene` 別名を削除（公式は `obj.scene_id` のみ）。
+- **ドキュメント**：`sandbox/README.zh.md` に §5.2「ホスト API 契約」を追加、`sandbox/docs/ANALYSIS.zh.md` に
+  §3.5(c) とリスク #11（模擬ホストと文書のドリフト、解消済み）を追加。§2.3 の
+  「AviUtl2 は `obj.copybuffer` 非対応」という誤った結論を訂正し（Astra 方言からの推測が原因）、
+  `obj.*` 呼び出し統計を 257 箇所（コメント/文字列を除外）に更新。
+
 ## v3.13（2026-10-26）
 - **3D カメラ／編集カメラ下で「画面に状態表示（HUD）」が表示されなくなっていた不具合を修正**
   - **原因特定**：`v3.12` で HUD 自身の影焼き込みを防ぐため `z_cam = 32`（`k_hud = 32 / focal_d`）へ配置した際、AviUtl / ExEdit2 の 3D カメラ透視投影における近クリップ面 `zn`（`約 102.4〜128`）より手前に入ったため、D3D11 視錐台クリッピングによって HUD ビルボード全体が破棄されていた。
