@@ -76,8 +76,8 @@ CI 里只需 `python3 run_checks.py --json out/results.json`：JSON 中每条用
 `status / seconds / metrics / artifacts`，便于趋势对比。
 
 用例状态有四种：`PASS` / `FAIL` / `SKIP` / `WARN`。**只有 `FAIL` 会让退出码变 1**；
-`WARN` 表示「源码里存在一个只能由真机裁决的问题」（例如下面 5.1 的 `--hide@` 求值语义），
-它会被完整写进 `results.json` 的 `detail`，但不会阻塞 CI。
+`WARN` 表示「源码里存在一个只能由真机裁决的问题」，它会写进 `results.json` 的 `detail` 但不阻塞 CI。
+当前 76 项全部 `PASS`（两个原有的 WARN 疑点已在 2026-10-29 用官方文档 + 真机实测裁决，见 5.1 节）。
 
 ## 4. 作为库使用（最小示例）
 
@@ -168,11 +168,13 @@ session.save_png(session.composite(bg, r.volume, gain=4.0), "out/comp.png")  # �
 
 ### 5.1 静态接口校验（AviUtl2_Astra 规则移植）
 
-沙箱除了「跑一帧然后看像素」，还有一层**不执行任何代码**的静态校验，规则来自
+沙箱除了「跑一帧然后看像素」，还有一层**不执行任何代码**的静态校验。规则的**第一来源是 AviUtl2 官方
+规范** [`docs.aviutl2.jp/lua`](https://docs.aviutl2.jp/lua/)（設定項目 / 非表示条件），
 [AviUtl2_Astra](https://github.com/korarei/AviUtl2_Astra) 在 `astra build` 时执行的检查
-（uniform 布局校验、属性注释校验）。这里是**规则移植**而不是依赖 Astra：Astra 只发布 Windows
-二进制、没有 `check` 子命令、也没有结构化诊断输出，因此它的规则被重写成 Python，
-可以在任何 Linux CI 上跑（实现见 `vl3dsb/hlsl/interface.py` 与 `checks_01_script.py`）。
+（uniform 布局、属性注释）作为补充与交叉验证。这里是**规则移植**而不是依赖 Astra：
+Astra 只发布 Windows 二进制、没有 `check` 子命令、也没有结构化诊断输出，而官方规范只描述、
+不提供校验器——两者都被重写成 Python，可以在任何 Linux CI 上跑
+（实现见 `vl3dsb/hlsl/interface.py` 与 `checks_01_script.py`）。
 
 **(a) cbuffer 布局 ⇄ Lua 调用点**（用例 `hlsl: cbuffer layout matches every Lua call site`）
 
@@ -206,26 +208,35 @@ ps_vl_ab_sil_v / pool / white  4     4         4
 
 也就是说：**`beamatlas` 那条“最容易静默错位”的 236 段打包现在有机器门禁了**。
 
-**(b) 属性注释语法**（用例 `obj2: property annotations obey the strict AviUtl2 grammar`）
+**(b) 属性注释语法**（用例 `obj2: property annotations follow the AviUtl2 spec (docs.aviutl2.jp/lua)`）
 
-| 指令 | 规则 |
+规则的**第一来源是官方规范** [`docs.aviutl2.jp/lua`](https://docs.aviutl2.jp/lua/)「設定項目」一节，
+Astra 的附加严格性只作为补充（有冲突时以官方为准）。
+
+| 指令 | 规则（官方规范 + 括号内为附加严格项） |
 | --- | --- |
-| 全部 | ID 必须匹配 `[A-Za-z_]\w*`；**同名属性不得重复声明**；注释必须独占一行（不允许 `local x = 1 --track@_` 这种 Astra 方言）；不得出现 `--#include/--#define/--#if` 等 Astra 预处理指令 |
-| `--track@` | 必须 4 个参数（标签,min,max,初值）+ 可选 1 个 step；`min ≤ 初值 ≤ max`；step 必须是 `10^-k`(k≤9)；参数过多报警 |
-| `--check@` | 初值只能是 `true/false/0/1` |
-| `--select@` | 首项必须是 `标签=默认值`；选项整数值唯一、标签唯一且非空；**默认值必须是某个选项** |
-| `--color@` | `nil` 或 `0..0xffffff` |
-| `--string@` | 标签 + 初值 |
-| `--hide@` | 目标必须已声明且**声明在前**；空条件报错；运算符只允许 `== ~= >= <= > <` |
+| 全部 | ID 匹配 `[A-Za-z_]\w*`；同名属性不得重复声明；注释必须独占一行（不允许 `local x = 1 --track@_` 这种 Astra 方言）；不得出现 `--#include/--#define/--#if` 等 Astra 预处理指令 |
+| `--track@` | `項目名,最小,最大,デフォルト[,移動単位[,ゼロ値名称[,操作倍率]]]` —— **最多 7 个参数**；`min ≤ 初值 ≤ max`；step 必须是 `10^-k`(k≤9)；操作倍率 ∈ (0,1] |
+| `--check@` | `項目名,初値`，初値 ∈ {0,1,true,false}；**用 0/1 时变量是 number，用 true/false 时是 boolean**（用例会统计两种类型） |
+| `--select@` | `項目名[=デフォルト値],選択肢=値,…`；默认值**可省略**，写了就必须是某个选项；（附加）选项值/标签唯一 |
+| `--color@` | `項目名,デフォルト値`；`nil`（可选透明）或 `0..0xffffff` |
+| `--file@ / --folder@` | 只有 `項目名`，无初值 |
+| `--string@ / --text@ / --font@ / --figure@ / --value@` | `項目名,デフォルト値` |
+| `--data@` | `登録名:サイズ`（**没有项目名**，≤ 16 KB） |
+| `--group:` / `--group` | `グループ名[,true/false]`；`--group` 单独出现 = 分组结束 |
+| `--hide@` | 目标须已声明且**声明在前**；条件形如 `(変数名)(比較演算子)(数値)`，运算符**只有 `== ~=` `>` `<`**；条件可引用 check/select/file/folder 与特殊条件 `filter`（**不能引用 trackbar**）；条件留空 = 永远隐藏 |
 
-附加一条**信息性**用例 `obj2: --hide@ duplicate-target audit`（状态 `WARN`）：同一参数挂两条
-`--hide@`（「指定图层」`occ_list` / 「目标图层范围」`ab_list`）时，宿主是「取或」还是「后者覆盖」
-未见于文档，用例把重复项和行号列出来提醒。
+**关于「同一参数挂多条 `--hide@`」**（用例 `obj2: --hide@ multi-rule targets are OR'ed`）：
+官方示例本身就给同一变量写了两条（`--hide@pos:chk==0` + `--hide@pos:filter==1`），实测也确认是**按「或」合并**——
+把「融入目标图层」设为「指定图层范围或编号」（使 `ab_target<1` 为假）后取消勾选「启用前景融入背景」，
+「目标图层范围」仍然消失（只有 `ab_enable==0` 那条能做到）。因此 `occ_list` / `ab_list` 的双规则是**正确写法**，
+用例只拦「同目标 + 同条件」的冗余重复。
 
-> **已实测结论（2026-10-29，AviUtl2 中文 UI）**：`--hide@` 条件里的 `--check@` 参数按 **0/1 真值**求值，
-> 所以 `ab_enable==0`（13 条）、`auto_slice==1`（1 条）这类写法**是有效的**——取消勾选
-> 「启用前景融入背景」后，其下 14 个子参数会全部收起（截图实测）。该结论已写进用例的注释与文档，
-> 数值比较不再计入 WARN。详见 `docs/ANALYSIS.zh.md` §2.2 与风险 #10。
+> **真机核对记录（2026-10-29，AviUtl2 中文 UI）**
+> ① 取消勾选「启用前景融入背景」→ 其下 14 个子参数全部收起、勾选后全部展开 ⇒ `--hide@` 条件按数值比较，
+> `ab_enable==0` / `auto_slice==1` 有效；② 上述 `ab_target=1` 的对照 ⇒ 多规则按「或」合并。
+> 官方规范同时明确 `--check@` 用 `true/false` 时变量是 **boolean**，用 `0/1` 时是 **number** ——
+> 这解释了脚本正文为何写 `ab_enable == true or ab_enable == 1`（条件上下文数值化、正文保持布尔）。
 
 > **中文 UI**：属性面板的语言由 `Language/` 下的 `.aul2` 决定。界面为简体中文时显示的是 8.1 节的中文列，
 > 例如「启用前景融入背景」「融入目标图层」「前景遮挡模式」，而不是上面这些日文原文。
@@ -258,7 +269,7 @@ def mine():
 | 遮挡「无效」 | 2D 遮挡要求遮挡层在光源平面 **前方**（`z` 更小，如 -200）；3D 遮挡需要 `kind="obj"` 且 `occ_list` 指定图层号 |
 | 编译很慢 | 首次 g++ 编译约 20 秒；之后按源码 hash 复用 `out/build/native/libvl3d_test_*.so` |
 | `lupa` 报 FFI 不可用 | 安装带 LuaJIT 的 lupa（`lupa.luajit21`），或接受相关用例 SKIP |
-| 有一条 `[WARN] obj2: --hide@ duplicate-target audit` | **正常**，提示「同一参数两条隐藏规则」的合并语义尚未在真机确认（见 5.1 节），不影响退出码 |
+| 想让 `WARN` 也算失败 | `run_checks.py` 只把 `FAIL` 计入退出码；需要强制时读 `out/results.json` 的 `counts` 自行判定 |
 
 ## 8. 参考：参数速查（47 个，默认值来自 `.obj2`）
 

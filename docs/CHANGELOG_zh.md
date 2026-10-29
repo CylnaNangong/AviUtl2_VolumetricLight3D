@@ -5,7 +5,7 @@
 > 本节只记录**测试与文档**改动：`Script/VolumetricLight3D.obj2`、`src/VL3DBridge`、`Language/*.aul2`
 > 均**未修改**（脚本版本仍为 `v3.13`，插件仍为 `v1.21`），因此不影响任何已发布产物的行为。
 
-- **沙箱用例 70 → 76（75 PASS / 0 FAIL / 1 WARN）**，新增「静态接口校验」层：
+- **沙箱用例 70 → 76（76 PASS / 0 FAIL / 0 WARN）**，新增「静态接口校验」层：
   - `hlsl: cbuffer layout matches every Lua call site (static)`：新增 `sandbox/vl3dsb/hlsl/interface.py`，
     静态比对 14 段 HLSL 的 cbuffer 布局与 25 个 `obj.pixelshader()` 调用点，区分
     `declared`（cbuffer 声明浮点数）/ `required`（函数体真实读取）/ `supplied`（Lua 实传），
@@ -15,18 +15,26 @@
     shader），确保上述规则真的会报错。
   - `hlsl: every block declares a matching entry point and explicit registers`：入口点同名、
     `register(b0)`、纹理 `tN`、`SV_Position` / `SV_Target`。
-  - `obj2: property annotations obey the strict AviUtl2 grammar`：按 AviUtl2_Astra 的属性校验规则
-    逐条检查 47 个参数（track step ∈ 10^-k、`min ≤ 初值 ≤ max`、select 选项值与标签唯一且默认值在选项内、
-    check 初值 ∈ {true,false,0,1}、color 0–0xffffff、属性 ID 不得重复、不得混入 Astra 方言）。
-  - `obj2: --hide@ rules target parameters declared before them` 与
-    `obj2: --hide@ duplicate-target audit`（WARN）：后者记录 `occ_list` / `ab_list` 各有两条 `--hide@`
-    的**合并语义**尚未在真机确认（宿主若只保留最后一条，则前一条隐藏条件失效）。
+  - `obj2: property annotations follow the AviUtl2 spec (docs.aviutl2.jp/lua)`：以**官方规范**为主的
+    属性注释校验，逐条检查 47 个参数（track 最多 7 个参数且 `min ≤ 初值 ≤ max`、step ∈ 10^-k、
+    操作倍率 ∈ (0,1]、check 初值 ∈ {0,1,true,false} 并统计 number/boolean 两种类型、select 默认值可省略
+    但写了必须在选项内、color `nil` 或 0–0xffffff、`--data@` 为 `登録名:サイズ`≤16KB、属性 ID 不得重复、
+    不得混入 Astra 方言）。
+  - `obj2: --hide@ conditions follow the documented grammar`：条件必须是 `(変数名)(比較演算子)(数値)`，
+    运算符**只有 `== ~=` `>` `<`**（官方规范不含 `>=`/`<=`），可引用 check/select/file/folder 与特殊条件
+    `filter`（不含 trackbar），条件留空 = 永远隐藏；目标必须先声明。
+  - `obj2: --hide@ multi-rule targets are OR'ed (spec + host verified)`：允许同一目标多条规则
+    （官方示例即如此），仅拦截「同目标 + 同条件」的冗余重复。
   - `vl3dsb/obj2.py` 新增 `hide_rules`（按源码顺序保留**全部**隐藏规则），原先的 `hides` 字典只保留
     每个参数的最后一条，导致 `hide_exprs` 会漏检重复目标的前一条规则。
-- **真机实测记录（2026-10-29，AviUtl2 中文 UI）**：`--hide@` 条件里的 `--check@` 参数按 **0/1 真值**求值——
-  取消勾选「启用前景融入背景」后其下 14 个子参数全部收起、勾选后全部展开，因此
-  `ab_enable==0`（13 条）/ `auto_slice==1`（1 条）这类数值比较写法**有效**，
-  该疑虑已排除并写回文档（`sandbox/docs/ANALYSIS.zh.md` §2.2、风险 #10 由「中」降为「低」）。
+- **依据官方规范修正了 4 处此前的「想当然」**（原先按 Astra 方言推断，均已按
+  [docs.aviutl2.jp/lua](https://docs.aviutl2.jp/lua/) 改正）：`--track@` 最多 **7** 个参数
+  （含 `ゼロ値名称` / `操作倍率`）、`--select@` 默认值**可省略**、`--data@` 语法为 `登録名:サイズ`（无项目名）、
+  `--hide@` 运算符**只有** `== ~=` `>` `<`。本仓库脚本对这四条均合规，因此**无需改脚本**。
+- **真机实测记录（2026-10-29，AviUtl2 中文 UI）**：`--hide@` 条件里的 `--check@` 参数按数值比较
+  （官方规范即 `(変数名)(比較演算子)(数値)`）——取消勾选「启用前景融入背景」后其下 14 个子参数全部收起；
+  且把「融入目标图层」设为「指定图层范围或编号」（使 `ab_target<1` 为假）后仍然收起，
+  证明同一目标的多条规则按「或」合并。两个疑点均已排除（`sandbox/docs/ANALYSIS.zh.md` §2.2，风险 #10 关闭）。
 - **文档**：`sandbox/README.zh.md` 新增 §5.1「静态接口校验（AviUtl2_Astra 规则移植）」与
   `WARN` 状态说明；`sandbox/docs/ANALYSIS.zh.md` 新增 §3.5 与风险 #10，
   并把原风险 #2（`beamatlas` 236 uniform 手工对齐）由「高」下调为「中（已由用例门禁）」。

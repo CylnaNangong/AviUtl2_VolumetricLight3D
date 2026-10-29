@@ -214,8 +214,21 @@ def changelog():
 # *source* text, so it also guards against mixing in Astra-only syntax that the
 # native AviUtl2 loader would not understand.
 # ---------------------------------------------------------------------------
-VALUE_KINDS = {"track", "check", "select", "color", "string", "text", "value", "file", "folder", "data"}
-LEGAL_TRACK_STEPS = {10.0 ** -k for k in range(10)} | {1.0, 0.1}
+# Rules below follow the **official** AviUtl2 script spec
+# (https://docs.aviutl2.jp/lua/ § 設定項目) with the extra strictness that
+# AviUtl2_Astra applies at `astra build` time.  Where the two disagree the
+# official spec wins and the stricter rule is marked "(extra)".
+# ---------------------------------------------------------------------------
+DOC_KINDS = {"track", "trackgroup", "check", "checksection", "select", "color",
+             "file", "folder", "font", "figure", "string", "text", "value", "data"}
+VALUE_KINDS = {"track", "check", "select", "color", "string", "text", "value",
+               "file", "folder", "font", "figure"}
+# kinds usable as the *condition* of a --hide@ rule (docs: check / list /
+# file / folder, plus the special `filter`); trackbars are NOT listed
+HIDE_CONDITION_KINDS = {"check", "select", "file", "folder"}
+HIDE_OPERATORS = {"==", "~=", ">", "<"}       # docs list exactly these four
+DOC_TRACK_STEPS = {1.0, 0.1, 0.01, 0.001}     # docs: these four are documented
+LEGAL_TRACK_STEPS = {10.0 ** -k for k in range(10)}
 
 
 def _directive_lines(text):
@@ -232,27 +245,45 @@ def _directive_lines(text):
     return out
 
 
-@check("obj2: property annotations obey the strict AviUtl2 grammar", tags=["static"])
+@check("obj2: property annotations follow the AviUtl2 spec (docs.aviutl2.jp/lua)", tags=["static"])
 def property_grammar():
     s = script()
     bad = []
     seen = {}
     steps = set()
     counts = {}
+    check_types = {"number": 0, "boolean": 0}
+
+    def args_of(rest):
+        return [a.strip() for a in rest.split(",")] if rest else []
+
     for line_no, kind, ident, rest in _directive_lines(s.text):
         counts[kind] = counts.get(kind, 0) + 1
-        if kind in ("information", "group", "separator", "script", "hide"):
-            if kind == "group":
-                if not ident:
-                    continue                      # bare `--group` closes a group
-                parts = rest.split(",")
-                if len(parts) > 2:
-                    bad.append(f"L{line_no}: --group takes 1-2 arguments, got {len(parts)}")
-                elif len(parts) == 2 and parts[1].strip().lower() not in ("true", "false"):
-                    bad.append(f"L{line_no}: --group flag must be true/false, got {parts[1]!r}")
+
+        if kind in ("information", "hide"):
+            continue                       # hide rules are linted separately
+        if kind == "group":
+            if not ident:
+                continue                       # bare `--group` closes a group
+            parts = args_of(rest)
+            if len(parts) > 2:
+                bad.append(f"L{line_no}: --group takes 1-2 arguments, got {len(parts)}")
+            elif len(parts) == 2 and parts[1].lower() not in ("true", "false"):
+                bad.append(f"L{line_no}: --group flag must be true/false, got {parts[1]!r}")
             continue
-        if kind not in VALUE_KINDS:
+        if kind in ("separator", "label", "script"):
+            if not rest:
+                bad.append(f"L{line_no}: --{kind} needs a value")
+            continue
+        if kind not in DOC_KINDS:
             bad.append(f"L{line_no}: unknown property directive {kind!r}")
+            continue
+        if kind == "trackgroup":
+            names = [x.strip() for x in ident.split(",") if x.strip()]
+            if not (2 <= len(names) <= 3):
+                bad.append(f"L{line_no}: --trackgroup needs 2-3 variable names, got {len(names)}")
+            if not rest:
+                bad.append(f"L{line_no}: --trackgroup needs a group name")
             continue
         if not re.fullmatch(r"[A-Za-z_]\w*", ident):
             bad.append(f"L{line_no}: illegal property id {ident!r}")
@@ -261,50 +292,71 @@ def property_grammar():
             bad.append(f"L{line_no}: property {ident!r} declared twice "
                        f"(first at L{seen[ident]})")
         seen[ident] = line_no
-        args = [a.strip() for a in rest.split(",")] if rest else []
+        args = args_of(rest)
+
         if kind == "track":
+            # 項目名,最小値,最大値,デフォルト値[,移動単位[,ゼロ値名称[,操作倍率]]]
             if len(args) < 4:
-                bad.append(f"L{line_no}: --track@{ident} needs min,max,initial[,step]")
+                bad.append(f"L{line_no}: --track@{ident} needs 項目名,最小,最大,デフォルト")
                 continue
-            if len(args) > 5:
-                bad.append(f"L{line_no}: --track@{ident} has {len(args)-5} extra arguments")
+            if len(args) > 7:
+                bad.append(f"L{line_no}: --track@{ident} has {len(args) - 7} extra arguments")
             try:
                 lo, hi, init = float(args[1]), float(args[2]), float(args[3])
             except ValueError:
                 bad.append(f"L{line_no}: --track@{ident} has a non-numeric bound: {args[1:4]}")
                 continue
-            for v in (lo, hi, init):
-                if v != v or v in (float("inf"), float("-inf")):
-                    bad.append(f"L{line_no}: --track@{ident} has a non-finite bound")
             if not (lo <= init <= hi):
-                bad.append(f"L{line_no}: --track@{ident} initial {init} outside [{lo},{hi}]")
-            if len(args) == 5:
+                bad.append(f"L{line_no}: --track@{ident} initial {init:g} outside [{lo:g},{hi:g}]")
+            if len(args) >= 5:
                 try:
                     step = float(args[4])
                 except ValueError:
                     bad.append(f"L{line_no}: --track@{ident} step {args[4]!r} is not numeric")
-                    continue
-                steps.add(step)
-                if not any(abs(step - x) <= abs(x) * 1e-9 for x in LEGAL_TRACK_STEPS) or step <= 0:
-                    bad.append(f"L{line_no}: --track@{ident} step {step} is not 10^-k (k<=9)")
-        elif kind == "check":
-            if len(args) != 2:
-                bad.append(f"L{line_no}: --check@{ident} needs label,initial")
-            elif args[1].lower() not in ("true", "false", "0", "1"):
-                bad.append(f"L{line_no}: --check@{ident} initial must be true/false/0/1, got {args[1]!r}")
+                    step = None
+                if step is not None:
+                    steps.add(step)
+                    if step <= 0 or not any(abs(step - x) <= abs(x) * 1e-9 for x in LEGAL_TRACK_STEPS):
+                        bad.append(f"L{line_no}: --track@{ident} step {step:g} is not 10^-k (k<=9)")
+            if len(args) == 7:
+                try:
+                    gain = float(args[6])
+                except ValueError:
+                    bad.append(f"L{line_no}: --track@{ident} 操作倍率 {args[6]!r} is not numeric")
+                else:
+                    if not (0 < gain <= 1.0):
+                        bad.append(f"L{line_no}: --track@{ident} 操作倍率 must be (0,1], got {gain:g}")
+        elif kind in ("check", "checksection"):
+            need = 2 if kind == "check" else 3
+            if len(args) != need:
+                bad.append(f"L{line_no}: --{kind}@{ident} needs {need} arguments, got {len(args)}")
+                continue
+            for a in args[1:]:
+                if a.lower() not in ("true", "false", "0", "1"):
+                    bad.append(f"L{line_no}: --{kind}@{ident} value must be 0/1/true/false, got {a!r}")
+            if kind == "check":
+                check_types["boolean" if args[1].lower() in ("true", "false") else "number"] += 1
         elif kind == "select":
-            if not args or "=" not in args[0]:
-                bad.append(f"L{line_no}: --select@{ident} head must be 'label=default'")
+            # 項目名[=デフォルト値],選択肢=値,...   (デフォルト値は省略可)
+            if not args:
+                bad.append(f"L{line_no}: --select@{ident} is empty")
                 continue
-            try:
-                default = float(args[0].rsplit("=", 1)[1])
-            except ValueError:
-                bad.append(f"L{line_no}: --select@{ident} default is not numeric")
-                continue
+            default = None
+            head = args[0]
+            if "=" in head:
+                label, raw = head.rsplit("=", 1)
+                try:
+                    default = float(raw)
+                except ValueError:
+                    bad.append(f"L{line_no}: --select@{ident} default {raw!r} is not numeric")
+                if not label.strip():
+                    bad.append(f"L{line_no}: --select@{ident} has an empty label")
+            elif not head:
+                bad.append(f"L{line_no}: --select@{ident} has an empty label")
             values, labels = [], []
             for opt in args[1:]:
                 if "=" not in opt:
-                    bad.append(f"L{line_no}: --select@{ident} option {opt!r} lacks '=value'")
+                    bad.append(f"L{line_no}: --select@{ident} option {opt!r} lacks '=値'")
                     continue
                 lbl, val = opt.rsplit("=", 1)
                 labels.append(lbl.strip())
@@ -315,41 +367,45 @@ def property_grammar():
             if not values:
                 bad.append(f"L{line_no}: --select@{ident} has no options")
                 continue
-            if len(set(values)) != len(values):
+            if len(set(values)) != len(values):          # (extra) ambiguity guard
                 bad.append(f"L{line_no}: --select@{ident} duplicate option values {values}")
             if len(set(labels)) != len(labels) or not all(labels):
                 bad.append(f"L{line_no}: --select@{ident} duplicate or empty option labels")
-            if default not in values:
+            if default is not None and default not in values:
                 bad.append(f"L{line_no}: --select@{ident} default {default:g} not among {values}")
         elif kind == "color":
             if len(args) != 2:
-                bad.append(f"L{line_no}: --color@{ident} needs label,value")
-            else:
-                v = args[1].strip().lower()
-                if v != "nil":
-                    try:
-                        n = int(v, 0)
-                    except ValueError:
-                        bad.append(f"L{line_no}: --color@{ident} value {args[1]!r} is not nil/0..0xffffff")
-                        continue
+                bad.append(f"L{line_no}: --color@{ident} needs 項目名,デフォルト値")
+                continue
+            v = args[1].lower()
+            if v != "nil":
+                try:
+                    n = int(v, 0)
+                except ValueError:
+                    bad.append(f"L{line_no}: --color@{ident} value {args[1]!r} is not nil/0xRRGGBB")
+                else:
                     if not (0 <= n <= 0xFFFFFF):
                         bad.append(f"L{line_no}: --color@{ident} value {n} out of range")
-        elif kind in ("string", "text", "file"):
-            if len(args) < 2 and kind != "file":
-                bad.append(f"L{line_no}: --{kind}@{ident} needs label,initial")
-        elif kind == "data":
+        elif kind in ("file", "folder"):
+            if len(args) != 1:
+                bad.append(f"L{line_no}: --{kind}@{ident} takes only 項目名")
+        elif kind in ("string", "text", "font", "figure", "value"):
             if len(args) != 2:
-                bad.append(f"L{line_no}: --data@{ident} needs label,size")
+                bad.append(f"L{line_no}: --{kind}@{ident} needs 項目名,デフォルト値")
+        elif kind == "data":
+            # --data@登録名:サイズ（16KB 以下）, no label
+            if len(args) != 1:
+                bad.append(f"L{line_no}: --data@{ident} takes only サイズ")
             else:
                 try:
-                    n = int(float(args[1]))
+                    n = int(float(args[0]))
                 except ValueError:
-                    bad.append(f"L{line_no}: --data@{ident} size is not numeric")
+                    bad.append(f"L{line_no}: --data@{ident} size {args[0]!r} is not numeric")
                 else:
-                    if not (0 <= n <= 16000):
-                        bad.append(f"L{line_no}: --data@{ident} size {n} outside 0..16000")
+                    if not (0 <= n <= 16384):
+                        bad.append(f"L{line_no}: --data@{ident} size {n} outside 0..16384 (16KB)")
 
-    # Astra-only preprocessing directives would not load in native AviUtl2
+    # Astra-only syntax would not load in native AviUtl2
     for pat, why in [
         (r"^--#(include|define|undef|replace|omit|if|ifdef|ifndef|elif|else|endif)\b",
          "Astra preprocessor directive"),
@@ -360,19 +416,25 @@ def property_grammar():
         if m:
             bad.append(f"{why} found: {m.group(0).strip()[:60]!r}")
     require(not bad, "; ".join(bad[:8]))
+    # the validator must see exactly the parameters the main parser sees,
+    # otherwise a directive line was silently skipped by the regex above
+    unseen = {p.name for p in s.params} - set(seen)
+    require(not unseen, f"validator skipped these parameters: {sorted(unseen)}")
     return {"properties": len(seen), "directives": counts,
-            "track_steps": sorted(steps), "detail": "grammar OK"}
+            "track_steps": sorted(steps), "check_types": check_types,
+            "detail": "grammar OK"}
 
 
-@check("obj2: --hide@ rules target parameters declared before them", tags=["static"])
+@check("obj2: --hide@ conditions follow the documented grammar", tags=["static"])
 def hide_rules_order():
     s = script()
+    kinds = {p.name: p.kind for p in s.params}
     declared_at = {}
     for line_no, kind, ident, _rest in _directive_lines(s.text):
         if kind in VALUE_KINDS and ident:
             declared_at.setdefault(ident, line_no)
     bad = []
-    rules = 0
+    rules = always_hidden = 0
     for line_no, kind, ident, expr in _directive_lines(s.text):
         if kind != "hide":
             continue
@@ -383,47 +445,65 @@ def hide_rules_order():
         if declared_at[ident] > line_no:
             bad.append(f"L{line_no}: --hide@{ident} precedes its declaration at L{declared_at[ident]}")
         if not expr:
-            bad.append(f"L{line_no}: --hide@{ident} has an empty condition")
-        for op in re.findall(r"[=!<>]=", expr):
-            if op not in ("==", "~=", ">=", "<="):
-                bad.append(f"L{line_no}: --hide@{ident} uses unsupported operator {op!r}")
+            always_hidden += 1      # documented: no condition = always hidden
+            continue
+        m = re.fullmatch(r"([A-Za-z_]\w*)\s*(==|~=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)", expr)
+        if not m:
+            bad.append(f"L{line_no}: --hide@{ident} condition {expr!r} is not (変数名)(比較演算子)(数値)")
+            continue
+        cond, op, _num = m.groups()
+        if op not in HIDE_OPERATORS:
+            bad.append(f"L{line_no}: --hide@{ident} uses undocumented operator {op!r} "
+                       f"(spec allows {' '.join(sorted(HIDE_OPERATORS))})")
+        if cond == "filter":
+            continue                 # documented special condition (0/1)
+        ckind = kinds.get(cond)
+        if ckind is None:
+            bad.append(f"L{line_no}: --hide@{ident} references undeclared {cond!r}")
+        elif ckind not in HIDE_CONDITION_KINDS:
+            bad.append(f"L{line_no}: --hide@{ident} tests a --{ckind}@{cond}; "
+                       f"the spec only allows check/select/file/folder/filter")
     require(not bad, "; ".join(bad[:8]))
-    return {"hide_rules": rules, "targets": len({i for _l, k, i, _e in _directive_lines(s.text) if k == "hide"})}
+    return {"hide_rules": rules, "targets": len(s.hides), "always_hidden": always_hidden,
+            "detail": f"{rules} rules, all in (変数名)(比較演算子)(数値) form"}
 
 
-@check("obj2: --hide@ duplicate-target audit (merge semantics)", tags=["static"])
+@check("obj2: --hide@ multi-rule targets are OR'ed (spec + host verified)", tags=["static"])
 def hide_semantics():
-    """Informational: a target carrying two `--hide@` rules needs the host to
-    OR them; if it keeps only the last one the UI shows a stale control.
+    """A target may carry several `--hide@` rules; the official example does
+    exactly that (`--hide@pos:chk==0` + `--hide@pos:filter==1`) and the host was
+    measured to apply **all** of them (2026-10-29: with `ab_target` set to 1,
+    unchecking 启用前景融入背景 still collapsed 目标图层范围, which only the
+    `ab_list:ab_enable==0` rule can do).
 
-    The **numeric-vs-boolean** half of this audit is settled by measurement
-    (2026-10-29, AviUtl2 Chinese UI): unchecking "启用前景融入背景" collapses all
-    14 sub-parameters, so `--hide@` conditions are evaluated with 0/1 truth
-    values and `ab_enable==0` / `auto_slice==1` are valid.  Those rules are
-    therefore reported as a metric only; the still-open question is the merge
-    behaviour for duplicate targets, which keeps this check at WARN.
+    So duplicates are legal; what stays worth linting is a *redundant* duplicate
+    (same target, same condition) and the numeric comparison of boolean
+    `--check@` parameters, which the spec defines as `(変数名)(演算子)(数値)`.
     """
-    from vl3dsb.harness import WARN
-
     s = script()
     kinds = {p.name: p.kind for p in s.params}
     per_target = {}
     for line_no, kind, ident, expr in _directive_lines(s.text):
         if kind == "hide":
             per_target.setdefault(ident, []).append((line_no, expr))
-    dupes = {k: v for k, v in per_target.items() if len(v) > 1}
-    numeric_on_bool = []
+
+    redundant = []
     for target, rules in per_target.items():
+        seen = {}
         for line_no, expr in rules:
+            if expr in seen:
+                redundant.append(f"{target}: L{seen[expr]} and L{line_no} share {expr!r}")
+            seen[expr] = line_no
+    require(not redundant, "redundant duplicate --hide@ rules: " + "; ".join(redundant))
+
+    numeric_bool = 0
+    for target, rules in per_target.items():
+        for _line_no, expr in rules:
             for ident in re.findall(r"[A-Za-z_]\w*", expr):
                 if kinds.get(ident) == "check" and re.search(
                         rf"\b{re.escape(ident)}\s*[=~]=\s*[01]\b", expr):
-                    numeric_on_bool.append(f"L{line_no}: {target} == {ident}(0/1)")
-    if not dupes:
-        return {"duplicates": 0, "host_verified_numeric_rules": len(numeric_on_bool),
-                "detail": "no duplicate targets"}
-    detail = [f"--hide@{t} declared {len(r)}x ({', '.join(f'L{l}: {e}' for l, e in r)})"
-              f" - 若宿主只保留最后一条，则前一条失效" for t, r in dupes.items()]
-    return {"status": WARN, "duplicates": len(dupes),
-            "host_verified_numeric_rules": len(numeric_on_bool),
-            "detail": " | ".join(detail[:4])}
+                    numeric_bool += 1
+    multi = {t: [e for _l, e in r] for t, r in per_target.items() if len(r) > 1}
+    return {"multi_rule_targets": multi, "numeric_comparison_of_check": numeric_bool,
+            "detail": (f"{len(multi)} targets carry 2 rules (OR, host verified); "
+                       f"{numeric_bool} rules compare a boolean --check@ numerically")}

@@ -6,7 +6,7 @@
 > `src/VL3DBridge`、`Language/*.aul2` はいずれも**未修正**（スクリプトは `v3.13`、プラグインは `v1.21` のまま）で、
 > 公開済み成果物の挙動には影響しない。
 
-- **サンドボックスのテスト 70 → 76 件（75 PASS / 0 FAIL / 1 WARN）**、「静的インターフェース検証」層を追加：
+- **サンドボックスのテスト 70 → 76 件（76 PASS / 0 FAIL / 0 WARN）**、「静的インターフェース検証」層を追加：
   - `hlsl: cbuffer layout matches every Lua call site (static)`：`sandbox/vl3dsb/hlsl/interface.py` を新設し、
     14 段の HLSL の cbuffer レイアウトと 25 箇所の `obj.pixelshader()` 呼び出しを静的に突き合わせる。
     `declared`（cbuffer 宣言の float 数）/ `required`（関数本体が実際に読む最大位置）/ `supplied`（Lua の実引数）を分離し、
@@ -16,18 +16,27 @@
     上記ルールが実際に検出することを保証。
   - `hlsl: every block declares a matching entry point and explicit registers`：エントリポイント名の一致、
     `register(b0)`、テクスチャ `tN`、`SV_Position` / `SV_Target`。
-  - `obj2: property annotations obey the strict AviUtl2 grammar`：AviUtl2_Astra のプロパティ検証規則に沿って
-    47 パラメータを検査（track の step は 10^-k、`min ≤ 初期値 ≤ max`、select の値・ラベルは一意で初期値が項目内、
-    check の初期値は {true,false,0,1}、color は 0–0xffffff、ID の重複禁止、Astra 方言の混入禁止）。
-  - `obj2: --hide@ rules target parameters declared before them` と
-    `obj2: --hide@ duplicate-target audit`（WARN）：後者は `occ_list` / `ab_list` に `--hide@` が 2 本ずつある
-    場合の**マージ仕様**が未確認であることを記録する（ホストが最後の 1 本だけを残すなら前の条件は無効）。
+  - `obj2: property annotations follow the AviUtl2 spec (docs.aviutl2.jp/lua)`：**公式仕様**を主軸にした
+    プロパティ注釈の検証。47 パラメータを検査（track は最大 7 引数かつ `min ≤ 初期値 ≤ max`、step は 10^-k、
+    操作倍率は (0,1]、check の初期値は {0,1,true,false} で number / boolean の型を集計、select の初期値は省略可
+    だが書くなら項目内、color は `nil` か 0–0xffffff、`--data@` は `登録名:サイズ` で 16KB 以下、
+    ID の重複禁止、Astra 方言の混入禁止）。
+  - `obj2: --hide@ conditions follow the documented grammar`：条件は `(変数名)(比較演算子)(数値)` の形のみ、
+    演算子は**`== ~=` `>` `<` の 4 種だけ**（公式仕様に `>=`/`<=` は無い）、参照できるのは
+    check/select/file/folder と特殊条件 `filter`（トラックバーは不可）、条件を空にすると常時非表示。
+  - `obj2: --hide@ multi-rule targets are OR'ed (spec + host verified)`：同一対象への複数ルールを許可
+    （公式サンプルも同様）。同一対象・同一条件の冗長な重複のみを検出する。
   - `vl3dsb/obj2.py` に `hide_rules`（ソース順で**全**ルールを保持）を追加。従来の `hides` 辞書は各パラメータの
     最後の 1 本しか保持せず、`hide_exprs` が重複対象の前のルールを見落としていた。
-- **実機での実測記録（2026-10-29、AviUtl2 中国語 UI）**：`--hide@` 条件では `--check@` パラメータが
-  **0/1 の真理値**として評価される——「前景融入背景を有効化」を外すと配下 14 項目がすべて折り畳まれ、
-  オンにすると展開される。したがって `ab_enable==0`（13 本）/ `auto_slice==1`（1 本）の数値比較は**有効**であり、
-  この懸念は解消（`sandbox/docs/ANALYSIS.zh.md` §2.2、リスク #10 は「中」→「低」）。
+- **公式仕様に合わせて 4 点の「思い込み」を修正**（従来は Astra 方言に基づく推測。いずれも
+  [docs.aviutl2.jp/lua](https://docs.aviutl2.jp/lua/) に準拠）：`--track@` は最大 **7** 引数
+  （`ゼロ値名称` / `操作倍率` を含む）、`--select@` の初期値は**省略可**、`--data@` は `登録名:サイズ`（項目名なし）、
+  `--hide@` の演算子は **`== ~=` `>` `<` のみ**。本リポジトリのスクリプトは 4 点すべて適合しており**改修不要**。
+- **実機での実測記録（2026-10-29、AviUtl2 中国語 UI）**：`--hide@` 条件では `--check@` が数値として比較される
+  （公式仕様の `(変数名)(比較演算子)(数値)` どおり）——「前景融入背景を有効化」を外すと配下 14 項目がすべて折り畳まれる。
+  さらに「融入目標」を「指定レイヤー範囲または番号」にして（`ab_target<1` を偽にして）から外しても折り畳まれるため、
+  同一対象の複数ルールは「OR」で合成されることが確認できた。2 つの懸念は解消
+  （`sandbox/docs/ANALYSIS.zh.md` §2.2、リスク #10 はクローズ）。
 - **ドキュメント**：`sandbox/README.zh.md` に §5.1「静的インターフェース検証（AviUtl2_Astra 規則の移植）」と
   `WARN` 状態の説明を追加。`sandbox/docs/ANALYSIS.zh.md` に §3.5 とリスク #10 を追加し、
   旧リスク #2（`beamatlas` 236 uniform の手動整合）を「高」から「中（テストで門禁済み）」へ引き下げ。
