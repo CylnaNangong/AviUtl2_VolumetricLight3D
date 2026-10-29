@@ -381,3 +381,61 @@ def entry_points():
             bad.append(f"{name}: missing SV_Target output")
     require(not bad, "; ".join(bad))
     return {"shaders": len(s.shaders)}
+
+
+# ---------------------------------------------------------------------------
+# Alpha encoding switch (p26.w = wboit_ka)
+#
+# `beamatlas` has two documented alpha encodings, selected by p26.w:
+#   p26.w > 0.01  proportional  : out_a = quantise(saturate(emit_s * ka_eff))
+#   p26.w <= 0    constant token: out_a = p12.z (min_opt_a)
+# v3.14 flipped the non-spot path from 0.24 to 0.0, so both branches have to
+# stay alive and produce usable alpha. A separate runtime check verifies the
+# assumed fragment cutoff on the *product* of texture and drawpoly alpha.
+# ---------------------------------------------------------------------------
+_F_P12_Z = 12 * 4 + 2      # min_opt_a
+_F_P26_W = 26 * 4 + 3      # wboit_ka
+
+
+@check("hlsl: beamatlas alpha encoding switches on wboit_ka (constant token vs proportional)",
+       tags=["hlsl", "core"])
+def beamatlas_alpha_switch():
+    l = lib()
+    tr = _capture_beam_trace(occ=False)
+    texs = tr["textures"]
+    const_token = float(tr["params"][_F_P12_Z])
+    require(const_token > 0, f"min_opt_a (p12.z) is {const_token}, the constant path would emit alpha 0")
+
+    outs = {}
+    for ka in (0.0, 0.24):
+        p = list(tr["params"])
+        p[_F_P26_W] = ka
+        outs[ka] = l.run("beamatlas", p, texs, out_hw=tr["size"])
+
+    a_const = outs[0.0][..., 3].astype(np.float32) / 255.0
+    a_prop = outs[0.24][..., 3].astype(np.float32) / 255.0
+    lit = a_const > 0
+    require(lit.any(), "constant-alpha encoding produced no lit pixel at all")
+    require(a_prop.max() > 0, "proportional encoding produced no lit pixel at all")
+
+    # constant path: every lit pixel carries the same quantized token
+    vals = np.unique(a_const[lit])
+    require(vals.size == 1 and float(np.abs(vals - const_token).max()) <= 0.5 / 255.0 + 1e-6,
+            f"constant path should emit only quantized p12.z={const_token:.5f}, got {vals[:6]}")
+    # the proportional branch may *drop* pixels (it returns 0 below min_a), so it
+    # can only ever cover a subset -- and the colour must not depend on the
+    # encoding at all: alpha is coverage, not tint.
+    lit_const = int((a_const > 0).sum())
+    lit_prop = int((a_prop > 0).sum())
+    require(lit_const >= lit_prop,
+            f"constant path must cover >= the proportional one ({lit_const} < {lit_prop})")
+    both = (a_const > 0) & (a_prop > 0)
+    require(both.any(), "the two encodings share no lit pixel")
+    require(np.array_equal(outs[0.0][..., :3][both], outs[0.24][..., :3][both]),
+            "changing wboit_ka must not alter RGB where both encodings keep a pixel: "
+            "it encodes coverage in alpha only")
+    return {"min_opt_a": round(const_token, 6),
+            "lit_px": {"constant": lit_const, "proportional": lit_prop},
+            "alpha_ratio": round(float(a_prop.mean()) / max(float(a_const.mean()), 1e-9), 3),
+            "alpha_const_max": round(float(a_const.max()), 5),
+            "alpha_prop_max": round(float(a_prop.max()), 5)}
