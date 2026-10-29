@@ -19,8 +19,14 @@
     逐条检查 47 个参数（track step ∈ 10^-k、`min ≤ 初值 ≤ max`、select 选项值与标签唯一且默认值在选项内、
     check 初值 ∈ {true,false,0,1}、color 0–0xffffff、属性 ID 不得重复、不得混入 Astra 方言）。
   - `obj2: --hide@ rules target parameters declared before them` 与
-    `obj2: --hide@ host semantics audit`（WARN）：后者记录两个**需真机裁决**的现象——
-    `occ_list` / `ab_list` 各有两条 `--hide@`；14 条规则用 `==0`/`==1` 比较 `--check@` 布尔参数。
+    `obj2: --hide@ duplicate-target audit`（WARN）：后者记录 `occ_list` / `ab_list` 各有两条 `--hide@`
+    的**合并语义**尚未在真机确认（宿主若只保留最后一条，则前一条隐藏条件失效）。
+  - `vl3dsb/obj2.py` 新增 `hide_rules`（按源码顺序保留**全部**隐藏规则），原先的 `hides` 字典只保留
+    每个参数的最后一条，导致 `hide_exprs` 会漏检重复目标的前一条规则。
+- **真机实测记录（2026-10-29，AviUtl2 中文 UI）**：`--hide@` 条件里的 `--check@` 参数按 **0/1 真值**求值——
+  取消勾选「启用前景融入背景」后其下 14 个子参数全部收起、勾选后全部展开，因此
+  `ab_enable==0`（13 条）/ `auto_slice==1`（1 条）这类数值比较写法**有效**，
+  该疑虑已排除并写回文档（`sandbox/docs/ANALYSIS.zh.md` §2.2、风险 #10 由「中」降为「低」）。
 - **文档**：`sandbox/README.zh.md` 新增 §5.1「静态接口校验（AviUtl2_Astra 规则移植）」与
   `WARN` 状态说明；`sandbox/docs/ANALYSIS.zh.md` 新增 §3.5 与风险 #10，
   并把原风险 #2（`beamatlas` 236 uniform 手工对齐）由「高」下调为「中（已由用例门禁）」。

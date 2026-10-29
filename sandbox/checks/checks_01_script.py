@@ -100,7 +100,9 @@ def hide_exprs():
     s = script()
     declared = {p.name for p in s.params}
     bad = []
-    for name, expr in s.hides.items():
+    # validate *every* rule: a target may carry more than one (see the merge
+    # audit) and the last-wins dict `s.hides` would hide the earlier ones
+    for name, expr in s.hide_rules:
         if name not in declared:
             bad.append(f"hide target {name!r} is not a declared parameter")
         for ident in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expr):
@@ -110,7 +112,7 @@ def hide_exprs():
                 continue
             bad.append(f"{name}: unknown identifier {ident!r} in {expr!r}")
     require(not bad, "; ".join(bad))
-    return {"hides": len(s.hides)}
+    return {"hide_rules": len(s.hide_rules), "targets": len(s.hides)}
 
 
 @check("obj2: every parameter is reachable in the Lua body", tags=["static"])
@@ -389,11 +391,18 @@ def hide_rules_order():
     return {"hide_rules": rules, "targets": len({i for _l, k, i, _e in _directive_lines(s.text) if k == "hide"})}
 
 
-@check("obj2: --hide@ host semantics audit (merge conflicts, numeric vs boolean)", tags=["static"])
+@check("obj2: --hide@ duplicate-target audit (merge semantics)", tags=["static"])
 def hide_semantics():
-    """Informational: two constructs whose behaviour depends on how AviUtl2
-    itself evaluates `--hide@` conditions.  Neither can be settled from the
-    source alone, so this reports WARN instead of FAIL."""
+    """Informational: a target carrying two `--hide@` rules needs the host to
+    OR them; if it keeps only the last one the UI shows a stale control.
+
+    The **numeric-vs-boolean** half of this audit is settled by measurement
+    (2026-10-29, AviUtl2 Chinese UI): unchecking "启用前景融入背景" collapses all
+    14 sub-parameters, so `--hide@` conditions are evaluated with 0/1 truth
+    values and `ab_enable==0` / `auto_slice==1` are valid.  Those rules are
+    therefore reported as a metric only; the still-open question is the merge
+    behaviour for duplicate targets, which keeps this check at WARN.
+    """
     from vl3dsb.harness import WARN
 
     s = script()
@@ -407,17 +416,14 @@ def hide_semantics():
     for target, rules in per_target.items():
         for line_no, expr in rules:
             for ident in re.findall(r"[A-Za-z_]\w*", expr):
-                if kinds.get(ident) == "check" and re.search(rf"\b{re.escape(ident)}\s*[=~]=\s*[01]\b", expr):
-                    numeric_on_bool.append(f"L{line_no}: {target} tests boolean {ident} against 0/1")
-
-    problems = [(k, [(l, e) for l, e in v]) for k, v in dupes.items()] + \
-               [(None, x) for x in numeric_on_bool]
-    if not problems:
-        return {"duplicates": 0, "boolean_numeric": 0, "detail": "no ambiguous constructs"}
-    detail = []
-    for target, rules in dupes.items():
-        detail.append(f"--hide@{target} declared {len(rules)}x "
-                      f"({', '.join(f'L{l}: {e}' for l, e in rules)}) - AviUtl2 merge semantics unknown")
-    detail.extend(numeric_on_bool)
-    return {"status": WARN, "duplicates": len(dupes), "boolean_numeric": len(numeric_on_bool),
-            "detail": " | ".join(detail[:6])}
+                if kinds.get(ident) == "check" and re.search(
+                        rf"\b{re.escape(ident)}\s*[=~]=\s*[01]\b", expr):
+                    numeric_on_bool.append(f"L{line_no}: {target} == {ident}(0/1)")
+    if not dupes:
+        return {"duplicates": 0, "host_verified_numeric_rules": len(numeric_on_bool),
+                "detail": "no duplicate targets"}
+    detail = [f"--hide@{t} declared {len(r)}x ({', '.join(f'L{l}: {e}' for l, e in r)})"
+              f" - 若宿主只保留最后一条，则前一条失效" for t, r in dupes.items()]
+    return {"status": WARN, "duplicates": len(dupes),
+            "host_verified_numeric_rules": len(numeric_on_bool),
+            "detail": " | ".join(detail[:4])}

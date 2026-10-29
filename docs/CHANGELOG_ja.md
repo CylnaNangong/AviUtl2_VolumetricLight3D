@@ -20,9 +20,14 @@
     47 パラメータを検査（track の step は 10^-k、`min ≤ 初期値 ≤ max`、select の値・ラベルは一意で初期値が項目内、
     check の初期値は {true,false,0,1}、color は 0–0xffffff、ID の重複禁止、Astra 方言の混入禁止）。
   - `obj2: --hide@ rules target parameters declared before them` と
-    `obj2: --hide@ host semantics audit`（WARN）：後者は**実機でしか裁定できない**2 点を記録する——
-    `occ_list` / `ab_list` に `--hide@` が 2 本ずつあること、14 本の規則が `--check@` の真偽値パラメータを
-    `==0`/`==1` で比較していること。
+    `obj2: --hide@ duplicate-target audit`（WARN）：後者は `occ_list` / `ab_list` に `--hide@` が 2 本ずつある
+    場合の**マージ仕様**が未確認であることを記録する（ホストが最後の 1 本だけを残すなら前の条件は無効）。
+  - `vl3dsb/obj2.py` に `hide_rules`（ソース順で**全**ルールを保持）を追加。従来の `hides` 辞書は各パラメータの
+    最後の 1 本しか保持せず、`hide_exprs` が重複対象の前のルールを見落としていた。
+- **実機での実測記録（2026-10-29、AviUtl2 中国語 UI）**：`--hide@` 条件では `--check@` パラメータが
+  **0/1 の真理値**として評価される——「前景融入背景を有効化」を外すと配下 14 項目がすべて折り畳まれ、
+  オンにすると展開される。したがって `ab_enable==0`（13 本）/ `auto_slice==1`（1 本）の数値比較は**有効**であり、
+  この懸念は解消（`sandbox/docs/ANALYSIS.zh.md` §2.2、リスク #10 は「中」→「低」）。
 - **ドキュメント**：`sandbox/README.zh.md` に §5.1「静的インターフェース検証（AviUtl2_Astra 規則の移植）」と
   `WARN` 状態の説明を追加。`sandbox/docs/ANALYSIS.zh.md` に §3.5 とリスク #10 を追加し、
   旧リスク #2（`beamatlas` 236 uniform の手動整合）を「高」から「中（テストで門禁済み）」へ引き下げ。
