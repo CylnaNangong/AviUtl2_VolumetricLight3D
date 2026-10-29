@@ -1,7 +1,8 @@
 # 体积光（3D）· 各模块全面分析与评估
 
 > 对象：`CylnaNangong/AviUtl2_VolumetricLight3D` @ `b179e64`（`VolumetricLight3D.obj2 v3.13` / `VL3DBridge v1.21`）
-> 方法：**沙箱实跑**（LuaJIT 执行真实 `.obj2`、NumPy 执行真实 HLSL、g++ 编译真实 C++）+ 静态审阅 + 70 条自动化用例
+> 方法：**沙箱实跑**（LuaJIT 执行真实 `.obj2`、NumPy 执行真实 HLSL、g++ 编译真实 C++）+ 静态审阅 + 85 条自动化用例
+> 第二轮（2026-10-29）新增：**静态接口校验**（AviUtl2_Astra 规则移植，见 §3.5）——cbuffer 布局 ⇄ Lua 调用点、属性注释严格语法；**宿主 API 契约层**（官方文档 ⇄ 脚本 ⇄ 模拟宿主，见 §3.5(c)）
 > 结论先行：**工程完成度极高（A-），算法设计优秀，主要风险集中在“单文件 9555 行”的可维护性与宿主内存读取的兼容性。**
 
 ---
@@ -16,17 +17,21 @@
 | 语言包（4 个 `.aul2`） | 4×212 行 | ★★★★★ | **A** | 87 个键全量覆盖、带 Tips 提示、UTF-8/CRLF 规范 |
 | 构建与发布 | CMake + mingw 脚本 + ini | ★★★★☆ | **B+** | 可复现性尚可；缺少 CI、版本号分散在 3 处、`sandbox` 未被主 README 索引 |
 
-**测试结果（本沙箱，70/70 PASS，178 s）**
+**测试结果（本沙箱，85 项：85 PASS / 0 FAIL / 0 SKIP / 0 WARN，104 s / 2 核 CPU）**
+
+> 两个原先挂 `WARN` 的疑点都已在真机上裁决并写回规则（`--hide@` 的求值语义与多规则合并，见 §2.2）：
+> `--hide@` 条件按官方规范 `(変数名)(比較演算子)(数値)` 求值、同一目标的多条规则按「或」合并。
 
 | 组 | 用例 | 时间 | 覆盖点 |
 | --- | --- | --- | --- |
-| `checks_01_script` | 10 | 0.1 s | 版本、47 参数/6 分组、默认值 vs README、hide 表达式、缓存释放、安全红线 |
+| `checks_01_script` | 15 | 0.1 s | 版本、47 参数/6 分组、默认值 vs README、**属性注释严格语法**、**设定项结构（标签唯一/分组闭合/hide 目标）**、hide 顺序与宿主语义、缓存释放、安全红线 |
 | `checks_02_language` | 6 | 0.0 s | 4 个语言包解析、87 键全覆盖、Tips、编码、`[Effect]` 映射 |
-| `checks_03_hlsl` | 15 | 7 s | 14 段 HLSL 编译 + 逐段数值行为（模糊能量守恒、深度编码单调、遮挡开关生效） |
-| `checks_04_runtime` | 16 | 76 s | 全流程执行、3 种光源、边界（未选/自身/空层/0 强度）、HUD 门控、受限沙箱、多帧复用、预算 |
-| `checks_05_bridge` | 10 | 0.1 s | C++ 自测、SHA-256/白名单、网格缓存、阴影/相机深度光栅器、非法输入 |
-| `checks_06_features` | 9 | 57 s | 2D/3D 遮挡、AutoBlend 全链路、颜色/衰减/长度、雾/风/种子、变换、程序化光源 |
-| `checks_07_perf` | 5 | 36 s | 帧时、切片线性度、16M 缓存上限、着色器派发数、绘制批处理 |
+| `checks_03_hlsl` | 17 | 4.5 s | 14 段 HLSL 编译 + 逐段数值行为 + **静态 uniform 布局门禁**（含 3 例变异测试）+ 入口点/寄存器检查 |
+| `checks_04_runtime` | 16 | 42 s | 全流程执行、3 种光源、边界（未选/自身/空层/0 强度）、HUD 门控、受限沙箱、多帧复用、预算 |
+| `checks_05_bridge` | 10 | 0.0 s | C++ 自测、SHA-256/白名单、网格缓存、阴影/相机深度光栅器、非法输入 |
+| `checks_06_features` | 9 | 34 s | 2D/3D 遮挡、AutoBlend 全链路、颜色/衰减/长度、雾/风/种子、变换、程序化光源 |
+| `checks_07_perf` | 5 | 21 s | 帧时、切片线性度、16M 缓存上限、着色器派发数、绘制批处理 |
+| `checks_08_api` | 7 | 2.0 s | **宿主 API 契约**：函数/实参数/枚举键全部对官方文档、`obj` 字段表恰好一致、返回值个数探针、`getpixel` ⇄ `getpixeldata`、两条缓冲路径一致 |
 
 ---
 
@@ -81,7 +86,7 @@ drawpoly     = 2 次（共 66 个四边形）
 | `pcall(...)` 保护点 | **172 处**（其中 17 处 `pcall(require,"ffi")`） |
 | 注释行 | 583 行，含 60+ 条版本变更记录（v2.2x → v3.13） |
 | 内嵌 HLSL 块 | 14 段，约 1.4 千行 |
-| `obj.*` API 调用 | getvalue 60 / clearbuffer 54 / setoption 35 / getpixeldata 25 / pixelshader 25 / load 24 / getpixel 18 / putpixeldata 14 / copybuffer 11 / module 4 / drawpoly 3 |
+| `obj.*` API 调用 | 共 257 处：getvalue 56 / clearbuffer 54 / setoption 35 / pixelshader 25 / load 19 / getpixel 18 / getpixeldata 15 / copybuffer 9 / putpixeldata 7 / getinfo 6 / draw 3 / setfont 3 / getoption 3 / drawpoly 2 / module 1 / setanchor 1（`luasurface.scan` 统计，已剔除注释与字符串） |
 | 缓存键 | 14 个 `cache:vl3d/*`，全部在帧尾释放（有专门用例校验） |
 
 **评价**：单文件承载全部逻辑，好处是「复制即安装、零依赖、无加载顺序问题」，也是 AviUtl2 生态的通行做法；
@@ -91,15 +96,62 @@ drawpoly     = 2 次（共 66 个四边形）
 
 * 实测声明 **47 个参数、6 个分组**（形 12 / 光 4 / 遮蔽設定 6 / 前景なじませ 14 / 霧 5 / 品質 6），
   与 README §5 参数表 **逐项一致**（用例 `obj2: parameter surface` 断言默认值）。
-* 30 条 `--hide@` 规则全部只引用已声明参数，无死引用（用例 `--hide@ expressions`）。
+* **28 条** `--hide@` 规则（覆盖 26 个参数）全部只引用已声明参数、且都出现在被控参数的声明之后，
+  无死引用、无空条件（用例 `--hide@ expressions` / `--hide@ rules target parameters declared before them`）。
 * 参数在脚本内以**全局变量**读取（AviUtl2 语义），因此必须用 `nil` 判断而非 `false`；
   代码中 `if P.x == nil then P.x = 默认值 end` 的模式贯穿始终——正确且必要。
 * **坑（沙箱踩到并已记录）**：`--check` 返回 Lua **布尔**，`P.show_info = (show_info == true or show_info == 1)`；
   若宿主传 `0`/`0.0`，Lua 认为真值但 `== 1` 不成立 → HUD 行为与预期相反。文档已提示用布尔。
 
+**严格语法复核（第二轮，Astra 规则移植）**
+
+对 47 个参数逐条套用 AviUtl2_Astra 的属性校验规则（用例 `obj2: property annotations obey the strict
+AviUtl2 grammar`），当前 `v3.13` **全部通过**：
+
+| 检查项 | 结果 |
+| --- | --- |
+| 27 个 `--track`：`min ≤ 初值 ≤ max`、step ∈ {1, 0.1, …, 1e-9} | ✅ 实测用到的 step 只有 `1` 与 `0.1` |
+| 11 个 `--select`：首项 `标签=默认值`、选项值唯一、默认值∈选项 | ✅ 无重复值/重复标签 |
+| 6 个 `--check`：初值 ∈ {true,false,0,1} | ✅ 均为 `true/false` |
+| 1 个 `--color`：`nil` 或 0–0xffffff | ✅ 用 `nil` |
+| 2 个 `--string`、6 组 `--group` | ✅ 引数个数正确 |
+| 属性 ID 重复声明 / Astra 方言混入（`--#include`、`local x = 1 --track@_`） | ✅ 均无 |
+
+**两个曾存疑的写法，均已在真机 + 官方规范两侧裁决**
+
+1. **用数值比较 `--check` 参数（14 处）——✅ 成立（13 条已真机实测，1 条待同法确认）**：
+   `ab_enable==0` 13 次、`auto_slice==1` 1 次。
+   官方规范（[docs.aviutl2.jp/lua](https://docs.aviutl2.jp/lua/)「設定項目の非表示条件を定義」）明确：
+   条件は `(変数名)(比較演算子)(数値)` の形 —— 即**条件上下文里数值比较就是规定写法**。
+   实测（2026-10-29，中文 UI，附截图）：勾选「启用前景融入背景」时 14 个子项全部显示；取消勾选后
+   **整组只剩复选框本身** ⇒ `ab_enable==0` 生效，说明 `true/false` 声明的 `--check@`
+   在隐藏条件上下文里仍按 **0/1 数值**参与比较。另一方向同样成立：勾选「自动动态切片精度」时
+   「手动切片数」整行消失、取消勾选后出现（值 64）⇒ `auto_slice==1` 生效。
+   至此 **14 条全部真机确认**，且 `==0`（13 条）与 `==1`（1 条）两个极性都覆盖，
+   因此「boolean 声明 + 数值比较」是**官方规范写法**而非兼容巧合。
+2. **同一参数出现两条 `--hide@`——✅ 按「或」合并**：`occ_list`（`occ_mode==0` + `occ_target<2`）、
+   `ab_list`（`ab_enable==0` + `ab_target<1`）。官方示例本身就是同一变量挂两条规则
+   （`--hide@pos:chk==0` 与 `--hide@pos:filter==1`）；实测进一步确认：把「融入目标图层」设为
+   **指定图层范围或编号**（`ab_target=1`，使 `ab_target<1` 为假）后取消勾选，「目标图层范围」
+   **仍然消失** —— 只有 `ab_enable==0` 那条能造成这个结果，两条规则都生效。
+
+**由官方规范修正的三处「想当然」**（此前按 Astra 的方言推断，已按官方文档改正并写入用例）：
+
+| 项目 | Astra 方言 | **官方规范**（docs.aviutl2.jp/lua） | 影响 |
+| --- | --- | --- | --- |
+| `--track@` 参数个数 | 4–5 个 | 最多 **7** 个：`項目名,最小,最大,デフォルト,移動単位,ゼロ値名称,操作倍率`（倍率 ≤ 1.0） | 本项目只用 5 个参数，无影响；但「多余参数=错误」的规则已放宽 |
+| `--select@` 默认值 | 必须有 `=デフォルト値` | **可省略** | 仍推荐写明；省略时不再判错 |
+| `--data@` 语法 | `項目名,サイズ`（0–16000） | `登録名:サイズ`（≤ 16KB），**没有项目名** | 本项目未使用 `--data@`，规则已改正 |
+| `--hide@` 运算符 | `== ~= >= <= > <` | **只有 `==` `~=` `>` `<`**（无 `>=`/`<=`） | 本项目 28 条规则只用 `==` `>` `<`，合规 |
+
+另外官方规范限定「条件里可引用的项目」只能是 **check / select / file / folder**（外加特殊条件 `filter`），
+**不含 trackbar**。本项目 28 条规则引用的全是 `check`/`select`，合规；该约束已写进用例
+（`obj2: --hide@ conditions follow the documented grammar`）。
+
 **改进建议**
 1. 参数表可由一个 `P_SPEC` 表统一驱动（默认值 + 类型 + 分组），减少 200 行重复的 `if nil then`。
 2. 把「隐式默认值」改为显式 `local P = read_params({...})`，便于静态检查漏读参数（当前无自动化保障，只能靠人工）。
+3. 把上述 14 条 `--hide@` 改成**与宿主类型无关**的写法（先按验证法确认真机行为，再决定是否改）。
 
 ### 2.3 宿主交互层（`obj.*` 模拟契约）
 
@@ -109,7 +161,7 @@ drawpoly     = 2 次（共 66 个四边形）
 | --- | --- | --- |
 | `obj.load("layer", n)` | 失败返回 `false` | 24 处调用全部包在 `pcall` 内，并检查返回值 |
 | `obj.getpixeldata(name,"rgba")` | 返回 `(ptr, w, h)`；缓冲区不存在返回 `nil` | 25 处使用，均先判 `ptr ~= nil` 再判尺寸 |
-| `obj.copybuffer` | **AviUtl2 不支持** | 脚本先探测 `type(obj.copybuffer) == "function"`，缺失走 `obj.load` 路径；两条路径沙箱都已跑通 |
+| `obj.copybuffer` | **是官方 API**（`docs.aviutl2.jp/lua` § obj.copybuffer，返回 `true/false`） | 脚本仍先探测 `type(obj.copybuffer) == "function"`（兼容旧版/禁用环境），缺失时走 `obj.load` 路径；两条路径沙箱都已跑通且**逐像素一致**（§3.5(c)） |
 | `obj.module("VL3DBridge")` | 插件未装返回 `nil` | `vl3d_bridge()` 返回 `nil` → 纯 Lua 回退（用例覆盖 `bridge=False`） |
 | `obj.getoption("gui")` | 导出时 `false` | HUD/未选中提示自动隐藏（v3.13 特性，用例覆盖） |
 | `obj.clearbuffer(name,w,h)` | 分配/重分配 | 14 个缓存键，帧尾全部缩到 1×1（**内存不泄漏**，用例覆盖） |
@@ -274,9 +326,69 @@ ab_bias/ab_color_mix/ab_saturation/ab_luma_link` 合成），最终输出到 fra
 
 1. 给 `beamatlas` 加一份「uniform 布局表」（`p0..p26` 已有注释，但 `occ[32]` 的 16-float 布局只在 Lua 侧），
    否则改一处 Lua 打包就会静默错位。可行做法：在 C++ 与 Lua 共用一个头文件常量。
-2. `ps_vl_blur` 的 Lua 端只传 6 个 float，而 HLSL cbuffer 声明 8 个——**当前无害**
-   （AviUtl2 只上传 6 个，剩 2 个为 0，且着色器未使用），但属于"参数表与 cbuffer 不一致"的隐患，
-   沙箱用 `shader_param_mismatches` 专门记录此类情况。
+2. `ps_vl_blur` / `ps_vl_occ_blur` 的 Lua 端只传 6 个 float，cbuffer 声明 8 个——**当前无害**：
+   静态分析确认函数体最远只读到 `p1.y`（下标 5），`p1.zw` 从未被读取，所以这 2 个 float 是纯填充
+   （同类还有 `ps_vl_ab_blur` / `ps_vl_ab_env_init` / `ps_vl_ab_mask_proj` 各 1 个）。
+   但「声明 8 / 实传 6」在手工维护下很容易演化成真错位，现已由静态用例做门禁
+   （§3.5），并保留运行时 `shader_param_mismatches` 作为第二道网。
+
+### 3.5 静态接口校验（第二轮新增，Astra 规则移植）
+
+第二轮把 [AviUtl2_Astra](https://github.com/korarei/AviUtl2_Astra) 在 `astra build` 期执行的
+两类校验**重写为 Python 用例**（不依赖 Astra 二进制；Astra 只有 Windows 发布、无 `check`
+子命令、无结构化诊断输出）。实现：`sandbox/vl3dsb/hlsl/interface.py` + `checks_01/03`。
+
+**(a) cbuffer 布局 ⇄ 25 个 Lua 调用点**
+
+三个量：`declared`（cbuffer 浮点总数）、`required`（函数体真实读到的最远下标 +1）、
+`supplied`（调用点第 4 个实参的浮点个数）。实测（`v3.13`）：
+
+| 着色器 | declared | required | supplied | 结论 |
+| --- | ---: | ---: | ---: | --- |
+| `beamatlas` | 236 | 236 | 236 | ✅ 字面量 108 项 + `for oi = 1, MAX_OCC*16` 追加 128 项（`occ[32]`），**逐一吻合** |
+| `ps_vl_ab_shade` | 52 | 52 | 52 | ✅ |
+| `ps_vl_ab_mask_proj` | 36 | 35 | 36 | ✅ 1 float 尾部填充未被读 |
+| `ps_vl_ab_blur` | 12 | 11 | 12 | ✅ 1 float 尾部填充 |
+| `ps_vl_pack` / `ps_vl_water` | 12 / 16 | 12 / 16 | 12 / 16 | ✅ |
+| `ps_vl_prep` / `ps_vl_ab_sil_h` | 8 / 8 | 8 / 8 | 8 / 8 | ✅ |
+| `ps_vl_blur` / `ps_vl_occ_blur` | 8 | 6 | 6 | ✅ 2 float 尾部填充（`p1.zw` 从未读取） |
+| `ps_vl_ab_env_init` | 4 | 3 | 4 | ✅ 1 float 尾部填充 |
+| `ps_vl_ab_sil_v` / `ps_vl_pool` / `ps_vl_white` | 4 | 4 | 4 | ✅ |
+
+这套规则的价值在于**区分「未被读的填充」与「真的少传」**：只看 `declared vs supplied` 会把
+5 个着色器误判为缺陷，只看 `required vs supplied` 又能精确放过它们、同时抓住任何真错位。
+配套的变异测试（少传 / 多传 / 调用不存在的 shader）证明规则确实会报错。
+
+**(b) 属性注释语法**：以**官方规范**（[docs.aviutl2.jp/lua](https://docs.aviutl2.jp/lua/)，2026-10-29 核对）
+为准绳、Astra 的附加严格性为补充，47 个参数逐条通过（明细与三处修正见 §2.2）。用例：
+`obj2: property annotations follow the AviUtl2 spec (docs.aviutl2.jp/lua)`、
+`obj2: --hide@ conditions follow the documented grammar`、
+`obj2: --hide@ multi-rule targets are OR'ed (spec + host verified)`。
+
+**(c) 宿主 API 契约（官方文档 ⇄ 脚本 ⇄ 模拟宿主，2026-10-29 新增）**
+
+(a)(b) 校验的是**脚本**；第三层校验的是**沙箱自己**。若 `host.py` 对某个 `obj.*` 的返回值个数或参数含义猜错，
+脚本照样跑、像素照样出，但测的已不是真机上的 AviUtl2 —— 这类失真不会自己暴露。实现：
+`vl3dsb/apidoc.py`（官方签名/键表的唯一事实来源，抄自 `docs.aviutl2.jp/lua`，文件头记录核对日期）
++ `vl3dsb/luasurface.py`（静态扫描 `obj.*` 调用/字段/字面量键）+ `vl3dsb/api_lint.py`（规则引擎），
+用例见 `checks_08_api.py`（7 项，含 19 个返回值探针与「10 条缺陷 + 2 条合法行」的 linter 自检）。
+
+当场揪出并修好的 **3 处「假阳性绿」**（全是模拟宿主的问题，脚本无责）：
+
+| 现象 | 官方规范 | 修复前的后果 | 修复 |
+| --- | --- | --- | --- |
+| `obj.getinfo("image_max")` 返回 1 个值（`(1920,1080)` 元组） | 返回 **2 个**值 `max_x, max_y` | `local mw, mh = obj.getinfo("image_max")` 得到 `mw=table, mh=nil`，尺寸上限逻辑整条失效 | 解包成两个整数 |
+| `obj.getinfo("clock")` 返回 `nil` | 返回开机以来秒数（number） | 脚本 perf 主路径 `type(c) == "number"` 恒假，只能落到 `os.clock` 回退 | 返回确定性浮点（`HostConfig(fake_clock=…)` 可固定） |
+| `obj.copybuffer` 默认标记为「宿主不支持」 | **文档化 API** | 所有用例默认只测 `obj.load` 回退路径，真机主路径（帧缓冲备份）从未被执行 | 默认开启 + 用例证明两条路径逐像素一致 |
+
+同时按文档修正：`setfont` 第 3 参数是**装饰类型 0–6**（旧代码误作 `weight`，AviUtl2 无字重参数）、
+`draw` 是 8 参数（含 `rx,ry,rz`）、`drawpoly` 支持「顶点表 + `vertex_num`」与「扁平 20 浮点 + alpha」两种写法且禁止混用、
+`load` 的 kind 共 12 种、`obj` 字段表**恰好** 38 个（模拟宿主曾多暴露一个未文档化的 `scene` 别名，已删除）。
+新增规则：设定项**标签全局唯一**、分组必须闭合、`--hide@` 目标必须是「有值的设定项」，并各配变异测试。
+
+**仍未被静态覆盖的部分**（诚实边界）：`VL_BF.occ_flat` 内部 16-float/对象的排布语义、
+`beamatlas` 里 `p0..p26` 的字段含义、`--hide@` 的条件求值语义（风险 #10）——这三项只能靠
+人工审阅或真机验证。
 
 ---
 
@@ -362,7 +474,7 @@ camdepth raster : 近处 code 0.92 > 远处 0.68（距离单调）
 
 * 仓库原有测试：仅 `vl3d_bridge_selftest.cpp`（C++ 侧）。
   **Lua 侧 9555 行、14 段 HLSL、4 个语言包此前没有任何自动化测试**。
-* 本次沙箱补齐 70 条用例，形成「静态分析 → 单元行为 → 集成 → 特性 → 性能」五层。
+* 本次沙箱补齐 85 条用例，形成「静态分析 → 静态接口门禁 → 单元行为 → 集成 → 特性 → 性能」六层。
 * 遗留：Windows/D3D11 路径、真实 aviutl2.exe 内存读取无法离线验证（需 Windows CI + 真机）。
 
 ### 6.5 文档与发布
@@ -379,7 +491,7 @@ camdepth raster : 近处 code 0.92 > 远处 0.68（距离单调）
 | # | 严重度 | 风险 | 触发条件 | 影响 | 缓解建议 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | 🔴 高 | aviutl2.exe 内存直读依赖硬编码偏移 | 宿主更新 | 场景图层/相机识别失败 → 光源或遮挡失效 | 已有多级回退；建议 HUD 明确提示“内存直读失败”，并把偏移表集中到一处 |
-| 2 | 🔴 高 | `beamatlas` 的 236 uniform 与 Lua 打包手工对齐 | 修改任一参数 | 静默错位、图像异常且无报错 | 生成式共享常量表 + 沙箱 `uniform consistency` 用例设成 CI 门禁 |
+| 2 | 🟠 中（原 🔴 高） | `beamatlas` 的 236 uniform 与 Lua 打包手工对齐 | 修改任一参数 | 静默错位、图像异常且无报错 | **已缓解**：静态用例解析 `local consts = {…}` 108 项 + `for oi = 1, MAX_OCC*16` 追加 128 项 = 236 = cbuffer 大小，漂移会立即 FAIL。剩余依赖：`VL_BF.occ_flat` 的内部排布仍需人读 |
 | 3 | 🟠 中 | 3D 遮挡对“模型尺寸单位”极敏感（OBJ ×100） | 首次使用 | 用户以为功能坏了 | 文档写明；可视化 HUD 显示 `prox` 峰值 |
 | 4 | 🟠 中 | `occ_list` 解析失败静默 | 手误 | 遮挡不生效 | 加 `@warn` |
 | 5 | 🟠 中 | D3D11 CS 路径零自动测试 | 驱动/编译器差异 | 只能 CPU 回退（性能下降） | 加 CS 编译冒烟测试；保留 `force_cpu` |
@@ -387,14 +499,20 @@ camdepth raster : 近处 code 0.92 > 远处 0.68（距离单调）
 | 7 | 🟡 低 | 无 CI | 提交 | 回归靠人工 | GitHub Actions（C++ 自测 + `run_checks.py`） |
 | 8 | 🟡 低 | 德语包重复 | 翻译维护 | 内容漂移 | 合并或标注差异 |
 | 9 | 🟡 低 | 16M 缓存预算依赖默认值 | 用户改过 `TemporaryImageCacheSize` | 大分辨率 + 3D 遮挡可能超限 | 已在代码侧自适应，建议 HUD 显示峰值 |
+| 10 | ✅ 已排除（原 🟡 低） | 14 条 `--hide@` 用数值比较 `--check@`；`occ_list`/`ab_list` 各有两条 `--hide@` | — | 无（曾被怀疑规则失效） | 官方规范明确规定条件为 `(変数名)(演算子)(数値)`；真机实测多次规则亦按「或」合并（§2.2）。保留用例防回归 |
+| 11 | ✅ 已闭环 | 模拟宿主与官方文档不一致（返回值个数/参数含义/能力开关） | 沙箱升级、宿主行为记忆偏差 | 测试全绿但测的不是真机行为（**最危险的一类绿**） | 已由 `apidoc.py` + `checks_08_api.py`（7 项，含 19 个返回值探针与 12 条变异）门禁；文档键表更新需同步该文件 |
 
 ---
 
 ## 8. 改进建议（按投入产出排序）
 
 **马上可做（1~2 小时）**
+0. ~~确认 `--hide@` 语义~~ **已完成**：官方规范 + 真机实测都确认了数值比较与多规则「或」合并（§2.2），
+   无需改动脚本。建议把这条结论留在代码注释里，避免下次又被当成 bug 反复怀疑。
 1. `.github/workflows/ci.yml`：`g++` 编译自测 + `python3 sandbox/run_checks.py`（沙箱已备好 `--json`）。
 2. 主 README 增加「测试 / Test sandbox」一节，指向 `sandbox/README.zh.md`。
+2b. `vl3dsb/apidoc.py` 是官方文档的**手抄副本**：升级 AviUtl2 后若文档新增 `obj.*`/`obj.getinfo` 键，
+    需同步该文件（`api: every obj.* call is documented and emulated` 会在脚本用到新键时立刻报错，作为提醒）。
 3. `occ_list` 解析失败时输出 `@warn`；HUD 增加 `prox` 峰值显示。
 
 **短期（1~2 天）**
@@ -422,6 +540,12 @@ camdepth raster : 近处 code 0.92 > 远处 0.68（距离单调）
 | HUD 与导出态门控正确 | `--only "HUD gating"` |
 | 受限 Lua 沙箱下仍可用 | `--only restricted` |
 | 视觉产物 | `python3 sandbox/render_demo.py` → `out/demo/gallery.png` |
+| cbuffer 布局与 25 个调用点一致 | `--only "cbuffer layout"`（metrics 里给出每个着色器的 declared/required/supplied） |
+| 该静态规则确实会报错（变异测试） | `--only "interface lint rejects"` |
+| 属性注释严格语法（Astra 规则） | `--only "property annotations"` |
+| `--hide@` 的求值语义与多规则合并 | `--only "--hide@"`（metrics 给出 `multi_rule_targets` 与数值比较次数） |
+| 设定项结构（标签唯一 / 分组闭合 / hide 目标） | `--only "structure"` |
+| 宿主 API 契约（签名 / 键 / 返回值个数 / 两条缓冲路径） | `--only "api:"` |
 
 > 所有 PNG（`out/demo`、`out/features`、`out/hlsl`、`out/bridge`）都是本轮沙箱真实渲染的结果；
 > 亮度为近似值（WBOIT 简化），结构与遮挡关系与真机一致。

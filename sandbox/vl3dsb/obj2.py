@@ -49,7 +49,8 @@ class Obj2Script:
     text: str
     information: str
     groups: List[Group]
-    hides: Dict[str, str]
+    hides: Dict[str, str]                    # last rule per target (host may keep only one)
+    hide_rules: List[Tuple[str, str]]        # every rule in source order
     shaders: Dict[str, str]
     version: Optional[str]
 
@@ -107,6 +108,7 @@ def parse_obj2(path: str | Path) -> Obj2Script:
 
     groups: List[Group] = []
     hides: Dict[str, str] = {}
+    hide_rules: List[Tuple[str, str]] = []
     cur: Optional[Group] = None
 
     for raw_line in text.splitlines():
@@ -115,7 +117,9 @@ def parse_obj2(path: str | Path) -> Obj2Script:
             continue
         hm = HIDE_RE.match(line)
         if hm:
-            hides[hm.group("name")] = hm.group("expr").strip()
+            rule = (hm.group("name"), hm.group("expr").strip())
+            hide_rules.append(rule)
+            hides[rule[0]] = rule[1]
             continue
         if line.startswith("--group"):
             rest = line[len("--group"):]
@@ -181,7 +185,8 @@ def parse_obj2(path: str | Path) -> Obj2Script:
     vm = re.search(r"v(\d+\.\d+)", information)
     return Obj2Script(
         path=path, text=text, information=information, groups=groups,
-        hides=hides, shaders=shaders, version=("v" + vm.group(1)) if vm else None,
+        hides=hides, hide_rules=hide_rules, shaders=shaders,
+        version=("v" + vm.group(1)) if vm else None,
     )
 
 

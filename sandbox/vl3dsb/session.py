@@ -101,7 +101,7 @@ def run_frame(layers: Sequence[Layer], params: Optional[Dict[str, Any]] = None,
               *, width: int = 320, height: int = 200, frame: int = 0,
               layer_index: int = 4, scene_id: int = 0, frame_s: int = 0,
               camera: Optional[Dict[str, float]] = None, camera_mode: int = 0,
-              gui: bool = True, bridge: bool = True, copybuffer: bool = False,
+              gui: bool = True, bridge: bool = True, copybuffer: bool = True,
               script_path: Optional[Path] = None, extra_cfg: Optional[Dict[str, Any]] = None,
               host_factory=None) -> RenderResult:
     sc = script(script_path)

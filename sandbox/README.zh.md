@@ -21,21 +21,26 @@ sandbox/
 ├── requirements.txt       # lupa / numpy / pillow
 ├── vl3dsb/                # 沙箱核心
 │   ├── obj2.py            # .obj2 / .aul2 解析器（参数、分组、hide 规则、HLSL 块、i18n）
+│   ├── luasurface.py      # 扫描 Lua 里的 obj.* 调用 / 字段读 / 字面量键（不执行）
+│   ├── apidoc.py          # 官方宿主 API 签名与键表（docs.aviutl2.jp/lua 的转录）
+│   ├── api_lint.py        # 宿主 API 契约 linter（脚本 ⇄ 文档 ⇄ 模拟宿主）
 │   ├── host.py            # AviUtl2 宿主模拟器（obj.* API + LuaJIT 运行时 + 缓冲区/缓存）
 │   ├── native.py          # 编译并调用 src/VL3DBridge 的 C++17 测试库（ctypes）
 │   ├── hlsl/              # HLSL→NumPy 转译器（transpile.py）与执行器（executor.py）
+│   │   └── interface.py   # 静态接口校验：cbuffer 布局 ⇄ Lua 调用点（Astra 规则移植）
 │   ├── raster.py          # 切片四边形光栅化（Weight-Blended OIT 近似）
 │   ├── assets.py          # 测试素材：彩窗、剪影、渐变、单位立方体 .obj
 │   ├── session.py         # 高层 API：build scene → run_frame → PNG/统计
 │   └── harness.py         # 极简测试框架（@check / require / skip）
-├── checks/                # 7 组、70 个用例
-│   ├── checks_01_script.py     # .obj2 静态分析（参数/分组/默认值/i18n/安全）
+├── checks/                # 8 组、85 个用例
+│   ├── checks_01_script.py     # .obj2 静态分析（参数语法/分组/默认值/hide 语义/i18n/安全）
 │   ├── checks_02_language.py   # 4 个 .aul2 语言包完整性
-│   ├── checks_03_hlsl.py       # 14 段 HLSL 编译与数值行为
+│   ├── checks_03_hlsl.py       # 14 段 HLSL 编译、数值行为、静态 uniform 布局
 │   ├── checks_04_runtime.py    # 脚本运行时行为（分支、边界、确定性、HUD）
 │   ├── checks_05_bridge.py     # C++ 桥（自测、光栅器、白名单、网格缓存）
 │   ├── checks_06_features.py   # 端到端特性（2D/3D 遮挡、AutoBlend、雾…）
-│   └── checks_07_perf.py       # 性能与显存/缓存预算
+│   ├── checks_07_perf.py       # 性能与显存/缓存预算
+│   └── checks_08_api.py        # 宿主 API 契约（文档签名/键/返回值 ⇄ 模拟宿主）
 └── out/                   # 全部产物（.gitignore 已忽略，可随时删除重建）
     ├── results.json       # 最近一次测试的机器可读结果
     ├── demo/ features/ hlsl/ bridge/ runtime/   # 各类 PNG / 日志
@@ -53,14 +58,14 @@ g++ --version                                          # 需要支持 C++17（�
   只有 `lupa.lua51` 时脚本会退化到「无 FFI」路径，部分用例会 SKIP。
 * 首次运行会自动用 g++ 编译 `src/VL3DBridge/{core,rast,selftest,test_capi}.cpp`，
   产物按源码 SHA-256 命名缓存到 `out/build/native/`，源码不变不会重复编译。
-* 全部用例约 **3 分钟**（CPU 软件光栅 + NumPy 着色器，比真实 GPU 慢 2 个数量级）。
+* 全部用例约 **2–3 分钟**（CPU 软件光栅 + NumPy 着色器，比真实 GPU 慢 2 个数量级；2 核 / 3 GB 实测约 100–110 s）。
 
 ## 3. 快速开始
 
 ```bash
 cd sandbox
 
-python3 run_checks.py                  # 跑全部 70 个用例，输出 PASS/FAIL + out/results.json
+python3 run_checks.py                  # 跑全部 85 个用例，输出 PASS/FAIL/WARN + out/results.json
 python3 run_checks.py --list           # 列出全部用例
 python3 run_checks.py --only hlsl      # 名字含 "hlsl" 的用例
 python3 run_checks.py --tags occ       # 按标签筛选（可有多个 --tags a,b）
@@ -73,6 +78,11 @@ python3 render_demo.py --only fog,water
 
 CI 里只需 `python3 run_checks.py --json out/results.json`：JSON 中每条用例都有
 `status / seconds / metrics / artifacts`，便于趋势对比。
+
+用例状态有四种：`PASS` / `FAIL` / `SKIP` / `WARN`。**只有 `FAIL` 会让退出码变 1**；
+`WARN` 表示「源码里存在一个只能由真机裁决的问题」，它会写进 `results.json` 的 `detail` 但不阻塞 CI。
+当前 85 项全部 `PASS`（两个原有的 WARN 疑点已在 2026-10-29 用官方文档 + 真机实测裁决，见 5.1 节；
+模拟宿主与官方文档的 3 处不一致见 5.2 节）。
 
 ## 4. 作为库使用（最小示例）
 
@@ -113,6 +123,9 @@ session.save_png(session.composite(bg, r.volume, gain=4.0), "out/comp.png")  # �
 | `r.host.shader_traces[name]` | 每个着色器**最后一次**调用的 uniforms + 输入纹理（调试神器） |
 | `r.host.buffers` | 帧结束时的全部缓冲区（`object` + `cache:vl3d/*`） |
 | `r.host.shader_param_mismatches` | Lua 传入浮点数 ≠ HLSL cbuffer 大小的记录 |
+| `vl3dsb.hlsl.interface.audit(shaders, text)` | **静态**比对 cbuffer 布局与全部 Lua 调用点，不跑任何代码 |
+| `vl3dsb.api_lint.lint(text, shader_names)` | **静态**比对脚本用到的 `obj.*` 与官方文档签名/键表，返回 `issues` / `notes` |
+| `vl3dsb.luasurface.scan(text)` | 提取 `obj.foo(...)` 调用（含实参原文）、`obj.field` 读/写、字面量键 |
 
 ### 4.2 `Layer` 字段
 
@@ -155,15 +168,126 @@ session.save_png(session.composite(bg, r.volume, gain=4.0), "out/comp.png")  # �
 | 深度权重 `w(z)` | 未实现（视为 1） | 前后切片次序正确，逐切片权重不精确 |
 | D3D11 Compute Shader | 仅 C++ CPU 后端（`CPP_CPU`） | 结果应与 GPU 一致（自测覆盖），但慢 |
 | AviUtl2 官方 SDK 内存读取 | `resolve_layer` 由 Python 场景表提供 | 无法验证对 aviutl2.exe 的内存布局 |
-| `copybuffer` | 默认不支持（与 AviUtl2 一致），可 `copybuffer=True` 打开 | 两条代码路径都跑通 |
+| `copybuffer` | **默认开启**（`obj.copybuffer` 是官方 API）；`copybuffer=False` 可强制走 `obj.load` 回退路径 | 两条路径逐像素一致（用例 `api: obj.copybuffer is documented+on, and both buffer paths agree`） |
 | 时间/帧 | 固定 `time`、可控 `frame`/`frame_s` | 动画类用例可复现 |
 
 > 因此请把 PNG 当作「结构正确、亮度近似」的预览。审核亮度/色彩时请以真机为准。
 
+### 5.1 静态接口校验（AviUtl2_Astra 规则移植）
+
+沙箱除了「跑一帧然后看像素」，还有一层**不执行任何代码**的静态校验。规则的**第一来源是 AviUtl2 官方
+规范** [`docs.aviutl2.jp/lua`](https://docs.aviutl2.jp/lua/)（設定項目 / 非表示条件），
+[AviUtl2_Astra](https://github.com/korarei/AviUtl2_Astra) 在 `astra build` 时执行的检查
+（uniform 布局、属性注释）作为补充与交叉验证。这里是**规则移植**而不是依赖 Astra：
+Astra 只发布 Windows 二进制、没有 `check` 子命令、也没有结构化诊断输出，而官方规范只描述、
+不提供校验器——两者都被重写成 Python，可以在任何 Linux CI 上跑
+（实现见 `vl3dsb/hlsl/interface.py` 与 `checks_01_script.py`）。
+
+**(a) cbuffer 布局 ⇄ Lua 调用点**（用例 `hlsl: cbuffer layout matches every Lua call site`）
+
+三个数字决定结论，缺一不可：
+
+| 量 | 含义 | 来源 |
+| --- | --- | --- |
+| `declared` | D3D11 cbuffer 的浮点总数 | `float4 x[n]` → `4*n`，累加 |
+| `required` | 着色器**函数体真的读**到的最远下标 +1 | 扫描 `p1.y` / `occ[i]` 等访问，**排除 cbuffer 声明本身** |
+| `supplied` | Lua `obj.pixelshader(...)` 第 4 个实参的浮点个数 | 解析实参表；变量表会顺着 `local consts = {…}` + `for oi = 1, MAX_OCC*16` 追加循环求值 |
+
+判定：`supplied < required` → **FAIL**（着色器读到垃圾）；`required ≤ supplied ≤ declared` → PASS，
+差额记入 `trailing_padding_floats`（未使用的尾部填充，无害但有记录价值）；`supplied > declared` → **FAIL**。
+另有变异测试 `hlsl: interface lint rejects deliberately broken call sites`，用 3 个人造缺陷
+（少传一个 uniform / 多传 / 调用不存在的 shader）证明这条规则真的会报错，而不是永远 PASS。
+
+对当前 `v3.13` 的结论：
+
+```
+shader                declared  required  supplied   备注
+beamatlas                  236       236       236   含 occ[32]×4 = 128 的追加循环
+ps_vl_ab_shade              52        52        52
+ps_vl_ab_mask_proj          36        35        36   1 float 尾部未使用
+ps_vl_pack / water       12 / 16   12 / 16   12 / 16
+ps_vl_ab_blur               12        11        12   1 float 尾部未使用
+ps_vl_prep / ab_sil_h     8 / 8     8 / 8     8 / 8
+ps_vl_blur / occ_blur        8         6         6   2 float 尾部未使用
+ps_vl_ab_env_init            4         3         4   1 float 尾部未使用
+ps_vl_ab_sil_v / pool / white  4     4         4
+```
+
+也就是说：**`beamatlas` 那条“最容易静默错位”的 236 段打包现在有机器门禁了**。
+
+**(b) 属性注释语法**（用例 `obj2: property annotations follow the AviUtl2 spec (docs.aviutl2.jp/lua)`）
+
+规则的**第一来源是官方规范** [`docs.aviutl2.jp/lua`](https://docs.aviutl2.jp/lua/)「設定項目」一节，
+Astra 的附加严格性只作为补充（有冲突时以官方为准）。
+
+| 指令 | 规则（官方规范 + 括号内为附加严格项） |
+| --- | --- |
+| 全部 | ID 匹配 `[A-Za-z_]\w*`；同名属性不得重复声明；注释必须独占一行（不允许 `local x = 1 --track@_` 这种 Astra 方言）；不得出现 `--#include/--#define/--#if` 等 Astra 预处理指令 |
+| `--track@` | `項目名,最小,最大,デフォルト[,移動単位[,ゼロ値名称[,操作倍率]]]` —— **最多 7 个参数**；`min ≤ 初值 ≤ max`；step 必须是 `10^-k`(k≤9)；操作倍率 ∈ (0,1] |
+| `--check@` | `項目名,初値`，初値 ∈ {0,1,true,false}；**用 0/1 时变量是 number，用 true/false 时是 boolean**（用例会统计两种类型） |
+| `--select@` | `項目名[=デフォルト値],選択肢=値,…`；默认值**可省略**，写了就必须是某个选项；（附加）选项值/标签唯一 |
+| `--color@` | `項目名,デフォルト値`；`nil`（可选透明）或 `0..0xffffff` |
+| `--file@ / --folder@` | 只有 `項目名`，无初值 |
+| `--string@ / --text@ / --font@ / --figure@ / --value@` | `項目名,デフォルト値` |
+| `--data@` | `登録名:サイズ`（**没有项目名**，≤ 16 KB） |
+| `--group:` / `--group` | `グループ名[,true/false]`；`--group` 单独出现 = 分组结束 |
+| `--hide@` | 目标须已声明且**声明在前**；条件形如 `(変数名)(比較演算子)(数値)`，运算符**只有 `== ~=` `>` `<`**；条件可引用 check/select/file/folder 与特殊条件 `filter`（**不能引用 trackbar**）；条件留空 = 永远隐藏 |
+
+**关于「同一参数挂多条 `--hide@`」**（用例 `obj2: --hide@ multi-rule targets are OR'ed`）：
+官方示例本身就给同一变量写了两条（`--hide@pos:chk==0` + `--hide@pos:filter==1`），实测也确认是**按「或」合并**——
+把「融入目标图层」设为「指定图层范围或编号」（使 `ab_target<1` 为假）后取消勾选「启用前景融入背景」，
+「目标图层范围」仍然消失（只有 `ab_enable==0` 那条能做到）。因此 `occ_list` / `ab_list` 的双规则是**正确写法**，
+用例只拦「同目标 + 同条件」的冗余重复。
+
+> **真机核对记录（2026-10-29，AviUtl2 中文 UI，附截图）**
+> ① 展开「前景融入背景」组：勾选「启用前景融入背景」时 14 个子参数全部显示；取消勾选后
+> **整组只剩复选框本身**、14 个子参数全部收起 ⇒ `--hide@ab_*:ab_enable==0`（13 条）按数值比较有效，
+> 即 `--check@` 声明为 `true/false`（boolean）时，隐藏条件上下文仍按 **0/1 数值**求值。
+> ② 同一组内「融入目标图层 = 指定图层范围或编号」（`ab_target=1`，使 `ab_target<1` 为假）时取消勾选，
+> 「目标图层范围」仍随之消失 ⇒ 同一目标的两条 `--hide@` 是**按「或」合并**，不是「后者覆盖前者」。
+> ③ 「品质 → 自动动态切片精度」**勾选**时「手动切片数」整行不出现；**取消勾选**后该行出现（值 64）
+> ⇒ `--hide@slices:auto_slice==1` 有效。到此 **14 条「数值比较 boolean `--check@`」全部真机确认**，
+> 且两个方向都覆盖到了：`==0` 在未勾选时隐藏（①，13 条）、`==1` 在勾选时隐藏（③，1 条）。
+> 官方规范同时明确 `--check@` 用 `true/false` 时变量是 **boolean**，用 `0/1` 时是 **number** ——
+> 这解释了脚本正文为何写 `ab_enable == true or ab_enable == 1`（条件上下文数值化、正文保持布尔）。
+
+> **中文 UI**：属性面板的语言由 `Language/` 下的 `.aul2` 决定。界面为简体中文时显示的是 8.1 节的中文列，
+> 例如「启用前景融入背景」「融入目标图层」「前景遮挡模式」，而不是上面这些日文原文。
+
+### 5.2 宿主 API 契约（官方文档 ⇄ 脚本 ⇄ 模拟宿主）
+
+沙箱最容易被忽视的失真点不是脚本，而是**模拟宿主本身**：如果 `host.py` 对某个 `obj.*` 的返回值个数、
+参数含义猜错了，脚本照样能跑、像素照样能出，但测的已经不是真机上的那个 AviUtl2。
+`checks_08_api.py` 的 7 个用例把这条链路钉死（单一事实来源：`vl3dsb/apidoc.py`，
+逐条抄自 [`docs.aviutl2.jp/lua`](https://docs.aviutl2.jp/lua/)，文件头记录核对日期 `2026-10-29`）：
+
+| 用例 | 断言 |
+| --- | --- |
+| `api: every obj.* call is documented and emulated` | 脚本用到的 16 个函数全部在文档里，且 `host.py` 都实现了 |
+| `api: argument counts and enum keys match the documented signatures` | 每个调用点实参个数落在文档区间；`load` 的 kind、`setoption/getoption` 的键、缓冲区名都是文档枚举 |
+| `api: the emulated host exposes the documented obj.* field table` | 模拟 `obj` 表**恰好**暴露文档列出的 38 个字段（少一个/多一个都 FAIL） |
+| `api: the fake returns the documented values` | 19 个探针：`getinfo("image_max")` 必须返回 **2 个**值、`getpixel()` 2 个、`getpixel(x,y,"rgb")` 4 个、`getinfo("clock")` 是数字、`setanchor` 返回数字、`draw` 接受 8 个参数、`setfont` 第 3 参数是装饰类型 0–6、`drawpoly` 三种写法且拒绝混用 |
+| `api: obj.getpixel and obj.getpixeldata agree` | 同一 texel 经 `getpixel` 与经 FFI 指针（`getpixeldata`）读出的值一致 |
+| `api: obj.copybuffer is documented+on, and both paths agree` | 默认开启 + 两条缓冲路径逐像素一致（α 最大差 ≤ 2） |
+| `api: API linter catches seeded drift` | 10 条人造缺陷（未知函数/多传参数/未知键/非法 blend/装饰类型越界…）必须全部报出，同一片段里 2 条合法行不得误报 |
+
+**这一层当场揪出并修好了 3 个「假阳性绿」**（都是模拟宿主的问题，不是脚本的问题）：
+
+| 现象 | 真实规范 | 后果（修复前） | 修复 |
+| --- | --- | --- | --- |
+| `obj.getinfo("image_max")` 只返回一个值（一个 `(1920,1080)` 元组） | 返回**两个**值 `max_x, max_y` | 脚本 `local mw, mh = obj.getinfo("image_max")` 拿到 `mw=table, mh=nil`，尺寸上限逻辑整条失效 | 解包为两个整数 |
+| `obj.getinfo("clock")` 返回 `nil` | 返回开机以来的秒数（number） | 脚本的 perf 主路径 `if type(c) == "number"` 永远为假，只能走 `os.clock` 回退 | 返回确定性浮点（可用 `HostConfig(fake_clock=…)` 固定） |
+| `obj.copybuffer` 默认「不支持」 | **是文档化 API**，返回 `true/false` | 所有用例默认只测 `obj.load` 回退路径，真机主路径（帧缓冲备份）从未被执行 | 默认开启，并加用例证明两条路径一致 |
+
+顺带修正的规范细节：`obj.setfont` 第 3 个参数是**装饰类型 0–6**（旧代码误称 `weight`，而 AviUtl2 没有字重参数）、
+`obj.draw` 是 8 个参数（`rx,ry,rz`）、`obj.drawpoly` 同时支持「顶点表 + `vertex_num`」与「扁平 20 个浮点 + alpha」两种写法且**禁止混用**、
+`obj.load` 的 kind 共 12 种（`movie/movie.frame/movie.info/image/text/text.layout/textlayout/figure/framebuffer/tempbuffer/layer/before`）。
+这些若猜错，脚本不会报错，只会「安静地走到另一条分支」——正是静态契约层要拦的东西。
+
 ## 6. 扩展：写一个新用例
 
 ```python
-# sandbox/checks/checks_08_mine.py
+# sandbox/checks/checks_09_mine.py
 from vl3dsb.harness import check, require
 from vl3dsb.session import run_frame
 
@@ -188,6 +312,7 @@ def mine():
 | 遮挡「无效」 | 2D 遮挡要求遮挡层在光源平面 **前方**（`z` 更小，如 -200）；3D 遮挡需要 `kind="obj"` 且 `occ_list` 指定图层号 |
 | 编译很慢 | 首次 g++ 编译约 20 秒；之后按源码 hash 复用 `out/build/native/libvl3d_test_*.so` |
 | `lupa` 报 FFI 不可用 | 安装带 LuaJIT 的 lupa（`lupa.luajit21`），或接受相关用例 SKIP |
+| 想让 `WARN` 也算失败 | `run_checks.py` 只把 `FAIL` 计入退出码；需要强制时读 `out/results.json` 的 `counts` 自行判定 |
 
 ## 8. 参考：参数速查（47 个，默认值来自 `.obj2`）
 
@@ -205,5 +330,63 @@ def mine():
 `ray_mode` 0=平行光源 / 1=点光源 / 2=聚光；`occ_mode` 0=关 / 1=仅 3D 阴影 /
 2=仅前景遮罩 / 3=3D 阴影+前景遮罩（推荐）；`cam_light_mode` 0=自动（防过曝）/1=跟随相机光 /
 2=禁用相机照明 / 3=原样受光。`light_color` 为 `0xRRGGBB` 整数，默认 `0xFFFFFF`。
+
+### 8.1 中文 UI 对照表（`Language/简体中文.VolumetricLight3D.aul2`）
+
+AviUtl2 的界面语言为**简体中文**时，属性面板显示的是下表的「中文 UI」列（不是日文）。
+本表由脚本参数与语言包**程序化对照生成**，47 个参数无一缺失；分组名同样会汉化。
+
+| 分组（日文 → 中文） | 参数 ID | 日文标签 | 中文 UI | 选项（中文 = 值） |
+| --- | --- | --- | --- | --- |
+| 形 → **光束形态** | `src_layer` | 光源レイヤー | **光源图层** |  |
+|  | `ray_mode` | 光の出方 | **发射方式** | 平行光=0；点光源放射=1；向焦点收束=2 |
+|  | `fill_mode` | 光の中身 | **光束质感** | 体积柔光=0；纯色实心=1 |
+|  | `direction` | 方向 | **平面方向** |  |
+|  | `pitch` | 手前角度 | **朝前倾角** |  |
+|  | `screen_dir` | 画面基準 | **按画面方向基准** |  |
+|  | `spread` | 拡散角度 | **扩散角度** |  |
+|  | `light_x` | 光源X | **光源X** |  |
+|  | `light_y` | 光源Y | **光源Y** |  |
+|  | `light_z` | 光源Z | **光源Z** |  |
+|  | `length` | 長さ | **光束长度** |  |
+|  | `decay` | 減衰 | **距离衰减** |  |
+| 光 → **光线与颜色** | `light_color` | 光の色 | **指定光色（留空取原图）** |  |
+|  | `intensity` | 強さ | **发光强度** |  |
+|  | `threshold` | しきい値 | **亮度阈值** |  |
+|  | `cam_light_mode` | カメラ光源連携 | **摄像机光源联动** | 自动抗过曝补偿(推荐)=0；同步跟随摄像机光源(位置与颜色)=1；屏蔽摄像机3D光照(纯自发光)=2；关闭联动(原样受光)=3 |
+| 遮蔽設定 → **前景遮挡** | `occ_mode` | 前景遮蔽 | **前景遮挡模式** | 关闭=0；仅真实3D遮光投影=1；仅前景轮廓遮挡=2；3D投影 + 前景遮挡(推荐)=3 |
+|  | `occ_3d_mode` | 3Dオブジェクト処理 | **3D物件处理** | 自动(VRM轮廓保护 + OBJ真实前后)=0；真实3D前后深度(保留前方光束)=1；轮廓清晰保护(裁切模型前方光束)=2；忽略3D物件(仅处理2D图层)=3 |
+|  | `occ_target` | 遮蔽対象 | **遮挡对象范围** | 自动检测前方全部图层=0；自动(光源与本图层之间)=1；手动指定图层编号=2 |
+|  | `occ_list` | 指定レイヤー | **指定图层** |  |
+|  | `occ_soft` | 影の柔らかさ | **阴影柔和度** |  |
+|  | `occ_strength` | 遮蔽の強さ | **遮挡强度** |  |
+| 前景なじませ → **前景融入背景** | `ab_enable` | 前景なじませを有効化 | **启用前景融入背景** |  |
+|  | `ab_target` | なじませ対象 | **融入目标图层** | 自动检测前方全部2D图层=0；指定图层范围或编号=1 |
+|  | `ab_list` | 対象レイヤー指定 | **目标图层范围** |  |
+|  | `ab_bright` | ベース明るさ | **基础亮度** |  |
+|  | `ab_color_mode` | カラーモード | **采光色彩模式** | 单色采光=0；双色(左右分区)=1；体积光+背景双色联动(推荐)=2 |
+|  | `ab_style` | ライトスタイル | **边缘光样式** | 柔和渐变(逆光包裹)=0；柔和渐变(常规受光)=1；轮廓描边光(边缘高光)=2 |
+|  | `ab_strength` | ライト強さ | **边缘光强度** |  |
+|  | `ab_diffusion` | 拡散幅 | **边缘扩散宽度** |  |
+|  | `ab_bias` | 偏り(外⇔内) | **光晕内外偏移** |  |
+|  | `ab_color_mix` | 自然補正 | **色彩自然修正** |  |
+|  | `ab_saturation` | 彩度 | **边缘光饱和度** |  |
+|  | `ab_luma_link` | 背景明るさ連動 | **随场景亮度自动联动** |  |
+|  | `ab_env_blend` | 環境なじませ量 | **背景环境色融合度** |  |
+|  | `ab_env_blur` | 環境ぼかし | **环境采样模糊度** |  |
+| 霧の設定 → **烟雾扰动** | `fog` | 霧 | **烟雾浓度** |  |
+|  | `fog_scale` | 霧の大きさ | **烟雾尺度** |  |
+|  | `wind_dir` | 風向き | **风向角度** |  |
+|  | `wind_speed` | 風の速さ | **流动风速** |  |
+|  | `seed` | シード | **随机种子** |  |
+| 品質 → **品质与显示** | `res_mode` | 解像度 | **图集分辨率** | 高精细=0；标准=1；轻量（1/2）=2 |
+|  | `auto_slice` | 自動動的精度 | **自动动态切片精度** |  |
+|  | `slices` | スライス数 | **手动切片数** |  |
+|  | `view_mode` | 視点追従 | **切片朝向** | 自动（支持3D摄像机与编辑视角）=0；侧面切片（X轴）=1 |
+|  | `show_info` | 画面に状態表示 | **画面显示状态HUD** |  |
+|  | `log_mode` | ログに出力 | **输出日志** |  |
+
+> 语言包文件名必须放在 AviUtl2 的 `Language\` 目录（如 `C:\ProgramData\aviutl2\Language\`）；
+> 若面板仍显示日文，说明语言包未加载或被同名的其他包覆盖（用例 `aul2: [Effect] mapping` 会校验包与脚本的对应关系）。
 
 完整的模块级分析见 `docs/ANALYSIS.zh.md`（架构、算法、性能、风险与改进建议）。

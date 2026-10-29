@@ -1,5 +1,90 @@
 # 更新履歴 — 体積光（3D） / VL3DBridge
 
+## テストサンドボックス拡張（2026-10-29）・本体コードは未変更
+
+> 本節は**テストとドキュメントのみ**の変更を記録する。`Script/VolumetricLight3D.obj2`、
+> `src/VL3DBridge`、`Language/*.aul2` はいずれも**未修正**（スクリプトは `v3.13`、プラグインは `v1.21` のまま）で、
+> 公開済み成果物の挙動には影響しない。
+
+- **サンドボックスのテスト 70 → 76 件（76 PASS / 0 FAIL / 0 WARN）**、「静的インターフェース検証」層を追加：
+  - `hlsl: cbuffer layout matches every Lua call site (static)`：`sandbox/vl3dsb/hlsl/interface.py` を新設し、
+    14 段の HLSL の cbuffer レイアウトと 25 箇所の `obj.pixelshader()` 呼び出しを静的に突き合わせる。
+    `declared`（cbuffer 宣言の float 数）/ `required`（関数本体が実際に読む最大位置）/ `supplied`（Lua の実引数）を分離し、
+    `local consts = {…}` と `for oi = 1, MAX_OCC*16` を追跡して `beamatlas` の 236 uniform を算出。
+    実測：`beamatlas` 236 = 236 = 236、`ps_vl_blur` / `ps_vl_occ_blur` は宣言 8・実引数 6（末尾 2 個のパディングは確かに未読）。
+  - `hlsl: interface lint rejects deliberately broken call sites`：変異テスト（不足 / 過多 / 存在しないシェーダ名）で
+    上記ルールが実際に検出することを保証。
+  - `hlsl: every block declares a matching entry point and explicit registers`：エントリポイント名の一致、
+    `register(b0)`、テクスチャ `tN`、`SV_Position` / `SV_Target`。
+  - `obj2: property annotations follow the AviUtl2 spec (docs.aviutl2.jp/lua)`：**公式仕様**を主軸にした
+    プロパティ注釈の検証。47 パラメータを検査（track は最大 7 引数かつ `min ≤ 初期値 ≤ max`、step は 10^-k、
+    操作倍率は (0,1]、check の初期値は {0,1,true,false} で number / boolean の型を集計、select の初期値は省略可
+    だが書くなら項目内、color は `nil` か 0–0xffffff、`--data@` は `登録名:サイズ` で 16KB 以下、
+    ID の重複禁止、Astra 方言の混入禁止）。
+  - `obj2: --hide@ conditions follow the documented grammar`：条件は `(変数名)(比較演算子)(数値)` の形のみ、
+    演算子は**`== ~=` `>` `<` の 4 種だけ**（公式仕様に `>=`/`<=` は無い）、参照できるのは
+    check/select/file/folder と特殊条件 `filter`（トラックバーは不可）、条件を空にすると常時非表示。
+  - `obj2: --hide@ multi-rule targets are OR'ed (spec + host verified)`：同一対象への複数ルールを許可
+    （公式サンプルも同様）。同一対象・同一条件の冗長な重複のみを検出する。
+  - `vl3dsb/obj2.py` に `hide_rules`（ソース順で**全**ルールを保持）を追加。従来の `hides` 辞書は各パラメータの
+    最後の 1 本しか保持せず、`hide_exprs` が重複対象の前のルールを見落としていた。
+- **公式仕様に合わせて 4 点の「思い込み」を修正**（従来は Astra 方言に基づく推測。いずれも
+  [docs.aviutl2.jp/lua](https://docs.aviutl2.jp/lua/) に準拠）：`--track@` は最大 **7** 引数
+  （`ゼロ値名称` / `操作倍率` を含む）、`--select@` の初期値は**省略可**、`--data@` は `登録名:サイズ`（項目名なし）、
+  `--hide@` の演算子は **`== ~=` `>` `<` のみ**。本リポジトリのスクリプトは 4 点すべて適合しており**改修不要**。
+- **実機での実測記録（2026-10-29、AviUtl2 中国語 UI）**：`--hide@` 条件では `--check@` が数値として比較される
+  （公式仕様の `(変数名)(比較演算子)(数値)` どおり）——「前景融入背景を有効化」を外すと配下 14 項目がすべて折り畳まれる。
+  さらに「融入目標」を「指定レイヤー範囲または番号」にして（`ab_target<1` を偽にして）から外しても折り畳まれるため、
+  同一対象の複数ルールは「OR」で合成されることが確認できた。2 つの懸念は解消
+  （`sandbox/docs/ANALYSIS.zh.md` §2.2、リスク #10 はクローズ）。
+- **ドキュメント**：`sandbox/README.zh.md` に §5.1「静的インターフェース検証（AviUtl2_Astra 規則の移植）」と
+  `WARN` 状態の説明を追加。`sandbox/docs/ANALYSIS.zh.md` に §3.5 とリスク #10 を追加し、
+  旧リスク #2（`beamatlas` 236 uniform の手動整合）を「高」から「中（テストで門禁済み）」へ引き下げ。
+- ルート `README.md` §10 のテスト件数を 76 に更新。
+
+### 第 3 ラウンド（同日）· ホスト API 契約層（公式ドキュメント ⇄ スクリプト ⇄ 模擬ホスト）
+
+> これも**テストとドキュメントのみ**の変更。スクリプト `v3.13`、プラグイン `v1.21`、`Language/*.aul2` は未修正。
+> 本ラウンドで変更した本体側ファイルは `README.md` 第 10 節の件数 1 行のみ（そのためここに記録する）。
+
+- **サンドボックスのテスト 76 → 85 件（85 PASS / 0 FAIL / 0 SKIP / 0 WARN、104 秒）**。第 3 の静的検証層
+  `checks_08_api.py`（7 件）と `checks_01_script.py` の構造検証 2 件を追加。
+- **単一の情報源 `sandbox/vl3dsb/apidoc.py` を新設**：[docs.aviutl2.jp/lua](https://docs.aviutl2.jp/lua/) の
+  `obj.*` 関数 30 個（引数範囲・戻り値の説明つき）、`obj.getinfo/getoption/setoption/load` の文書化キー、
+  バッファ名、blend/sampler 列挙、**文書化された 38 個の `obj` フィールド**を Python 定数として転記（確認日を明記）。
+- **`sandbox/vl3dsb/luasurface.py`**（`obj.foo(...)` 呼び出し・実引数原文・`obj.field` の読み書き・リテラルキーを
+  静的走査。コメント/長文字列/文字列連結を正しく除外）と **`sandbox/vl3dsb/api_lint.py`**（ルールエンジン）を新設。
+- **追加したテスト**：`api: every obj.* call is documented and emulated by the host`、
+  `api: argument counts and enum keys match the documented signatures`、
+  `api: the emulated host exposes the documented obj.* field table`（38 個ちょうど）、
+  `api: the fake returns the documented values (arity + enum probe)`（19 プローブ）、
+  `api: obj.getpixel and obj.getpixeldata agree on the same buffer`、
+  `api: obj.copybuffer is documented+on, and both buffer paths agree`、
+  `api: API linter catches seeded drift`（12 行のうち 10 個の人工欠陥をすべて検出し、合法な 2 行は誤検出しない）、
+  `obj2: setting items, groups and --hide@ targets follow the documented structure`、
+  `obj2: structure linter catches seeded setting-item damage`（6 変異）。
+- **模擬ホストと公式仕様の不一致 3 件を修正**（スクリプト側の責任ではない。`sandbox/vl3dsb/host.py` のみ）：
+  1. `obj.getinfo("image_max")` が 1 個しか返さない → 公式は **2 個**（`max_x, max_y`）。従来は
+     `local mw, mh = …` が `mw=table, mh=nil` となり、サイズ上限のロジックが無言で無効化されていた。
+  2. `obj.getinfo("clock")` が `nil` → 公式は起動からの経過秒数。従来は perf の主経路が常に偽で `os.clock` に落ちていた。
+  3. `obj.copybuffer` を既定で「非対応」としていた → **文書化された API**（`true/false` を返す）。従来は全テストが
+     `obj.load` のフォールバック経路だけを実行し、実機の主経路（フレームバッファ退避）は一度も通っていなかった。
+     現在は既定で有効化し、両経路がピクセル一致することをテストで保証。
+- **仕様に合わせて修正した細部**：`obj.setfont` の第 3 引数は**装飾タイプ 0–6**（旧コードは `weight` と誤記。
+  AviUtl2 にウェイト引数は無い）、`obj.draw` は 8 引数（`rx,ry,rz`）、`obj.drawpoly` は
+  「頂点テーブル + `vertex_num`」と「フラット 20 float + alpha」の 2 形式（**混在禁止**、`vertex_num` は 3/4 のみ）、
+  `obj.load` は文書化された 4 引数（figure の色+サイズ）を受ける、`obj.getpixel([x,y[,type]])` は `col/rgb/yc` の 3 種、
+  `obj.setanchor` はアンカー数を返す。さらに模擬ホストの**未文書化** `obj.scene` 別名を削除（公式は `obj.scene_id` のみ）。
+- **ドキュメント**：`sandbox/README.zh.md` に §5.2「ホスト API 契約」を追加、`sandbox/docs/ANALYSIS.zh.md` に
+  §3.5(c) とリスク #11（模擬ホストと文書のドリフト、解消済み）を追加。§2.3 の
+  「AviUtl2 は `obj.copybuffer` 非対応」という誤った結論を訂正し（Astra 方言からの推測が原因）、
+  `obj.*` 呼び出し統計を 257 箇所（コメント/文字列を除外）に更新。
+
+- **実機での追加確認（同日、スクリーンショット添付）**：「品質 → 自动动态切片精度」をチェックすると
+  「手动切片数」の行が丸ごと非表示、外すと表示（64）⇒ これで **boolean の `--check@` を数値比較する
+  14 件すべてが実機確認済み**（`==0` 13 件 / `==1` 1 件と両極性をカバー）。
+  `sandbox/README.zh.md` §5.1 と `sandbox/docs/ANALYSIS.zh.md` §2.2 の「未確認」項目を「実測済み」に更新。
+
 ## v3.13（2026-10-26）
 - **3D カメラ／編集カメラ下で「画面に状態表示（HUD）」が表示されなくなっていた不具合を修正**
   - **原因特定**：`v3.12` で HUD 自身の影焼き込みを防ぐため `z_cam = 32`（`k_hud = 32 / focal_d`）へ配置した際、AviUtl / ExEdit2 の 3D カメラ透視投影における近クリップ面 `zn`（`約 102.4〜128`）より手前に入ったため、D3D11 視錐台クリッピングによって HUD ビルボード全体が破棄されていた。
