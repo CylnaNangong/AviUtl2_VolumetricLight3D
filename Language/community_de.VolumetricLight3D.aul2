@@ -1,11 +1,11 @@
 ;===============================================================
-; Target: Volumenlicht (3D) v3.13 (VolumetricLight3D.obj2)
+; Target: Volumenlicht (3D) v3.14 (VolumetricLight3D.obj2)
 ; Language: Deutsch (Community Translation)
 ; Place this file in  Language\  (e.g. C:\ProgramData\aviutl2\Language\)
 ;===============================================================
 
 [Language]
-Information=Volumenlicht (3D) v3.13 Sprachpaket Deutsch (Community)
+Information=Volumenlicht (3D) v3.14 Sprachpaket Deutsch (Community)
 SubLanguage=English
 
 [Effect]
@@ -113,7 +113,7 @@ VolumetricLight3D=Volumenlicht (3D)
 ログに出力=In Konsole protokollieren
 
 [Tips.体積光（3D）]
-effect.name=3D-Volumenlicht-Objekt (v3.13 für AviUtl2 v2.1.15+) mit optionaler Vordergrund-Einblendung (AutoBlendLight-3D-Integration). Unterstützt mit VL3DBridge.aux2 (v1.21) GPU-beschleunigte 3D-Schattenrasterisierung für 2D-Ebenen und 3D-Modelle (.obj / .vrm), Kamera-3D-Lichtkopplung und natürliche Kantenlicht-Einblendung.
+effect.name=3D-Volumenlicht-Objekt (v3.14 für AviUtl2 v2.1.15+) mit optionaler Vordergrund-Einblendung (AutoBlendLight-3D-Integration). Unterstützt mit VL3DBridge.aux2 (v1.21) GPU-beschleunigte 3D-Schattenrasterisierung für 2D-Ebenen und 3D-Modelle (.obj / .vrm), Kamera-3D-Lichtkopplung und natürliche Kantenlicht-Einblendung.
 光源レイヤー=Ebenennummer der Lichtquelle wählen (Bild, Video, Text, Form oder eigenes Objekt; 0 = nicht gewählt, oder direkt über 3D-Kameralicht bei aktiver Kameralicht-Nachführung).
 光の出方=Strahlgeometrie wählen: Parallel, Ausstrahlend (von einem virtuellen 3D-Brennpunkt) oder Bündelnd.
 光の中身=Volumenlicht erzeugt weiche atmosphärische Lichtstrahlen; Flächig erzeugt klar begrenzte Vollstrahlen.

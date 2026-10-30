@@ -79,8 +79,9 @@ def occ_3d():
     require(tr["params"][63] > 0.5, "sh3d_active flag not set in the beam uniforms")
     # the shadow must actually remove light from the volume
     darkened = float(np.abs(off.alpha.astype(int) - r.alpha.astype(int)).mean())
-    require(darkened > 1.0,
-            f"3D occlusion did not darken the beam (mean |delta alpha| = {darkened})")
+    em_diff = _emission_diff(off, r)
+    require(darkened > 0.2 and em_diff > 1.0 and _modeled_luma(r) < _modeled_luma(off),
+            f"3D occlusion did not darken the beam (|delta alpha|={darkened}, |delta rgb|={em_diff})")
     # the shadow map must actually modulate the beam: force the mask off
     from vl3dsb.session import shader_library
     lib = shader_library()
