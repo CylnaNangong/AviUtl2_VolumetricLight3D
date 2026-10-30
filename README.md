@@ -5,7 +5,7 @@
 🎉 **震撼首发！！！**  
 **面向 AviUtl ExEdit2 的真·3D 丁达尔体积光自定义对象 · 内置 3D 联动「前景融入背景」 · 可选 D3D11 CS 硬件阴影加速插件**
 
-`VolumetricLight3D.obj2 v3.14` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.15` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 语言切换 / Language:** &nbsp; **简体中文** &nbsp;|&nbsp; **[日本語 (Japanese)](docs/README_ja.md)** &nbsp;|&nbsp; **[English](docs/README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](docs/README_de.md)**
 
@@ -78,6 +78,11 @@
    - 全流程严格控制在 AviUtl2 默认 `TemporaryImageCacheSize`（1,600 万像素）与 D3D11 `4096px` 渲染目标上限之内（即使在 **8K UHD `7680×4320`** 画幅或 **5000 万像素 / 16K** 贴图下，峰值缓存仅约 `3.9M～7.2M` 像素，帧末立即缩回 `1×1` 释放）。
    - 首次打开含体积光的工程或展开次合成（サブシーン）时，自动在日志窗口输出多语言进度提示（`初始化中……` → `初始化完成`），避免首帧加载大图黑屏时被误判为卡死。
 
+6. **跨脚本三维光场输出（VL3D Light Field v1）：让雪花、雾团真的「被这道光照亮」** 🆕 `v3.15`
+   - 每帧把光束的三维形状（光源面位置/朝向、传播方向、锥形收束、随距离放大、长度、衰减、代表色、强度）打包为 **189 字节**，写入 AviUtl2 **官方脚本间共享表 `global`**——只用官方 Lua API，**不需要任何额外插件、`.mod2` 或 `VL3DBridge.aux2`**。
+   - 同场景的 `雪（3D）` 等 3D 脚本读取后，可让**飘入光柱的雪花按入射位置实时染上光束颜色、以加算合成发光**，光束外与未安装体积光时行为完全不变。
+   - 集成方式、协议细节与限制见 [`docs/LIGHTFIELD_zh.md`](docs/LIGHTFIELD_zh.md)；雪（3D）侧补丁见 [`integrations/snow3d/`](integrations/snow3d/README.zh.md)。
+
 ---
 
 ## 2. 使用环境与系统要求
@@ -97,8 +102,8 @@
 ### 🚀 方式一：使用 `.au2pkg.zip` 安装包一键拖入（推荐 · 开袋即食！）
 
 1. 前往仓库右侧的 **GitHub Releases** 页面下载最新安装包（**请勿解压**，保留 `.au2pkg.zip` 后缀）：
-   - **`VolumetricLight3D-v3.14.au2pkg.zip`**（完整推荐版：含核心脚本 + `VL3DBridge.aux2` GPU 加速插件 + 四语语言包）
-   - *或 `VolumetricLight3D-v3.14-ScriptOnly.au2pkg.zip`（纯脚本轻量版：仅含 `.obj2` 脚本 + 四语语言包）*
+   - **`VolumetricLight3D-v3.15.au2pkg.zip`**（完整推荐版：含核心脚本 + `VL3DBridge.aux2` GPU 加速插件 + 四语语言包）
+   - *或 `VolumetricLight3D-v3.15-ScriptOnly.au2pkg.zip`（纯脚本轻量版：仅含 `.obj2` 脚本 + 四语语言包）*
 2. 打开 AviUtl ExEdit2，将下载好的 `.au2pkg.zip` 文件**直接用鼠标拖放（Drag & Drop）到 AviUtl2 预览窗口**中，在弹出的确认框点击安装即可自动部署全部文件！
 3. 若包含 `VL3DBridge.aux2` 插件更新，安装后**重启一次 AviUtl2** 即可生效（日后也可随时在 AviUtl2 菜单的「包信息 / `パッケージ情報`」中一键查看或卸载）。
 
@@ -109,7 +114,7 @@
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── VolumetricLight3D.obj2                  # [必需] 核心自定义对象脚本（v3.14）
+│   └── VolumetricLight3D.obj2                  # [必需] 核心自定义对象脚本（v3.15）
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [强烈推荐/可选] 无锁读取 + D3D11 CS 硬件 3D 阴影加速插件（v1.21）
 │   └── VL3DBridge.ini                     # [可选] 插件安全白名单与 GPU 开关配置（与 .aux2 同目录）
@@ -277,7 +282,8 @@ AviUtl ExEdit2 目前仍处于活跃迭代阶段，部分高阶宿主内部状�
 
 ## 7. 未来发展方向（Roadmap）
 
-- **与同系列《体积雾（3D）》及《雪（3D）》的跨脚本三维光学联动**：打通 `VL3DBridge` 共享三维光场数据，让体积光束能够真实**照亮并染色同场的 3D 体积雾团与飘雪粒子**（例如光柱穿透浓雾时产生局部丁达尔散射增亮、雪花飘入彩色光束内部时实时染上对应光色并呈现受光高光），构成完整的三维空间大气光影体系。
+- ~~跨脚本三维光学联动~~ → **v3.15 已落地（VL3D Light Field v1）**：体积光向官方共享表 `global` 发布三维光场，`雪（3D）` 已可通过 [`integrations/snow3d/`](integrations/snow3d/README.zh.md) 补丁实现「雪花飘入光柱即染光发亮」；规范见 [`docs/LIGHTFIELD_zh.md`](docs/LIGHTFIELD_zh.md)。
+  - **后续**：为《体积雾（3D）》提供同规格接收端；把 2D 前景轮廓遮挡与 3D 模型影柱纳入光场（发布粗粒度阴影提示），让「被遮挡的雪花不再发光」。
 - **逐步全面迁移至官方 SDK 接口**：紧跟 ＫＥＮくん 官方 Plugin SDK 的更新步伐——未来一旦官方 SDK 开放摄像机 3D 光源枚举、编辑视角相机矩阵或 3D 模型网格直接访问接口，将第一时间替换为 100% 官方 API，彻底消除对二进制特征探针的依赖。
 - **更丰富的 3D 模型格式与多光源能力**：在 `VL3DBridge` 的 D3D11 计算着色器管线中扩展原生 `.glb` / `.gltf` 网格直接硬件光栅化、单图层多点光源并发投射，以及半透明彩色遮挡物（如彩色玻璃投射到三维物体表面）的透射染色阴影（Colored Transmissive Shadows）。
 - **全管线 Compute Shader 体素化加速探索**：探索基于 `ID3D11Device3` 计算着色器的统一体素光束积分（Froxel / Compute Ray-Marching），进一步降低多实例与 `4K` / `8K` 超高帧率工程下的临时渲染目标带宽占用。
@@ -288,7 +294,7 @@ AviUtl ExEdit2 目前仍处于活跃迭代阶段，部分高阶宿主内部状�
 ## 8. 问题反馈（Bug 报告途径）
 
 - **首选 [GitHub Issues](./issues)（最推荐！）**。反馈时请尽量附上：
-  - 脚本版本号（勾选「画面に状態表示 / 状态显示」后可在画面左上角 HUD 看到，例如 `v3.14`）与 `AviUtl ExEdit2` 本体版本；
+  - 脚本版本号（勾选「画面に状態表示 / 状态显示」后可在画面左上角 HUD 看到，例如 `v3.15`）与 `AviUtl ExEdit2` 本体版本；
   - 复现步骤、时间轴图层构成截图、以及异常效果的截图（**请保留 HUD 信息一起截**，里面的 `遮挡=…`、`光源=…` 等字段是定位问题的关键线索哦！）；
   - 若 HUD 遮挡栏出现 `,opq`（遮罩近乎全不透明，请检查遮挡图层素材是否带 Alpha 透明通道）或 `L4*`（该图层已自动回退为原始图像加载）标记，也请一并说明 ^_^
 - **Discord 社区**：也可以加入日文 AviUtl2 情报共享社区 **「AviUtl2の情報が知りたいだろって‼」**（[点击加入](https://discord.gg/8qzmGY5NgQ)），在服务器里找 **南宫若馨Cylna**（`@nangongerregtcylna`，作者本人）就可以直接反馈啦～
@@ -331,11 +337,12 @@ python3 packaging/build_au2pkg.py
 ```bash
 cd sandbox
 python3 -m pip install -r requirements.txt
-python3 run_checks.py          # 97 个用例：模块构建 / 静态分析 / 接口契约 / HLSL / 运行时 / 遮挡 / 桥 / 性能
+python3 run_checks.py          # 107 个用例：模块构建 / 静态分析 / 接口契约 / HLSL / 运行时 / 遮挡 / 桥 / 性能 / 光场联动
 python3 render_demo.py         # 渲染示例图到 out/demo/gallery.png
 ```
 
 * 使用说明：[`sandbox/README.zh.md`](sandbox/README.zh.md)
+* 跨脚本光场协议与接收端接入：[`docs/LIGHTFIELD_zh.md`](docs/LIGHTFIELD_zh.md)
 * 各模块全面分析与评估（含风险清单与改进建议）：[`sandbox/docs/ANALYSIS.zh.md`](sandbox/docs/ANALYSIS.zh.md)
 
 ---
@@ -357,7 +364,7 @@ python3 render_demo.py         # 渲染示例图到 out/demo/gallery.png
 - **ＫＥＮくん（KENkun）**（[AviUtlのお部屋](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)） — 开发了强大的 AviUtl ExEdit2 与官方 Plugin SDK。
 
 #### AI 协作伙伴
-- **Arena.ai Agent** — 协助完成 `v2.90`～`v3.14` 全链路重构、`VL3DBridge.aux2` 无锁只读桥接与 D3D11 ComputeShader 硬件光栅化、`AutoBlendLight` 3D 融合集成及极限分辨率加固。
+- **Arena.ai Agent** — 协助完成 `v2.90`～`v3.15` 全链路重构、`VL3DBridge.aux2` 无锁只读桥接与 D3D11 ComputeShader 硬件光栅化、`AutoBlendLight` 3D 融合集成及极限分辨率加固。
 - **ChatGPT** — 协助代码审查抓虫（精准抓出了 3D 烟雾噪声三线性插值角点坐标的隐蔽 Bug！）。
 - **Gemini** — 编写了最早期的「体积雾」HLSL 着色器原型（某种意义上，同系列的《体积雾（3D）》也正是体积光研发途中的副产物 XD）。
 - **Microsoft Copilot** — 在最早给超大图应用 `OpenGlow` 遭遇缓存爆仓时，耐心协助排查定位根因并整理文档。

@@ -6,7 +6,7 @@
 **DAS ECHTE 3D-Volumenlicht (God Rays / Krepuskulare Strahlen / Lichtstrahlen) für AviUtl ExEdit2**  
 **Mit eingebauter 3D-Vordergrund-Einblendung & optionalem D3D11-CS-Hardware-Schattenbeschleuniger**
 
-`VolumetricLight3D.obj2 v3.14` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.15` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Sprache:** &nbsp; **[简体中文 (Chinesisch)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanisch)](README_ja.md)** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **Deutsch**
 
@@ -78,6 +78,11 @@
    - Entwickelt, um streng innerhalb von AviUtl2s Standard-`TemporaryImageCacheSize` (16 Mio. Pixel) und D3D11-`4096px`-RTV-Grenzen zu bleiben — selbst bei **8K UHD (`7680×4320`)**-Canvas oder **50 MP / 16K**-Quellmaterialien (Live-Cache-Peak ~`3.9 M–7.2 M` Pixel, am Frame-Ende wieder auf `1×1` freigegeben).
    - Beim ersten Laden schwerer Szenen oder Sub-Scenes werden `Initializing...` / `Initialization complete`-Hinweise in der Konsole ausgegeben, damit Wartezeiten bei der Dekodierung großer Assets nicht als Einfrieren missverstanden werden.
 
+6. **Skriptübergreifende 3D-Lichtfeld-Ausgabe (VL3D Light Field v1) — Schnee und Nebel, die wirklich vom Strahl beleuchtet werden** 🆕 `v3.15`
+   - Pro Frame wird die 3D-Form des Strahls (Lage/Ausrichtung der Quellfläche, Richtung, Konusöffnung, entfernungsabhängige Aufweitung, Länge, Abfall, Repräsentativfarbe, Stärke) in **189 Byte** gepackt und in AviUtl2s **offizielle skriptübergreifende Shared-Tabelle `global`** geschrieben — ausschließlich offizielle Lua-API, **kein Zusatz-Plugin, kein `.mod2`, kein `VL3DBridge.aux2`**.
+   - `Schnee (3D)` & Co. lesen das Feld, sodass **in den Lichtkegel driftende Flocken an ihrer exakten Position die Strahlfarbe annehmen und additiv aufleuchten**. Außerhalb des Strahls bzw. ohne dieses Skript bleibt alles unverändert.
+   - Spezifikation: [`LIGHTFIELD_zh.md`](LIGHTFIELD_zh.md); Schnee-(3D)-Patch: [`../integrations/snow3d/`](../integrations/snow3d/README.zh.md) (Dokumentation derzeit auf Chinesisch).
+
 ---
 
 ## 2. Systemanforderungen
@@ -97,8 +102,8 @@
 ### 🚀 Methode 1: `.au2pkg.zip`-Paket per Drag & Drop auf das Vorschaufenster (empfohlen — sofort einsatzbereit!)
 
 1. Laden Sie das aktuelle Paket von **GitHub Releases** herunter (**nicht entpacken**!):
-   - **`VolumetricLight3D-v3.14.au2pkg.zip`** (Komplett-Edition: Kernskript + `VL3DBridge.aux2`-GPU-Plugin + Sprachpakete)
-   - *Oder `VolumetricLight3D-v3.14-ScriptOnly.au2pkg.zip` (Nur-Skript-Edition: `.obj2` + Sprachpakete ohne natives `.aux2`)*
+   - **`VolumetricLight3D-v3.15.au2pkg.zip`** (Komplett-Edition: Kernskript + `VL3DBridge.aux2`-GPU-Plugin + Sprachpakete)
+   - *Oder `VolumetricLight3D-v3.15-ScriptOnly.au2pkg.zip` (Nur-Skript-Edition: `.obj2` + Sprachpakete ohne natives `.aux2`)*
 2. Öffnen Sie AviUtl ExEdit2 und **ziehen Sie die `.au2pkg.zip`-Datei direkt per Drag & Drop in das AviUtl2-Vorschaufenster**; bestätigen Sie den Installationsdialog.
 3. Wenn die Komplett-Edition mit `VL3DBridge.aux2` installiert wurde, **starten Sie AviUtl2 einmal neu**, um das native Plugin zu laden (die Verwaltung/Entfernung des Pakets ist jederzeit im AviUtl2-Menü „Paketinformationen“ möglich).
 
@@ -109,7 +114,7 @@ Kopieren Sie die **`Script`**-, **`Plugin`**- (empfohlen) und **`Language`**-Ord
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── VolumetricLight3D.obj2                  # [Erforderlich] Kern-Objekt-Skript (v3.14)
+│   └── VolumetricLight3D.obj2                  # [Erforderlich] Kern-Objekt-Skript (v3.15)
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [Empfohlen] Lock-Free-Lesung & D3D11-CS-GPU-Schatten-Plugin (v1.21)
 │   └── VL3DBridge.ini                     # [Optional] Probe-Whitelist & GPU-Konfiguration (neben .aux2)
@@ -272,7 +277,8 @@ Wir offenlegen transparent, welche Funktionen versionssensible sind:
 
 ## 7. Zukunftsroadmap
 
-- **3D-Optische Kopplung mit den Begleitskripten `Volumetric Fog (3D)` & `Snow (3D)`**: Gemeinsame Nutzung des 3D-Volumenlichtfeldes via `VL3DBridge`, sodass **Volumenlichtstrahlen 3D-Volumennebel lokal illuminieren und fallende 3D-Schneeflocken in Lichtstrahlen in Echtzeit eingefärbt werden können**.
+- ~~3D-optische Kopplung mit den Begleitskripten~~ → **in `v3.15` umgesetzt (VL3D Light Field v1)**: der Strahl veröffentlicht sein 3D-Lichtfeld in der offiziellen Shared-Tabelle `global`, und `Schnee (3D)` lässt sich über [`../integrations/snow3d/`](../integrations/snow3d/README.zh.md) patchen, sodass Flocken im Strahl in der Strahlfarbe aufleuchten.
+  - **Als Nächstes**: ein Receiver gleicher Spezifikation für `Volumetric Fog (3D)` sowie 2D-Vordergrundsilhouetten / 3D-Modell-Schatten im Lichtfeld (damit verdeckte Flocken nicht mehr leuchten).
 - **Vollständige Migration zu offiziellen Plugin-SDK-APIs**: Alle verbleibenden Schreib-gesperrten Memory-Probes werden sofort ersetzt, sobald KEN-kun offizielle SDK-Schnittstellen für Kamerasteuerung-3D-Lichtquellen, Editor-Viewport-Matrizen und 3D-Mesh-Buffer veröffentlicht.
 - **Breitere 3D-Asset- & Multi-Licht-Unterstützung**: Native `.glb` / `.gltf`-Mesh-Rasterisierung in der D3D11-ComputeShader-Pipeline von `VL3DBridge`, simultane Emission mehrerer 3D-Lichtquellen und farbige halbtransparente Schattensäulen (z. B. gefärbtes Glas-Lichtfälle).
 - **Einheitliche ComputeShader-Voxel-Integration**: Erkundung einer Froxel-/Ray-Marching-Integration auf Basis von `ID3D11Device3`-Compute-Shaders, um den Cache-Bandbreitenverbrauch bei hohen Frameraten in `4K` / `8K`-Zeitleisten weiter zu senken.
@@ -283,7 +289,7 @@ Wir offenlegen transparent, welche Funktionen versionssensible sind:
 ## 8. Fehlerberichte
 
 - **[GitHub Issues](../../issues) ist der beste Kanal!** Bitte include:
-  - die Skriptversion (Aktivieren Sie 「画面に状態表示 / Status-HUD」, um sie oben links im HUD zu sehen, z. B. `v3.14`) und Ihre AviUtl ExEdit2-Version;
+  - die Skriptversion (Aktivieren Sie 「画面に状態表示 / Status-HUD」, um sie oben links im HUD zu sehen, z. B. `v3.15`) und Ihre AviUtl ExEdit2-Version;
   - Schritte zur Reproduktion, einen Screenshot Ihrer Zeitleisten-Ebenen-Ansicht und des visuellen Fehlers (**den HUD sichtbar lassen** — Felder wie `遮蔽=…` / `光源=…` sind wichtige Hinweise!);
   - wenn die HUD-Abschattungsanzeige `,opq` (Maske fast vollständig undurchsichtig — prüfen Sie, ob das Abschattungs-Asset einen Alphakanal hat) oder `L4*` (diese Ebene ist auf Rohbild-Load zurückgefallen) zeigt, mentionieren Sie das bitte auch ^_^
 - **Discord-Community**: Treten Sie auch dem japanischen AviUtl2-Infoserver **「AviUtl2の情報が知りたいだろって‼」** bei ([Einladungslink](https://discord.gg/8qzmGY5NgQ)) und ping direkt **南宫若馨Cylna** (`@nangongerregtcylna`, der Autor)!
@@ -325,7 +331,7 @@ python3 packaging/build_au2pkg.py
 - **KEN-kun (ＫＥＮくん)** ([Offizielle Website](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)) — Schöpfer von AviUtl ExEdit2 und des offiziellen AviUtl2-Plugin-SDK.
 
 #### KI-Entwicklungspartner
-- **Arena.ai Agent** — Mitentworfen und implementiert die `v2.90`–`v3.14`-Architektur, den `VL3DBridge.aux2`-Lock-Free-Bridge & D3D11-ComputeShader-Rasterizer, die AutoBlendLight-3D-Integration und die Extrem-Auflösungs-Cache-Härtung.
+- **Arena.ai Agent** — Mitentworfen und implementiert die `v2.90`–`v3.15`-Architektur, den `VL3DBridge.aux2`-Lock-Free-Bridge & D3D11-ComputeShader-Rasterizer, die AutoBlendLight-3D-Integration und die Extrem-Auflösungs-Cache-Härtung.
 - **ChatGPT** — Code-Review & Fehlerjagd (hat den trilinearen Gitter-Eckpunkt-Koordinaten-Bug im 3D-Nebelrauschen-Shader gefunden!).
 - **Gemini** — Verfasse den frühesten HLSL-Volumennebel-Prototyp (in gewisser Weise ist das Begleit-Projekt *Volumetric Fog (3D)* ein glückliches Nebenprodukt dieser Entwicklung XD).
 - **Microsoft Copilot** — Hat geduldig Cache-Überlauf-Probleme untersucht und Dokumentation organisiert, als hochauflösende Bilder `OpenGlow` erstmals zum Platzen brachten.

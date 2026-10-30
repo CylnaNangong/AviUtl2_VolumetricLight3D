@@ -40,7 +40,7 @@ sandbox/
 │   ├── assets.py          # 测试素材：彩窗、剪影、渐变、单位立方体 .obj
 │   ├── session.py         # 高层 API：build scene → run_frame → PNG/统计
 │   └── harness.py         # 极简测试框架（@check / require / skip）
-├── checks/                # 11 组、97 个用例
+├── checks/                # 12 组、107 个用例
 │   ├── checks_01_script.py     # .obj2 静态分析（参数语法/分组/默认值/hide 语义/i18n/安全）
 │   ├── checks_02_language.py   # 4 个 .aul2 语言包完整性
 │   ├── checks_03_hlsl.py       # 14 段 HLSL 编译、数值行为、静态 uniform 布局
@@ -51,7 +51,8 @@ sandbox/
 │   ├── checks_08_api.py        # 宿主 API 契约（文档签名/键/返回值 ⇄ 模拟宿主）
 │   ├── checks_09_raster.py     # 低 alpha 阈值、图集快照及十六进制 HLSL 回归
 │   ├── checks_10_brightness.py # 非聚光源常量 OIT 令牌、聚光源隔离与 3D .aup2 亮度回归
-│   └── checks_11_build.py      # 模块化源码 ⇄ 单文件生成物同步、确定性及故障注入
+│   ├── checks_11_build.py      # 模块化源码 ⇄ 单文件生成物同步、确定性及故障注入
+│   └── checks_12_lightfield.py # 光场发布/接收：载荷格式、接收端数学、补丁幂等、雪（3D）端到端
 └── out/                   # 全部产物（.gitignore 已忽略，可随时删除重建）
     ├── results.json       # 最近一次测试的机器可读结果
     ├── demo/ features/ hlsl/ bridge/ runtime/   # 各类 PNG / 日志
@@ -95,7 +96,7 @@ g++ --version                                          # 需要支持 C++17（�
 ```bash
 cd sandbox
 
-python3 run_checks.py                  # 跑全部 97 个用例，输出 PASS/FAIL/WARN + out/results.json
+python3 run_checks.py                  # 跑全部 107 个用例，输出 PASS/FAIL/WARN + out/results.json
 python3 run_checks.py --repo /path/to/other-checkout  # 用本沙箱检验另一个仓库快照
 python3 run_checks.py --list           # 列出全部用例
 python3 run_checks.py --only hlsl      # 名字含 "hlsl" 的用例
@@ -103,9 +104,14 @@ python3 run_checks.py --tags occlusion # 按标签筛选（可有多个 --tags a
 python3 run_checks.py -v               # 失败时打印完整 traceback
 echo $?                                # 0 = 全通过；1 = 有 FAIL；2 = 没有匹配用例
 
+python3 run_checks.py --only lightfield # 只跑跨脚本光场联动（含雪（3D）端到端，需 VL3DSB_SNOW3D）
 python3 render_demo.py                 # 渲染 7 张示例图 + 拼版 gallery.png
 python3 render_demo.py --only fog,water
 ```
+
+`checks_12_lightfield.py` 里那 1 个雪（3D）端到端用例需要一份 Snow3D 仓库副本：默认依次查找
+`../AviUtl2_Snow3D`、`../Snow3D`，也可用环境变量 `VL3DSB_SNOW3D=/path/to/repo` 指定；
+找不到脚本时该用例记为 `SKIP`（不影响退出码）。
 
 CI 里只需 `python3 run_checks.py --json out/results.json`：JSON 中每条用例都有
 `status / seconds / metrics / artifacts`，便于趋势对比。

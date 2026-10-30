@@ -41,7 +41,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.14 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.15 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -67,10 +67,17 @@ local function vl_run_frame()
     _VL_PERSIST.in_beam_layers[self_key] = nil
     _VL_PERSIST.in_beam_stage = 0
     _VL_PERSIST.in_beam = false
+    -- 21. 光場の公開（雪（3D）/ 体積霧（3D）などへの受光連動）
+    --     描画に成功したフレームだけ、この光束を `global` へ書き出す。
+    if ok and not VL_BF._abort and VL_BF.mip_ready then
+        pcall(vl_lf_publish)
+    elseif ok then
+        pcall(vl_lf_withdraw)
+    end
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.14 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.15 error: " .. tostring(err)) end)
     end
     return ok
 end

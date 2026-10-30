@@ -108,6 +108,10 @@ class HostConfig:
 LUA_PRELUDE = r"""
 local host_call = host_call
 obj = {}
+-- AviUtl2 documents a script-shared table: `global.xxx`
+-- (docs.aviutl2.jp/lua § 変数, "values are stored as binary-safe strings").
+-- Tests can hand two Hosts the same Lua table to model cross-script exchange.
+global = {}
 local function H(name, ...) return host_call(name, ...) end
 
 function obj.getvalue(...) return H("getvalue", ...) end
@@ -196,7 +200,7 @@ end
 class Host:
     def __init__(self, script: Obj2Script, layers: Sequence[Layer], config: Optional[HostConfig] = None,
                  shader_lib: Optional[ShaderLibrary] = None, params: Optional[Dict[str, Any]] = None,
-                 native=None):
+                 native=None, shared_global=None):
         self.script = script
         self.layers: List[Layer] = list(layers)
         self.cfg = config or HostConfig()
@@ -233,6 +237,7 @@ class Host:
         self._shader_lib = shader_lib
         self._shader_cache: Dict[str, ShaderLibrary] = {}
         self.errors: List[str] = []
+        self._shared_global = shared_global
         self._create_runtime()
 
     # -- runtime -------------------------------------------------------------
@@ -243,6 +248,8 @@ class Host:
         g["host_call"] = self.call
         g["print"] = self._lua_print
         self.lua.execute(LUA_PRELUDE)
+        if self._shared_global is not None:
+            g["global"] = self._shared_global
         g["_VL3D_DIR_LISTING_HOOK"] = True
         for k, v in self.params.items():
             g[k] = v
@@ -526,10 +533,18 @@ class Host:
             return self.lua.table_from(self.cfg.camera)
         return None
 
-    def _api_setoption(self, key, value=None):
-        if isinstance(key, bytes):
-            key = key.decode()
+    def _api_setoption(self, key, value=None, option=None):
+        """obj.setoption(name,value[,option]) -- docs § obj.setoption.
+
+        `option` is the documented third argument ("force" for blend modes);
+        the emulated host records it next to the value instead of rejecting it.
+        """
+        key = key.decode() if isinstance(key, bytes) else key
+        value = value.decode() if isinstance(value, bytes) else value
+        option = option.decode() if isinstance(option, bytes) else option
         self.setoptions[str(key)] = value
+        if option is not None:
+            self.setoptions[str(key) + ".option"] = option
         return True
 
     def _api_setfont(self, name="", size=18, type=0, col1=0xFFFFFF, col2=0x000000,  # noqa: A002
@@ -637,6 +652,13 @@ class Host:
         if kind == "text":
             self._render_text(str(arg))
             return True
+        if kind == "figure":
+            # obj.load("figure",name[,color,size,...]) -- sandbox approximation:
+            # a soft antialiased disc (円) or rounded square, premultiplied,
+            # which is enough to exercise figure-texture code paths such as
+            # 雪（3D）'s billboard rendering.
+            self._render_figure(str(arg), effect, size)
+            return True
         if kind != "layer":
             return False
         idx = int(arg)
@@ -652,6 +674,38 @@ class Host:
             img = np.concatenate([img[..., :3], alpha[..., None]], axis=-1)
         self.buffers["object"] = np.array(img, copy=True)
         return True
+
+    def _render_figure(self, name: str, color, size) -> None:
+        from . import assets as _assets  # noqa: F401  (kept for parity with tests)
+        try:
+            sz = int(size) if size is not None else 128
+        except (TypeError, ValueError):
+            sz = 128
+        sz = max(2, min(sz, 2048))
+        try:
+            col = int(color) if color is not None else 0xFFFFFF
+        except (TypeError, ValueError):
+            col = 0xFFFFFF
+        r = (col >> 16) & 0xFF
+        g = (col >> 8) & 0xFF
+        b = col & 0xFF
+        img = np.zeros((sz, sz, 4), np.uint8)
+        yy, xx = np.mgrid[0:sz, 0:sz].astype(np.float32)
+        cx = cy = (sz - 1) * 0.5
+        rad = sz * 0.45
+        square = name in ("四角形", "方形", "□", "square", "Square")
+        if square:
+            d = np.maximum(np.abs(xx - cx), np.abs(yy - cy))
+            cov = np.clip(rad + 0.5 - d, 0.0, 1.0)
+        else:
+            d = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+            cov = np.clip(rad + 0.5 - d, 0.0, 1.0)
+        a = (cov * 255.0 + 0.5).astype(np.uint8)
+        img[..., 0] = (r * a + 127) // 255
+        img[..., 1] = (g * a + 127) // 255
+        img[..., 2] = (b * a + 127) // 255
+        img[..., 3] = a
+        self.buffers["object"] = img
 
     def _fx_bug(self, layer: Layer) -> bool:
         """Simulate the documented obj.load(..., true) 'opaque rectangle' host bug."""
@@ -953,6 +1007,43 @@ class Host:
                 pass
             self.errors.append(str(detail)[:4000])
         return ok
+
+    # ---- cross-script `global` ---------------------------------------------
+    def export_global(self) -> List[Tuple[str, str]]:
+        """Snapshot `global` as ``[(key, hex)]`` so another Host can import it.
+
+        AviUtl2 runs every script against one shared `global` table; the sandbox
+        gives each Host its own Lua state, so cross-script tests hand the
+        snapshot over explicitly (hex keeps the binary payloads intact).
+        """
+        rows = self.lua.eval(
+            '(function() local out, n = {}, 0 '
+            'for k, v in pairs(global) do '
+            'if type(k) == "string" and type(v) == "string" then '
+            'n = n + 1; out[n] = k .. "\\1" .. (v:gsub(".", function(c) '
+            'return string.format("%02x", c:byte()) end)) end end return out end)()'
+        )
+        result: List[Tuple[str, str]] = []
+        for i in range(1, len(rows) + 1):
+            row = rows[i]
+            key, _sep, hexs = str(row).partition("\1")
+            result.append((key, hexs))
+        return result
+
+    def import_global(self, rows: Sequence[Tuple[str, str]]) -> None:
+        setter = self.lua.eval(
+            'function(k, hex) global[k] = (hex:gsub("%x%x", function(h) '
+            'return string.char(tonumber(h, 16)) end)) end'
+        )
+        for key, hexs in rows:
+            setter(key, hexs)
+
+    def global_string(self, key: str) -> str:
+        """`global[key]` as a hex string ("" when absent)."""
+        fn = self.lua.eval('function(k) local v = global[k] '
+                           'if type(v) ~= "string" then return "" end '
+                           'return (v:gsub(".", function(c) return string.format("%02x", c:byte()) end)) end')
+        return str(fn(key))
 
     # ---- output ------------------------------------------------------------
     def volume_layer(self) -> Optional[np.ndarray]:

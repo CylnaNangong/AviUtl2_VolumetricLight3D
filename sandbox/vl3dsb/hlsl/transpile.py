@@ -89,7 +89,7 @@ def strip_comments(src: str) -> str:
 
 def strip_attributes(src: str) -> str:
     """Remove [loop] / [unroll] / [branch] / [fastopt] hint lines."""
-    return re.sub(r"^\s*\[(?:loop|unroll|branch|fastopt|allow_uav_condition|call|forcecase)\]\s*$",
+    return re.sub(r"^\s*\[(?:loop|unroll|branch|fastopt|allow_uav_condition|call|forcecase)\]\s*",
                   "", src, flags=re.M)
 
 
@@ -194,6 +194,18 @@ class Parser:
             tok = self.peek()
             if tok.text == "Texture2D":
                 self.next()
+                # HLSL のテンプレート表記 (Texture2D<float4> Src; ) を許容する。
+                # AviUtl2 ホストのシェーダリフレクションはどちらも受理するため、
+                # 第三者スクリプト（雪（3D）など）をサンドボックスで実行できる。
+                if self.peek().text == "<":
+                    self.next()
+                    depth = 1
+                    while depth > 0 and self.peek().kind != "eof":
+                        t = self.next().text
+                        if t == "<":
+                            depth += 1
+                        elif t == ">":
+                            depth -= 1
                 nm = self.ident()
                 if self.accept(":"):
                     self.expect("register")

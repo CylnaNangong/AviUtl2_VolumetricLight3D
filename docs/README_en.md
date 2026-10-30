@@ -6,7 +6,7 @@
 **THE REAL 3D Volumetric Light (God Rays / Crepuscular Rays / Light Shafts) Custom Object for AviUtl ExEdit2**  
 **With Built-in 3D-Linked Foreground Light Blending & Optional D3D11 CS GPU Acceleration**
 
-`VolumetricLight3D.obj2 v3.14` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.15` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanese)](README_ja.md)** &nbsp;|&nbsp; **English** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
@@ -78,6 +78,11 @@
    - Engineered to stay strictly inside AviUtl2's default `TemporaryImageCacheSize` (16M pixels) and D3D11 `4096px` RTV limits — even on **8K UHD (`7680×4320`)** canvases or **50MP / 16K** source assets (peak live cache ~`3.9M–7.2M` pixels, released to `1×1` at end of frame).
    - Emits `Initializing...` / `Initialization complete` console notifications during first-frame loading of heavy scenes or sub-scenes so asset decoding waits are clearly communicated.
 
+6. **Cross-script 3D Light Field output (VL3D Light Field v1) — snow and fog that are genuinely lit by the beam** 🆕 `v3.15`
+   - Every frame the beam's 3D shape (source plane position/orientation, direction, cone spread, distance growth, length, falloff, representative colour, power) is packed into **189 bytes** and published to AviUtl2's **official inter-script shared table `global`** — official Lua API only, **no extra plugin, no `.mod2`, no `VL3DBridge.aux2`**.
+   - `Snow (3D)` and similar scripts can read it, so **flakes drifting into the shaft pick up the beam colour at their exact position and glow via additive blending**. Outside the beam, or without this script, behaviour is byte-for-byte unchanged.
+   - Spec: [`LIGHTFIELD_zh.md`](LIGHTFIELD_zh.md); Snow (3D) patch: [`../integrations/snow3d/`](../integrations/snow3d/README.zh.md) (documentation currently in Chinese).
+
 ---
 
 ## 2. System Requirements
@@ -97,8 +102,8 @@
 ### 🚀 Method 1: Drag & Drop `.au2pkg.zip` onto the Preview Window (Recommended — Ready to Use!)
 
 1. Download the latest package from **GitHub Releases** (**do NOT unzip it**):
-   - **`VolumetricLight3D-v3.14.au2pkg.zip`** (Full Recommended Edition: core script + `VL3DBridge.aux2` GPU plugin + language packs)
-   - *Or `VolumetricLight3D-v3.14-ScriptOnly.au2pkg.zip` (Script-Only Edition: `.obj2` + language packs without native `.aux2`)*
+   - **`VolumetricLight3D-v3.15.au2pkg.zip`** (Full Recommended Edition: core script + `VL3DBridge.aux2` GPU plugin + language packs)
+   - *Or `VolumetricLight3D-v3.15-ScriptOnly.au2pkg.zip` (Script-Only Edition: `.obj2` + language packs without native `.aux2`)*
 2. Open AviUtl ExEdit2 and **drag & drop the `.au2pkg.zip` file directly onto the AviUtl2 preview window**, then confirm the installation dialog.
 3. If you installed the Full Edition with `VL3DBridge.aux2`, **restart AviUtl2 once** to load the native plugin & language packs (you can manage or uninstall the package anytime from AviUtl2's **Package Information** menu).
 
@@ -109,7 +114,7 @@ Copy **`Script`**, **`Plugin`** (recommended), and **`Language`** into your AviU
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── VolumetricLight3D.obj2                  # [Required] Core custom object script (v3.14)
+│   └── VolumetricLight3D.obj2                  # [Required] Core custom object script (v3.15)
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [Recommended] Lock-free read & D3D11 CS GPU shadow plugin (v1.21)
 │   └── VL3DBridge.ini                     # [Optional] Probe whitelist & GPU config (next to .aux2)
@@ -272,7 +277,8 @@ We disclose the exact scope of version-sensitivity transparently below:
 
 ## 7. Future Roadmap
 
-- **3D Optical Coupling with Companion `Volumetric Fog (3D)` & `Snow (3D)` Scripts**: Sharing the 3D volumetric light field via `VL3DBridge` so **`Volumetric Light (3D)` beams can locally illuminate 3D Volumetric Fog and tint falling 3D Snowflakes passing through light shafts in real time**.
+- ~~3D optical coupling with the companion scripts~~ → **shipped in `v3.15` (VL3D Light Field v1)**: the beam publishes its 3D light field to the official `global` shared table, and `Snow (3D)` can be patched via [`../integrations/snow3d/`](../integrations/snow3d/README.zh.md) so flakes inside the shaft glow with the beam colour.
+  - **Next**: a receiver with the same spec for `Volumetric Fog (3D)`, and feeding 2D foreground silhouettes / 3D model shadow shafts into the light field (so occluded flakes stop glowing).
 - **Full Migration to Official Plugin SDK APIs**: Replacing remaining read-only memory probes immediately as KEN-kun exposes official SDK interfaces for Camera Control 3D lights, editor viewport matrices, and 3D mesh buffers.
 - **Broader 3D Asset & Multi-Light Support**: Native `.glb` / `.gltf` mesh rasterization inside `VL3DBridge`'s D3D11 ComputeShader pipeline, multi-light simultaneous emission, and colored translucent shadow shafts (e.g., stained-glass caustics).
 - **Unified ComputeShader Volumetric Integration**: Exploring `ID3D11Device3` compute-shader froxel/ray-marching integration to further reduce cache bandwidth on high-FPS `4K` / `8K` timelines.
@@ -283,7 +289,7 @@ We disclose the exact scope of version-sensitivity transparently below:
 ## 8. Reporting Bugs
 
 - **[GitHub Issues](../../issues) is the best channel!** Please include:
-  - the script version (turn on 「画面に状態表示 / status overlay」 to show it in the top-left HUD, e.g. `v3.14`) and your AviUtl ExEdit2 version;
+  - the script version (turn on 「画面に状態表示 / status overlay」 to show it in the top-left HUD, e.g. `v3.15`) and your AviUtl ExEdit2 version;
   - steps to reproduce, a screenshot of your timeline layer layout, and of the visual glitch (**keep the HUD visible** — fields like `遮蔽=…` / `光源=…` are key clues!);
   - if the HUD occlusion tag shows `,opq` (mask nearly fully opaque — check that the occluder image has an alpha channel) or `L4*` (that layer fell back to raw image load), mention it too ^_^
 - **Discord community**: you can also join the Japanese AviUtl2 community server **「AviUtl2の情報が知りたいだろって‼」** ([invite link](https://discord.gg/8qzmGY5NgQ)) and ping **南宫若馨Cylna** (`@nangongerregtcylna`, the author) directly!
@@ -325,7 +331,7 @@ python3 packaging/build_au2pkg.py
 - **KEN-kun (ＫＥＮくん)** ([Official Website](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)) — Creator of AviUtl ExEdit2 and the official AviUtl2 Plugin SDK.
 
 #### AI Collaboration Credits
-- **Arena.ai Agent** — Co-designed and implemented the `v2.90`–`v3.14` architecture, `VL3DBridge.aux2` lock-free bridge & D3D11 ComputeShader rasterizer, `AutoBlendLight` 3D integration, and extreme-resolution cache hardening.
+- **Arena.ai Agent** — Co-designed and implemented the `v2.90`–`v3.15` architecture, `VL3DBridge.aux2` lock-free bridge & D3D11 ComputeShader rasterizer, `AutoBlendLight` 3D integration, and extreme-resolution cache hardening.
 - **ChatGPT** — Code review & bug hunting (spotted the trilinear grid-vertex coordinate bug in the 3D fog noise shader!).
 - **Gemini** — Authored the initial HLSL volumetric fog prototype (making the companion *Volumetric Fog (3D)* script a happy byproduct of this project XD).
 - **Microsoft Copilot** — Patiently helped investigate cache-overflow issues and organize notes when high-resolution images first broke `OpenGlow`.

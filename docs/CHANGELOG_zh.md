@@ -1,5 +1,25 @@
 # 更新历史 — 体积光（3D） / VL3DBridge
 
+## v3.15（2026-10-30）· 跨脚本 3D 光学联动：VL3D Light Field v1（雪花被光束照亮）
+
+- **新增「光场发布」子系统（`src/VolumetricLight3D/modules/20_lightfield.lua`）**：每帧把当前光束的三维形状
+  （光源面中心/右向/下向、传播方向、锥顶与 `r0`、阈值矩形半宽高、光束长度、距离衰减、代表色、强度、填充率）
+  打包成 **189 字节** 的二进制，写入 **AviUtl2 官方脚本间共享表 `global`**：
+  `global["VL3D_LF_IDX"] = "VL3LF1|<scene_frame>|<layers>"`、`global["VL3D_LF:<layer>"] = <payload>`。
+  - 只用官方 Lua API：**无需额外脚本、无需 `.mod2`、无需 `VL3DBridge.aux2`**（`.mod2` 按官方 SDK 是原生 DLL 模块，
+    不是 Lua 共享库；`obj.data()` 是「脚本 → 自己的 DLL」通道，均不适用于脚本间通信）。
+  - 每帧仅 1 次字符串拼接（ffi 打包，纯 Lua IEEE754 兜底，二者逐字节一致）；索引会自动清理 >2 帧未更新的槽位。
+  - 宿主不提供 `global` 时以 `pcall` 静默禁用，绝不影响原有渲染。
+- **接收端落地：雪（3D）** —— 仓库新增 `integrations/snow3d/`（幂等补丁工具 + 可直接 `git apply` 的 diff + 5 个 Lua 源码块）：
+  雪（3D）新增「体積光連動」4 项参数（体積光に照らされる / 受光の強さ / 光色の混色 / 受光のにじみ）与
+  `ps_snow_shape_tint` 着色器，光束内的雪花以**加算合成**染上光束色发光；光束外与未安装体积光时行为完全不变。
+- **文档**：[`docs/LIGHTFIELD_zh.md`](LIGHTFIELD_zh.md)（协议、采样数学、图层顺序、限制）、
+  [`integrations/snow3d/README.zh.md`](../integrations/snow3d/README.zh.md)（补丁用法）。
+- **沙箱 97 → 107 PASS**：新增 `sandbox/checks/checks_12_lightfield.py`（载荷格式 / 几何自洽 / 索引维护 /
+  纯 Lua 打包器与 ffi 逐字节一致 / 接收端内外判定与衰减 / 破损与过期载荷健壮性 / 补丁幂等 / 雪（3D）端到端受光）；
+  并为沙箱宿主补齐官方 API 覆盖面：`global` 共享表与跨 Host 传递、`obj.setoption` 第三参数、
+  `obj.load("figure")`、HLSL 模板类型 `Texture2D<T>` 与行内 `[loop]` 提示。
+
 ## v3.14（2026-10-29）· 修复 v3.08 引入的非聚光源光束变暗回归 & 扩充 3D 沙箱
 
 - **根治非聚光源路径（2D 图层光源 / 平行光 / 点光源）自 `v3.08` 起的亮度下降回归**：

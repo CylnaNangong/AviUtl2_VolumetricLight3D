@@ -179,7 +179,9 @@ inline IV clamp(const IV& v, const IV& lo, const IV& hi) { return min(max(v, lo)
 inline float saturate(float v) { return clamp(v, 0.f, 1.f); }
 inline V saturate(const V& v) { return clamp(v, V(0.f), V(1.f)); }
 inline float abs(float v) { return std::fabs(v); }
-inline int32_t abs(int32_t v) { return v < 0 ? -v : v; }
+// 整数版は意図的に置かない: 生成コードはグローバル名前空間の abs(int) を
+// 見るため、hlsl::abs(int32_t) を併設すると整数呼び出しが曖昧になる
+// （第三者シェーダの `abs(j)` で実際に衝突した）。
 inline V abs(const V& v) { return V(abs(v.x), abs(v.y), abs(v.z), abs(v.w)); }
 
 // --- math -------------------------------------------------------------------
