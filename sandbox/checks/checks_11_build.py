@@ -53,7 +53,7 @@ def distributed_is_current():
     lua_count = sum(e.kind == "lua" for e in entries)
     shader_count = sum(e.kind == "pixelshader" for e in entries)
     require(lua_count >= 10, f"source is no longer meaningfully modular: {lua_count} Lua files")
-    require(shader_count == 14, f"expected 14 independent HLSL sources, got {shader_count}")
+    require(shader_count == 15, f"expected 15 independent HLSL sources, got {shader_count}")
     return {
         "lua_modules": lua_count,
         "hlsl_shaders": shader_count,

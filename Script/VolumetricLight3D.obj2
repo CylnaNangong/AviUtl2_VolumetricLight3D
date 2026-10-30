@@ -1,4 +1,4 @@
---information:VolumetricLight3D v3.14
+--information:VolumetricLight3D v3.16
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -30,7 +30,17 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
--- v3.14 更新点（2026-10-29・v3.08 以降の非スポット体積光における輝度低下リグレッションの根治）：
+-- v3.16 更新点（2026-10-30・VL3D Light Field v2＝遮蔽と多色の解消）：
+--   1. 【光場にスクリーン空間の遮蔽グリッドを追加】32×18 の粗グリッドへ 2D 前景シルエットと
+--      3D モデル深度（camocc）を投影し、受光側が「粒子が遮蔽物より奥か」を判定できるようにしました。
+--      前景の人物や 3D モデルの後ろにある雪粒は発光しなくなります（境界は約 1 グリッドの量子化）。
+--   2. 【光場に光源色グリッドを追加】12×12 の RGB グリッドで光源画像の色分布を伝え、
+--      ステンドグラス等の多色光源でも雪粒が「自分の前にある窓の色」で染まるようにしました。
+--   3. 【後方互換】v1 の 189 バイト部は不変。グリッドは後方へ追記し、flags の bit3/bit4 で判別します。
+--      受光側は v1 のままでも動作し、v1 受光側は追加ブロックを無視します。
+--   4. 投影は `ps_vl_lfgrid`（新規ピクセルシェーダ）＋ 32×18 の小さな描画先 1 枚のみ。
+--      読み戻しはフレームに 1 回、キャッシュはフレーム末に 1×1 へ解放されます。
+-- v3.15 更新点（2026-10-29v3.08 以降の非スポット体積光における輝度低下リグレッションの根治）：
 --   1. 【2D レイヤー光源・平行光・点光源（非スポット経路）で v3.08〜v3.13 に発生していた光束の減光不具合を修正】
 --      ・原因特定：`v3.08` でカメラ制御スポット光源のスライス段差対策として全経路へ一律導入された (a) 比例アルファ符号化
 --        （`wboit_ka = 0.24` による `out_a < min_a` 低輝度画素破棄ゲート＋WBOIT `Reveal` 減衰）、(b) 縮小 `poly_alpha`
@@ -1092,6 +1102,120 @@
             cov = c * sqrt(max(c, 0.0));
         }
         return float4(cov, cov, cov, cov);
+    }
+]]
+
+--[[pixelshader@ps_vl_lfgrid:
+    // VL3D Light Field v2 — 遮蔽・色つき光源用の低解像度グリッド生成
+    //   出力 (RGBA8, 既定 32x18):
+    //     R : 2D 前景シルエット被覆率（occ_strength 適用済み）
+    //     G : 3D オブジェクト（.obj/.vrm）被覆率
+    //     B : 3D 表面のカメラ深度（0..1 正規化, 1.0 = 無し）
+    //     A : 2D 遮蔽物平面までのカメラ深度（0..1 正規化, 1.0 = 無し）
+    Texture2D g_occ    : register(t0);
+    Texture2D g_camocc : register(t1);
+    SamplerState g_smp : register(s0);
+
+    cbuffer LFGridCB : register(b0)
+    {
+        float4 p0;   // x: grid_w, y: grid_h, z: scr_w, w: scr_h
+        float4 p1;   // xyz: カメラ位置, w: 焦点距離
+        float4 p2;   // xyz: カメラ前方, w: 2D 遮蔽物数
+        float4 p3;   // xyz: カメラ右, w: UV スパン X（アトラス内の 1 遮蔽物の占有幅）
+        float4 p4;   // xyz: カメラ下, w: UV スパン Y
+        float4 p5;   // x: 遮蔽の強さ, y: camocc_w, z: camocc_h, w: 深度の正規化上限
+        float4 p6;   // x: camocc 有効, y: 遮蔽の柔らかさ(0..1), z: 予備, w: 予備
+        float4 occ[32];
+    };
+
+    // camocc の 1 テクセル: a<0.5 は空。r,g,b の平均が「光源平面からの近さ」を表す。
+    void lf_camocc_one(int2 ip, int2 lim, float max_z,
+        out float hit_w, out float z_val)
+    {
+        hit_w = 0.0;
+        z_val = 1.0e9;
+        if (ip.x < 0 || ip.y < 0 || ip.x >= lim.x || ip.y >= lim.y)
+            return;
+        float4 c = g_camocc.Load(int3(ip, 0));
+        if (c.a < 0.5)
+            return;
+        float raw = (c.r + c.g + c.b) * (1.0 / 3.0);
+        float prox = (raw > 0.50) ? saturate((raw - 0.51) * (1.0 / 0.48))
+                                  : saturate((raw - 0.01) * (1.0 / 0.48));
+        hit_w = 1.0;
+        z_val = (1.0 - prox) * max_z;
+    }
+
+    float4 ps_vl_lfgrid(float4 pos : SV_Position) : SV_Target
+    {
+        float2 gdim = max(float2(p0.xy), float2(1.0, 1.0));
+        float2 uv_s = (floor(pos.xy) + 0.5) / gdim;
+
+        // ---- このセルを通る視線方向 ----
+        float2 off = (uv_s - 0.5) * float2(p0.z, p0.w);
+        float3 dir = p2.xyz * p1.w + p3.xyz * off.x + p4.xyz * off.y;
+        dir = normalize(dir + float3(0.0, 0.0, 1.0e-6));
+
+        // ---- 2D 前景マスク（beamatlas と同じ平面射影テスト） ----
+        float mask = 0.0;
+        float occ_d = 1.0e9;
+        int n_occ = clamp((int)(p2.w + 0.5), 0, 8);
+        [loop]
+        for (int oi = 0; oi < 8; ++oi)
+        {
+            if (oi >= n_occ) break;
+            int bi = oi * 4;
+            float4 oc0 = occ[bi];
+            float4 oc1 = occ[bi + 1];
+            float4 oc2 = occ[bi + 2];
+            float4 oc3 = occ[bi + 3];
+            float den = dot(dir, oc3.xyz);
+            if (abs(den) > 1.0e-4)
+            {
+                float t = dot(oc0.xyz - p1.xyz, oc3.xyz) / den;
+                if (t > 0.001)
+                {
+                    float3 hp = p1.xyz + dir * t - oc0.xyz;
+                    float2 uv_l = float2(0.5 + dot(hp, oc1.xyz) * oc0.w,
+                                         0.5 + dot(hp, oc2.xyz) * oc1.w);
+                    if (uv_l.x > 0.0 && uv_l.x < 1.0 && uv_l.y > 0.0 && uv_l.y < 1.0)
+                    {
+                        float2 uv_a = float2(oc2.w, oc3.w) + uv_l * float2(p3.w, p4.w);
+                        float oa_fg = smoothstep(0.35, 0.85, g_occ.SampleLevel(g_smp, uv_a, 0.0).b);
+                        if (oa_fg > mask) mask = oa_fg;
+                        if (oa_fg > 0.01 && t < occ_d) occ_d = t;
+                    }
+                }
+            }
+        }
+        mask = saturate(mask * p5.x);
+
+        // ---- 3D オブジェクトのカメラ深度 ----
+        float cov3 = 0.0;
+        float z3 = 1.0e9;
+        if (p6.x > 0.5)
+        {
+            int2 lim = max(int2(p5.y, p5.z), int2(1, 1));
+            float2 fpos = uv_s * float2(lim) - 0.5;
+            int2 i0 = int2(floor(fpos));
+            float2 fr = fpos - float2(i0);
+            float h00, z00, h10, z10, h01, z01, h11, z11;
+            lf_camocc_one(i0,                lim, p5.w, h00, z00);
+            lf_camocc_one(i0 + int2(1, 0),   lim, p5.w, h10, z10);
+            lf_camocc_one(i0 + int2(0, 1),   lim, p5.w, h01, z01);
+            lf_camocc_one(i0 + int2(1, 1),   lim, p5.w, h11, z11);
+            cov3 = (1.0 - fr.x) * (1.0 - fr.y) * h00 + fr.x * (1.0 - fr.y) * h10
+                 + (1.0 - fr.x) * fr.y * h01 + fr.x * fr.y * h11;
+            if (h00 > 0.5) z3 = min(z3, z00);
+            if (h10 > 0.5) z3 = min(z3, z10);
+            if (h01 > 0.5) z3 = min(z3, z01);
+            if (h11 > 0.5) z3 = min(z3, z11);
+        }
+
+        float inv_max = 1.0 / max(p5.w, 1.0);
+        float zb = (z3 < 1.0e8) ? saturate(z3 * inv_max) : 1.0;
+        float ab = (occ_d < 1.0e8) ? saturate(occ_d * inv_max) : 1.0;
+        return float4(mask, saturate(cov3), zb, ab);
     }
 ]]
 
@@ -2331,34 +2455,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.14] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.14] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.14] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.14] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.16] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.16] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.16] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.16] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.14 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.14 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.14 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.14 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.16 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.16 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.16 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.16 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.14 シェーダー失敗: ",
-        zh = "体积光（3D）v3.14 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.14 shader error: ",
-        de = "Volumenlicht (3D) v3.14 Shader-Fehler: ",
+        ja = "体積光（3D）v3.16 シェーダー失敗: ",
+        zh = "体积光（3D）v3.16 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.16 shader error: ",
+        de = "Volumenlicht (3D) v3.16 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.14：初期化中……",
-        zh = "体积光（3D）v3.14：初始化中……",
-        en = "Volumetric Light (3D) v3.14: Initializing...",
-        de = "Volumenlicht (3D) v3.14: Initialisierung läuft...",
+        ja = "体積光（3D）v3.16：初期化中……",
+        zh = "体积光（3D）v3.16：初始化中……",
+        en = "Volumetric Light (3D) v3.16: Initializing...",
+        de = "Volumenlicht (3D) v3.16: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.14：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.14：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.14: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.14: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.16：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.16：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.16: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.16: Initialisiert (%.2fs)",
     },
 }
 
@@ -2373,6 +2497,7 @@ local CACHE_KEYS = {
     "cache:vl3d/prep",
     "cache:vl3d/tmp",
     "cache:vl3d/mip",
+    "cache:vl3d/lfgrid",
     "cache:vl3d/occ_a",
     "cache:vl3d/occ_b",
     "cache:vl3d/shmap",
@@ -8968,6 +9093,9 @@ end
 local function vl_bf_render()
     -- 5) GPU マルチパス体積描画
     ------------------------------------------------------------
+    -- 光場（v2）用の光源色グリッド / 遮蔽グリッドは、mip と遮蔽キャッシュが
+    -- 生きているこのタイミングで作る（フレーム末の公開時には既に解放済みのため）。
+    pcall(vl_lf_prepare)
     VL_BF.TILES_X, VL_BF.ATLAS, VL_BF.TILE, VL_BF.PAD= 8, 2560, 320, 2.0
     VL_BF.k_gain_base= (P.intensity / 100.0) * 0.155 / VL_BF.L_char
     VL_BF.fog_amt= math.max(0.0, math.min(1.0, P.fog / 100.0))
@@ -9480,6 +9608,500 @@ local function vl_bf_render()
     end
 end
 
+---------------------------------------------------------------------
+-- 20. 光場の公開（VL3D Light Field v1）
+---------------------------------------------------------------------
+-- 同シリーズの 3D スクリプト（雪（3D）/ 体積霧（3D）など）が
+-- 「粒子が体積光束に照らされる」表現を作れるよう、このフレームの
+-- 3D 光束を **公式の共有テーブル `global`**（docs.aviutl2.jp/lua § 変数
+-- 「スクリプト間で共有されるテーブル変数」）へ公開する。
+--
+-- 設計方針:
+--   * 追加ファイル無し / 追加プラグイン無し / 追加パラメータ無し。
+--     公式 Lua API だけで完結するので VL3DBridge.aux2 無しでも動く。
+--     （`.mod2` は公式 SDK 上は「ネイティブ DLL モジュール」なので
+--       Lua の共有ライブラリ代わりには使えない。`obj.data()` は
+--       「スクリプト → DLL」用で、スクリプト間の共有には使えない。）
+--   * 転送量は 1 光束あたり 189 バイト。書き込みも毎フレーム 1 回だけ。
+--   * 受信側（雪（3D）など）は解析的な円錐／矩形の内判定だけで
+--     粒子 1 個あたり ~30 演算。GPU 読み戻しも追加シェーダも不要。
+--   * 破損・旧バージョン・別スクリプトの値は magic/version で弾く。
+--   * `global` が無いホストでも pcall で無害に無効化する。
+--
+-- フォーマット（リトルエンディアン／オフセットは 1 起点）:
+--   [1..5]   "VL3LF"
+--   [6]      u8  version
+--   [7]      u8  flags  (bit0=光源画像の色 / bit1=前景遮蔽あり / bit2=カメラ有効)
+--   [8..11]  u32 scene_frame
+--   [12..15] u32 scene_id
+--   [16..19] f32 time (obj.time)
+--   [20..21] u16 layer      (この光束を描いているレイヤー)
+--   [22..23] u16 src_layer  (光源レイヤー)
+--   [24..83] f32 cam[15]    (cx,cy,cz, fx,fy,fz, rx,ry,rz, dx,dy,dz,
+--                            focal, scr_w, scr_h)
+--   [84]     u8  kind       (0=平行 / 1=apex から放射 / 2=apex へ収束)
+--   [85]     u8  pad
+--   [86..189] f32 beam[26]  (W(3), axis(3), right(3), down(3), apex(3),
+--                            r0, Hx, Hy, L, kdec,
+--                            col_r, col_g, col_b, lum, power, coverage)
+--
+-- v2 拡張（遮蔽・多色光源対応／189 バイト以降に追記。v1 の並びは不変）:
+--   [190]    u8  colgrid_dim  光源色グリッドの一辺（0 = 無し, 既定 12）
+--   [191]    u8  occgrid_w    遮蔽グリッドの幅（0 = 無し, 既定 32）
+--   [192]    u8  occgrid_h    遮蔽グリッドの高さ（既定 18, 画面 16:9 相当）
+--   [193]    u8  pad
+--   [194..197] f32 occ_zmax   遮蔽グリッド深度の正規化上限（カメラ深度）
+--   [198..]  色グリッド     colgrid_dim^2 * RGB8（光源面 UV の 0..1 に正規化）
+--   ...      遮蔽グリッド   occgrid_w * occgrid_h * RGBA8
+--                            R=2D 前景シルエット被覆率(occ_strength 適用済)
+--                            G=3D オブジェクト被覆率 / B=3D 表面深度(255=無し)
+--                            A=2D 遮蔽平面深度(255=無し)   B/A は 0..255 を
+--                            occ_zmax でスケールしたカメラ深度
+--   flags bit3 = 色グリッドあり / bit4 = 遮蔽グリッドあり
+---------------------------------------------------------------------
+local VL_LF_MAGIC       = "VL3LF"
+local VL_LF_VERSION     = 2      -- ペイロード版（インデックスは VL3LF1 のまま）
+local VL_LF_IDX_VER     = 1
+local VL_LF_IDX_KEY     = "VL3D_LF_IDX"
+local VL_LF_SLOT_PREFIX = "VL3D_LF:"
+local VL_LF_STALE       = 2      -- 受信側が無視する古さ（フレーム）
+local VL_LF_COLOR_EVERY = 3      -- 光源色の読み戻し間隔（フレーム）
+local VL_LF_CGRID       = 12     -- 光源色グリッドの一辺
+local VL_LF_OGRID_W     = 32     -- 遮蔽グリッドの幅
+local VL_LF_OGRID_H     = 18     -- 遮蔽グリッドの高さ
+local VL_LF_OCC_ZMAX    = 4096.0 -- 遮蔽グリッド深度の正規化上限
+local VL_LF_GRID_EVERY  = 2      -- 遮蔽グリッドの再構築間隔（フレーム）
+
+-- f32 / u16 / u32 パッカー（ffi が無い環境では純 Lua の IEEE754 変換へ退避）
+local _LF_FFI_OK, _LF_FFI = pcall(require, "ffi")
+if type(_LF_FFI) ~= "table" then _LF_FFI_OK = false end
+if _G.VL3D_TEST_LF_FORCE_PURE_PACK then _LF_FFI_OK = false end
+local _LF_F32_BUF = _LF_FFI_OK and _LF_FFI.new("float[1]") or nil
+
+local function lf_pure_f32(v)
+    -- 純 Lua による IEEE754 binary32 エンコード（リトルエンディアン）
+    if v ~= v then return string.char(0, 0, 192, 127) end
+    local sign = 0
+    if v < 0 then sign = 128; v = -v end
+    if v == 0 then return string.char(0, 0, 0, sign) end
+    if v == math.huge then return string.char(0, 0, 128, sign + 127) end
+    local m, e = math.frexp(v)              -- v = m * 2^e, 0.5 <= m < 1
+    e = e - 1
+    local mant
+    if e < -126 then
+        -- 非正規化数（1e-38 未満）。実用上ほぼ 0 なので丸め優先。
+        mant = math.floor(v / 1.401298464324817e-45 + 0.5)
+        if mant >= 8388608 then
+            return string.char(0, 0, 128, sign + 127)
+        end
+        e = -127
+    else
+        mant = math.floor((m * 2.0 - 1.0) * 8388608.0 + 0.5)
+        if mant >= 8388608 then mant, e = 0, e + 1 end
+    end
+    local efield = (e >= -126) and (e + 127) or 0
+    if efield >= 255 then return string.char(0, 0, 128, sign + 127) end
+    local b1 = mant % 256
+    local b2 = math.floor(mant / 256) % 256
+    local b3 = math.floor(mant / 65536) % 128 + (efield % 8) * 128
+    local b4 = math.floor(efield / 8) + sign
+    return string.char(b1, b2, b3, b4)
+end
+
+local function lf_f32(v)
+    if type(v) ~= "number" or v ~= v then v = 0.0 end
+    if _LF_FFI_OK then
+        _LF_F32_BUF[0] = v
+        return _LF_FFI.string(_LF_F32_BUF, 4)
+    end
+    return lf_pure_f32(v)
+end
+
+local function lf_u32(u)
+    u = math.floor((type(u) == "number" and u) or 0) % 4294967296
+    return string.char(u % 256, math.floor(u / 256) % 256,
+                       math.floor(u / 65536) % 256, math.floor(u / 16777216) % 256)
+end
+
+local function lf_u16(u)
+    u = math.floor((type(u) == "number" and u) or 0) % 65536
+    return string.char(u % 256, math.floor(u / 256) % 256)
+end
+
+local function lf_read_u32(s, i)
+    local b1, b2, b3, b4 = s:byte(i, i + 3)
+    if not b4 then return nil end
+    return b1 + b2 * 256 + b3 * 65536 + b4 * 16777216
+end
+
+-- ---------------------------------------------------------------
+-- `global`（スクリプト間共有テーブル）への安全なアクセス
+-- ---------------------------------------------------------------
+local function lf_global()
+    if _G.VL3D_TEST_LF_NO_GLOBAL then return nil end
+    local ok, tbl = pcall(function() return global end)
+    if ok and type(tbl) == "table" then return tbl end
+    return nil
+end
+
+-- ---------------------------------------------------------------
+-- 光源の代表色
+--   「光の色」指定時 / カメラ光源追従時はその色を使い、それ以外は
+--   cache:vl3d/mip（＝しきい値適用後の光源色）を間引いて平均する。
+--   VRAM 読み戻しは VL_LF_COLOR_EVERY フレームに 1 回だけに抑え、
+--   結果はシークで破綻しないようシーンフレームでキャッシュする。
+-- ---------------------------------------------------------------
+local function lf_source_color(scene_frame)
+    if type(P.light_color) == "number" then
+        return math.floor(P.light_color / 0x10000) % 0x100 / 255.0,
+               math.floor(P.light_color / 0x100) % 0x100 / 255.0,
+               (P.light_color % 0x100) / 255.0, 1.0, 0, nil
+    end
+    if VL_BF.use_source == 0.0 then
+        return VL_BF.lc_r or 1.0, VL_BF.lc_g or 1.0, VL_BF.lc_b or 1.0, 1.0, 0, nil
+    end
+    local cache = _VL_PERSIST.lf_color
+    if type(cache) == "table" and type(cache.lum) == "number" then
+        if cache.frame == scene_frame then
+            return cache.r, cache.g, cache.b, cache.lum, 1, cache.grid
+        end
+        if type(scene_frame) == "number" and type(cache.frame) == "number"
+            and scene_frame >= cache.frame and (scene_frame - cache.frame) < VL_LF_COLOR_EVERY then
+            return cache.r, cache.g, cache.b, cache.lum, 1, cache.grid
+        end
+    end
+    local r, g, b, lum = VL_BF.lc_r or 1.0, VL_BF.lc_g or 1.0, VL_BF.lc_b or 1.0, 1.0
+    local grid = nil
+    local err = nil
+    if VL_BF.mip_ready and _LF_FFI_OK then
+        local okc
+        okc, err = pcall(function()
+            local ptr, mw, mh = obj.getpixeldata("cache:vl3d/mip", "rgba")
+            if ptr == nil or type(mw) ~= "number" or type(mh) ~= "number" then return end
+            if mw < 1 or mh < 1 then return end
+            local px = _LF_FFI.cast("uint8_t*", ptr)
+            local step_x = math.max(1, math.floor(mw / 24))
+            local step_y = math.max(1, math.floor(mh / 24))
+            local sr, sg, sb, sa, n = 0.0, 0.0, 0.0, 0.0, 0
+            for y = 0, mh - 1, step_y do
+                local row = y * mw
+                for x = 0, mw - 1, step_x do
+                    local idx = (row + x) * 4
+                    local rr, gg, bb, aa = px[idx], px[idx + 1], px[idx + 2], px[idx + 3]
+                    if aa > 4 then
+                        sr = sr + rr * aa
+                        sg = sg + gg * aa
+                        sb = sb + bb * aa
+                        sa = sa + aa
+                        n = n + 1
+                    end
+                end
+            end
+            if n < 1 or sa < 1.0 then return end
+            -- 乗算済み平均色 → ストレート色（ゲインは受信側の強さで調整）
+            -- 実測の平均色をそのまま公開（暗い光源は暗いまま＝物理的に正しい）。
+            -- 受信側は「受光の強さ」で持ち上げられる。
+            local ir, ig, ib = math.min(1.0, sr / sa), math.min(1.0, sg / sa), math.min(1.0, sb / sa)
+            r, g, b = ir, ig, ib
+            lum = math.max(0.0, math.max(ir, math.max(ig, ib)))
+
+            -- ---- 光源色グリッド（光束色を粒子ごとに変える = ステンドグラス対応）----
+            -- しきい値で切り詰めた発光矩形 (u0..u1, v0..v1) を G x G に分割し、
+            -- セル中央の色を mip から拾う。受信側は粒子を光源面へ射影した UV で
+            -- これをバイリニア参照するので、赤い窓の前の雪は赤く、青い窓の前の
+            -- 雪は青く光る。
+            local gu0, gu1 = VL_BF.u0_s or 0.0, VL_BF.u1_s or 1.0
+            local gv0, gv1 = VL_BF.v0_s or 0.0, VL_BF.v1_s or 1.0
+            if not (gu1 > gu0) then gu0, gu1 = 0.0, 1.0 end
+            if not (gv1 > gv0) then gv0, gv1 = 0.0, 1.0 end
+            local G = VL_LF_CGRID
+            local cells = {}
+            for gy = 0, G - 1 do
+                local vv = gv0 + (gy + 0.5) / G * (gv1 - gv0)
+                local my = math.floor(vv * mh)
+                if my < 0 then my = 0 elseif my >= mh then my = mh - 1 end
+                local row = my * mw
+                for gx = 0, G - 1 do
+                    local uu = gu0 + (gx + 0.5) / G * (gu1 - gu0)
+                    local mx = math.floor(uu * mw)
+                    if mx < 0 then mx = 0 elseif mx >= mw then mx = mw - 1 end
+                    local idx = (row + mx) * 4
+                    local rr, gg, bb, aa = px[idx], px[idx + 1], px[idx + 2], px[idx + 3]
+                    if aa <= 8 then
+                        -- 透明（＝そこからは光が出ていない）: 黒 = 受光なし
+                        cells[#cells + 1] = "\0\0\0"
+                    else
+                        cells[#cells + 1] = string.char(rr, gg, bb)
+                    end
+                end
+            end
+            grid = table.concat(cells)
+        end)
+        if not okc then err = tostring(err) end
+    end
+    _VL_PERSIST.lf_color = { frame = scene_frame, r = r, g = g, b = b, lum = lum,
+                             grid = grid, err = err }
+    return r, g, b, lum, 1, grid
+end
+
+-- ---------------------------------------------------------------
+-- 遮蔽グリッド（v2）
+--   このスクリプト自身が光束を描くときに使っている遮蔽情報を、そのまま
+--   画面 32x18 の粗いグリッドへ落とし込んで公開する。
+--     * 2D 前景シルエット … beamatlas と同じ「カメラ→セルの視線 × 遮蔽平面」
+--       交点で occ アトラスのマスクを引く（ps_vl_lfgrid）。
+--     * 3D オブジェクト（.obj / .vrm）… cache:vl3d/camocc の被覆率と
+--       カメラ深度をそのまま拾う。
+--   受信側は粒子の画面位置とカメラ深度だけで「影の中か」を判定できる。
+--   生成は GPU 1 パス（32x18 = 576 画素）+ 読み戻しなので、
+--   VL_LF_GRID_EVERY フレームに 1 回だけ更新して結果を再利用する。
+-- ---------------------------------------------------------------
+local function lf_build_occ_grid(scene_frame)
+    if not _LF_FFI_OK then return nil end
+    local cache = _VL_PERSIST.lf_ogrid
+    local n_occ = math.floor((VL_BF.n_occ_active or 0) + 0.5)
+    local camocc = (VL_BF.camocc_active or 0.0) > 0.5
+    if n_occ <= 0 and not camocc then
+        _VL_PERSIST.lf_ogrid = nil
+        return nil
+    end
+    if type(cache) == "table" and type(cache.blob) == "string"
+        and type(scene_frame) == "number" and type(cache.frame) == "number"
+        and scene_frame >= cache.frame and (scene_frame - cache.frame) < VL_LF_GRID_EVERY
+        and cache.n_occ == n_occ and cache.camocc == camocc then
+        return cache.blob
+    end
+    local blob = nil
+    pcall(function()
+        local grid_consts = {
+            VL_LF_OGRID_W, VL_LF_OGRID_H, VL_BF.scr_w or 1920.0, VL_BF.scr_h or 1080.0,
+            VL_BF.cam_x or 0.0, VL_BF.cam_y or 0.0, VL_BF.cam_z or 0.0, VL_BF.focal_d or 1024.0,
+            VL_BF.f_x or 0.0, VL_BF.f_y or 0.0, VL_BF.f_z or 1.0, n_occ,
+            VL_BF.r_x or 1.0, VL_BF.r_y or 0.0, VL_BF.r_z or 0.0, VL_BF.uv_span_x or 1.0,
+            VL_BF.d_x or 0.0, VL_BF.d_y or 1.0, VL_BF.d_z or 0.0, VL_BF.uv_span_y or 1.0,
+            VL_BF.occ_str_val or 1.0, VL_BF.camocc_w or 4.0, VL_BF.camocc_h or 4.0, VL_LF_OCC_ZMAX,
+            camocc and 1.0 or 0.0, 0.0, 0.0, 0.0,
+        }
+        local base_len = #grid_consts
+        for oi = 1, MAX_OCC * 16 do
+            grid_consts[base_len + oi] = VL_BF.occ_flat[oi] or 0.0
+        end
+        obj.clearbuffer("cache:vl3d/lfgrid", VL_LF_OGRID_W, VL_LF_OGRID_H)
+        obj.pixelshader("ps_vl_lfgrid", "cache:vl3d/lfgrid",
+            { VL_BF.occ_tex_name, VL_BF.camocc_tex_name }, grid_consts, "copy", "clip")
+        local ptr, gw, gh = obj.getpixeldata("cache:vl3d/lfgrid", "rgba")
+        if ptr == nil or type(gw) ~= "number" or type(gh) ~= "number" then return end
+        if gw < 1 or gh < 1 then return end
+        local need = gw * gh * 4
+        blob = _LF_FFI.string(_LF_FFI.cast("const char*", ptr), need)
+    end)
+    if type(blob) ~= "string" or #blob ~= VL_LF_OGRID_W * VL_LF_OGRID_H * 4 then
+        blob = nil
+    end
+    _VL_PERSIST.lf_ogrid = { frame = scene_frame, blob = blob, n_occ = n_occ, camocc = camocc }
+    return blob
+end
+
+-- ---------------------------------------------------------------
+-- このフレームの光束 1 本ぶんのペイロード
+-- ---------------------------------------------------------------
+local function lf_build_payload(scene_frame)
+    local kind = 0
+    if VL_BF.mode_kind == 1.0 then kind = 1
+    elseif VL_BF.mode_kind == 2.0 then kind = 2 end
+
+    -- 実際に光っている矩形（しきい値で切り詰めた範囲）→ 中心・半径
+    local u0, u1 = VL_BF.u0_s or 0.0, VL_BF.u1_s or 1.0
+    local v0, v1 = VL_BF.v0_s or 0.0, VL_BF.v1_s or 1.0
+    if not (u1 > u0) then u0, u1 = 0.0, 1.0 end
+    if not (v1 > v0) then v0, v1 = 0.0, 1.0 end
+    local Hx = math.max(1.0, VL_BF.Hx or 1.0)
+    local Hy = math.max(1.0, VL_BF.Hy or 1.0)
+    local cxl = ((u0 + u1) * 0.5 - 0.5) * 2.0 * Hx
+    local cyl = ((v0 + v1) * 0.5 - 0.5) * 2.0 * Hy
+    local hx = math.max(1.0, Hx * (u1 - u0) * 0.5)
+    local hy = math.max(1.0, Hy * (v1 - v0) * 0.5)
+
+    local wx = (VL_BF.wx or 0.0) + (VL_BF.Wrx or 1.0) * cxl + (VL_BF.Wdx or 0.0) * cyl
+    local wy = (VL_BF.wy or 0.0) + (VL_BF.Wry or 0.0) * cxl + (VL_BF.Wdy or 1.0) * cyl
+    local wz = (VL_BF.wz or 0.0) + (VL_BF.Wrz or 0.0) * cxl + (VL_BF.Wdz or 0.0) * cyl
+
+    local apex_x = VL_BF.sx_p or 0.0
+    local apex_y = VL_BF.sy_p or 0.0
+    local apex_z = VL_BF.sz_p or 0.0
+
+    -- 光の進行方向（単位ベクトル）
+    local ax, ay, az
+    if kind == 0 then
+        ax, ay, az = apex_x, apex_y, apex_z       -- 平行光: s が進行方向
+    else
+        local sgn = (kind == 1) and 1.0 or -1.0   -- 放射: apex→面 / 収束: 面→apex
+        ax, ay, az = (wx - apex_x) * sgn, (wy - apex_y) * sgn, (wz - apex_z) * sgn
+    end
+    local al = math.sqrt(ax * ax + ay * ay + az * az)
+    if al < 1e-6 then
+        ax, ay, az = -(VL_BF.Wnx or 0.0), -(VL_BF.Wny or 0.0), -(VL_BF.Wnz or 1.0)
+        al = math.sqrt(ax * ax + ay * ay + az * az)
+        if al < 1e-6 then ax, ay, az, al = 0.0, 0.0, 1.0, 1.0 end
+    end
+    ax, ay, az = ax / al, ay / al, az / al
+
+    -- apex と光源面の軸方向距離（円錐の相似スケール基準）
+    local r0 = 0.0
+    if kind == 1 then
+        r0 = (wx - apex_x) * ax + (wy - apex_y) * ay + (wz - apex_z) * az
+    elseif kind == 2 then
+        r0 = (apex_x - wx) * ax + (apex_y - wy) * ay + (apex_z - wz) * az
+    end
+    if r0 < 1.0 then r0 = 1.0 end
+
+    local L = math.max(1.0, VL_BF.L_tot or 1.0)
+    local kdec = math.max(0.0, VL_BF.k_dec or 0.0)
+    local col_r, col_g, col_b, lum, col_from_src, col_grid = lf_source_color(scene_frame)
+    local power = (P.intensity or 100.0) / 100.0
+    local coverage = math.max(0.0, math.min(1.0, VL_BF.base_ratio or 1.0))
+
+    local occ_grid = lf_build_occ_grid(scene_frame)
+
+    local flags = 0
+    if type(P.light_color) ~= "number" and VL_BF.use_source ~= 0.0 then flags = flags + 1 end
+    if VL_BF.any_occ_active then flags = flags + 2 end
+    if VL_BF.cam_mode and VL_BF.cam_mode > 0 then flags = flags + 4 end
+    if col_grid then flags = flags + 8 end
+    if occ_grid then flags = flags + 16 end
+
+    local t = {}
+    t[#t + 1] = VL_LF_MAGIC
+    t[#t + 1] = string.char(VL_LF_VERSION, flags)
+    t[#t + 1] = lf_u32(scene_frame or 0)
+    t[#t + 1] = lf_u32(obj.scene_id or 0)
+    t[#t + 1] = lf_f32(obj.time or 0.0)
+    t[#t + 1] = lf_u16(obj.layer or VL_BF.self_layer or 0)
+    t[#t + 1] = lf_u16(VL_BF.ln or 0)
+    -- camera
+    t[#t + 1] = lf_f32(VL_BF.cam_x or 0.0); t[#t + 1] = lf_f32(VL_BF.cam_y or 0.0); t[#t + 1] = lf_f32(VL_BF.cam_z or 0.0)
+    t[#t + 1] = lf_f32(VL_BF.f_x or 0.0);   t[#t + 1] = lf_f32(VL_BF.f_y or 0.0);   t[#t + 1] = lf_f32(VL_BF.f_z or 1.0)
+    t[#t + 1] = lf_f32(VL_BF.r_x or 1.0);   t[#t + 1] = lf_f32(VL_BF.r_y or 0.0);   t[#t + 1] = lf_f32(VL_BF.r_z or 0.0)
+    t[#t + 1] = lf_f32(VL_BF.d_x or 0.0);   t[#t + 1] = lf_f32(VL_BF.d_y or 1.0);   t[#t + 1] = lf_f32(VL_BF.d_z or 0.0)
+    t[#t + 1] = lf_f32(VL_BF.focal_d or 1024.0)
+    t[#t + 1] = lf_f32(VL_BF.scr_w or 1920.0); t[#t + 1] = lf_f32(VL_BF.scr_h or 1080.0)
+    -- beam
+    t[#t + 1] = string.char(kind, 0)
+    t[#t + 1] = lf_f32(wx); t[#t + 1] = lf_f32(wy); t[#t + 1] = lf_f32(wz)
+    t[#t + 1] = lf_f32(ax); t[#t + 1] = lf_f32(ay); t[#t + 1] = lf_f32(az)
+    -- right(Wr) → down(Wd) の順（26 値の並びを崩さないこと）
+    t[#t + 1] = lf_f32(VL_BF.Wrx or 1.0); t[#t + 1] = lf_f32(VL_BF.Wry or 0.0); t[#t + 1] = lf_f32(VL_BF.Wrz or 0.0)
+    t[#t + 1] = lf_f32(VL_BF.Wdx or 0.0); t[#t + 1] = lf_f32(VL_BF.Wdy or 1.0); t[#t + 1] = lf_f32(VL_BF.Wdz or 0.0)
+    t[#t + 1] = lf_f32(apex_x); t[#t + 1] = lf_f32(apex_y); t[#t + 1] = lf_f32(apex_z)
+    t[#t + 1] = lf_f32(r0)
+    t[#t + 1] = lf_f32(hx); t[#t + 1] = lf_f32(hy)
+    t[#t + 1] = lf_f32(L)
+    t[#t + 1] = lf_f32(kdec)
+    t[#t + 1] = lf_f32(col_r); t[#t + 1] = lf_f32(col_g); t[#t + 1] = lf_f32(col_b)
+    t[#t + 1] = lf_f32(lum)
+    t[#t + 1] = lf_f32(power)
+    t[#t + 1] = lf_f32(coverage)
+    -- ---- v2: 遮蔽グリッド / 光源色グリッド ----
+    local cdim = col_grid and VL_LF_CGRID or 0
+    local ow, oh = 0, 0
+    if occ_grid then ow, oh = VL_LF_OGRID_W, VL_LF_OGRID_H end
+    t[#t + 1] = string.char(cdim % 256, ow % 256, oh % 256, 0)
+    t[#t + 1] = lf_f32(VL_LF_OCC_ZMAX)
+    if cdim > 0 then t[#t + 1] = col_grid end
+    if ow > 0 then t[#t + 1] = occ_grid end
+    return table.concat(t)
+end
+
+-- ---------------------------------------------------------------
+-- 共有インデックス（どのレイヤーが今フレーム有効な光束を持つか）
+--   "VL3LF1|<scene_frame>|<layer,layer,...>"
+-- ---------------------------------------------------------------
+local function lf_update_index(g, scene_frame, layer)
+    local cur
+    pcall(function() cur = g[VL_LF_IDX_KEY] end)
+    local layers, seen = {}, {}
+    if type(cur) == "string" then
+        local csv = cur:match("^VL3LF%d+|%d+|(.*)$")
+        if csv then
+            for tok in csv:gmatch("%d+") do
+                local n = tonumber(tok)
+                if n and n >= 1 and n <= 100 and not seen[n] then
+                    seen[n] = true
+                    local keep = (n == layer)
+                    if not keep then
+                        local payload
+                        pcall(function() payload = g[VL_LF_SLOT_PREFIX .. n] end)
+                        if type(payload) == "string" and payload:sub(1, 5) == VL_LF_MAGIC then
+                            local f = lf_read_u32(payload, 8)
+                            if f and type(scene_frame) == "number" and scene_frame - f <= VL_LF_STALE then
+                                keep = true
+                            end
+                        end
+                    end
+                    if keep then layers[#layers + 1] = n end
+                end
+            end
+        end
+    end
+    if not seen[layer] then layers[#layers + 1] = layer end
+    table.sort(layers)
+    pcall(function()
+        g[VL_LF_IDX_KEY] = string.format("VL3LF%d|%d|%s", VL_LF_IDX_VER,
+            math.floor(scene_frame or 0), table.concat(layers, ","))
+    end)
+    return layers
+end
+
+-- ---------------------------------------------------------------
+-- フレーム途中（描画直前）の準備
+--   光源色グリッドと遮蔽グリッドは、光束の描画に使うキャッシュ
+--   （cache:vl3d/mip, occ アトラス, camocc）が生きている間にしか作れない。
+--   そこで vl_bf_render() の冒頭で 1 回だけ呼び、結果を
+--   _VL_PERSIST に貯めておく（フレーム末の公開時はそれを読むだけ）。
+-- ---------------------------------------------------------------
+function vl_lf_prepare()
+    if _G.VL3D_TEST_LF_DISABLE then return false end
+    pcall(function()
+        lf_source_color(vl_scene_frame())
+    end)
+    pcall(function()
+        lf_build_occ_grid(vl_scene_frame())
+    end)
+    return true
+end
+
+-- ---------------------------------------------------------------
+-- 公開 / 撤回
+-- ---------------------------------------------------------------
+local function vl_lf_withdraw()
+    local g = lf_global()
+    if not g then return false end
+    local ok = pcall(function()
+        local layer = math.floor(obj.layer or VL_BF.self_layer or 0)
+        if layer >= 1 then
+            g[VL_LF_SLOT_PREFIX .. layer] = ""
+            lf_update_index(g, vl_scene_frame(), layer)
+        end
+    end)
+    return ok
+end
+
+local function vl_lf_publish()
+    if _G.VL3D_TEST_LF_DISABLE then return false end
+    local g = lf_global()
+    if not g then return false end
+    local layer = math.floor(obj.layer or VL_BF.self_layer or 0)
+    if layer < 1 then return false end
+    local ok, payload = pcall(function()
+        local scene_frame = vl_scene_frame()
+        local s = lf_build_payload(scene_frame)
+        g[VL_LF_SLOT_PREFIX .. layer] = s
+        lf_update_index(g, scene_frame, layer)
+        _VL_PERSIST.lf_last = { frame = scene_frame, bytes = #s, layer = layer }
+        return s
+    end)
+    return ok and type(payload) == "string"
+end
 local function beam_frame()
     vl_bf_reset()
     vl_bf_prepare()
@@ -9523,7 +10145,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.14 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.15 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -9549,10 +10171,17 @@ local function vl_run_frame()
     _VL_PERSIST.in_beam_layers[self_key] = nil
     _VL_PERSIST.in_beam_stage = 0
     _VL_PERSIST.in_beam = false
+    -- 21. 光場の公開（雪（3D）/ 体積霧（3D）などへの受光連動）
+    --     描画に成功したフレームだけ、この光束を `global` へ書き出す。
+    if ok and not VL_BF._abort and VL_BF.mip_ready then
+        pcall(vl_lf_publish)
+    elseif ok then
+        pcall(vl_lf_withdraw)
+    end
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.14 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.15 error: " .. tostring(err)) end)
     end
     return ok
 end

@@ -1,0 +1,13 @@
+# Python bytecode / caches (sandbox + build scripts)
+__pycache__/
+*.py[cod]
+
+# Local build & sandbox output (reproducible)
+build/
+sandbox/out/
+
+# Patcher backups produced by integrations/snow3d/apply_lightfield.py
+*.obj2.bak
+
+# Packaging output
+dist/
