@@ -731,3 +731,42 @@ def snow3d_occlusion_and_tint():
         require(n_groups >= 2, f"all flakes got a single colour (groups={n_groups})")
         return {"lit_free": lit_free, "lit_occluded": lit_occ,
                 "mask_cells": int((d["occ_grid"][..., 0] > 0).sum()), "w": w, "h": h}
+
+
+@check("lightfield: 3D-object shadows are published and respected", tags=["lightfield", "occlusion"])
+def occlusion_grid_3d():
+    cube = assets.write_test_obj(HERE.parent / "out" / "lightfield" / "cube.obj", 150.0,
+                                 scene_units=True)
+    host = _publish({"occ_mode": 3.0, "intensity": 180.0, "slices": 24.0},
+                    layers=[Layer(index=1, image=assets.stained_window(320, 180), kind="image"),
+                            Layer(index=5, kind="obj", model_path=str(cube),
+                                  effects={"モデルファイル": {"モデルファイル": str(cube)}},
+                                  z=-300.0)],
+                    w=320, h=180, layer_index=6)
+    d = _decode(_payload(host, layer=6))
+    require(d["occ_grid"] is not None, "a 3D-only occluder published no occlusion grid")
+    require(d["flags"] & 16, "flags bit4 (occlusion grid) not set")
+    depth = d["occ_grid"][..., 2]
+    require((depth < 255).any(), "no 3D surface depth was written")
+    require(d["occ_zmax"] > 100.0, f"depth range looks wrong: {d['occ_zmax']}")
+
+    # 受信側: 表面より奥の粒子は落ち、手前の粒子は残る
+    beam = _synthetic_field()
+    grid = np.zeros((OGRID_H, OGRID_W, 4), np.uint8)
+    grid[:, :] = (0, 0, 255, 255)                 # 3D 無し / 2D 無し
+    grid[9, 16] = (0, 255, 51, 255)               # 画面中心: 3D 表面深度 51/255*4096
+    rh = Host(script(), [], HostConfig(screen_w=320, screen_h=180))
+    _receiver_lua(rh)
+    require(_feed(rh, _with_v2(beam, occ_grid=grid)) == 1, "payload rejected")
+    _, _, _, hidden = rh.lua.eval("SNOW_LF.sample")(0.0, 0.0, 500.0, 5.0)
+    require(hidden < 0.02, f"flakes behind the 3D surface still glow: {hidden}")
+
+    grid2 = grid.copy()
+    grid2[9, 16] = (0, 255, 200, 255)             # 表面が粒子より奥
+    rh2 = Host(script(), [], HostConfig(screen_w=320, screen_h=180))
+    _receiver_lua(rh2)
+    require(_feed(rh2, _with_v2(beam, occ_grid=grid2)) == 1, "payload rejected")
+    _, _, _, front = rh2.lua.eval("SNOW_LF.sample")(0.0, 0.0, 500.0, 5.0)
+    require(front > 0.1, f"flakes in front of the surface lost their light: {front}")
+    return {"depth_min": int(depth.min()), "hidden": round(float(hidden), 4),
+            "front": round(float(front), 3)}

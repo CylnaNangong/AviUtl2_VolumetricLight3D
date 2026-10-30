@@ -167,11 +167,8 @@ local function lf_source_color(scene_frame)
         local okc
         okc, err = pcall(function()
             local ptr, mw, mh = obj.getpixeldata("cache:vl3d/mip", "rgba")
-            if ptr == nil or type(mw) ~= "number" or type(mh) ~= "number" then
-                _G.__VL_LF_EARLY = string.format("ptr=%s w=%s h=%s", tostring(ptr), tostring(mw), tostring(mh))
-                return
-            end
-            if mw < 1 or mh < 1 then _G.__VL_LF_EARLY = "size" return end
+            if ptr == nil or type(mw) ~= "number" or type(mh) ~= "number" then return end
+            if mw < 1 or mh < 1 then return end
             local px = _LF_FFI.cast("uint8_t*", ptr)
             local step_x = math.max(1, math.floor(mw / 24))
             local step_y = math.max(1, math.floor(mh / 24))
@@ -190,10 +187,7 @@ local function lf_source_color(scene_frame)
                     end
                 end
             end
-            if n < 1 or sa < 1.0 then
-                _G.__VL_LF_EARLY = string.format("n=%d sa=%.1f mw=%d mh=%d a0=%d", n, sa, mw, mh, px[3])
-                return
-            end
+            if n < 1 or sa < 1.0 then return end
             -- 乗算済み平均色 → ストレート色（ゲインは受信側の強さで調整）
             -- 実測の平均色をそのまま公開（暗い光源は暗いまま＝物理的に正しい）。
             -- 受信側は「受光の強さ」で持ち上げられる。
@@ -269,7 +263,7 @@ local function lf_build_occ_grid(scene_frame)
     end
     local blob = nil
     pcall(function()
-        local c = {
+        local grid_consts = {
             VL_LF_OGRID_W, VL_LF_OGRID_H, VL_BF.scr_w or 1920.0, VL_BF.scr_h or 1080.0,
             VL_BF.cam_x or 0.0, VL_BF.cam_y or 0.0, VL_BF.cam_z or 0.0, VL_BF.focal_d or 1024.0,
             VL_BF.f_x or 0.0, VL_BF.f_y or 0.0, VL_BF.f_z or 1.0, n_occ,
@@ -278,10 +272,13 @@ local function lf_build_occ_grid(scene_frame)
             VL_BF.occ_str_val or 1.0, VL_BF.camocc_w or 4.0, VL_BF.camocc_h or 4.0, VL_LF_OCC_ZMAX,
             camocc and 1.0 or 0.0, 0.0, 0.0, 0.0,
         }
-        for i = 1, 128 do c[#c + 1] = VL_BF.occ_flat[i] or 0.0 end
+        local base_len = #grid_consts
+        for oi = 1, MAX_OCC * 16 do
+            grid_consts[base_len + oi] = VL_BF.occ_flat[oi] or 0.0
+        end
         obj.clearbuffer("cache:vl3d/lfgrid", VL_LF_OGRID_W, VL_LF_OGRID_H)
         obj.pixelshader("ps_vl_lfgrid", "cache:vl3d/lfgrid",
-            { VL_BF.occ_tex_name, VL_BF.camocc_tex_name }, c, "copy", "clip")
+            { VL_BF.occ_tex_name, VL_BF.camocc_tex_name }, grid_consts, "copy", "clip")
         local ptr, gw, gh = obj.getpixeldata("cache:vl3d/lfgrid", "rgba")
         if ptr == nil or type(gw) ~= "number" or type(gh) ~= "number" then return end
         if gw < 1 or gh < 1 then return end
@@ -491,17 +488,6 @@ local function vl_lf_publish()
         g[VL_LF_SLOT_PREFIX .. layer] = s
         lf_update_index(g, scene_frame, layer)
         _VL_PERSIST.lf_last = { frame = scene_frame, bytes = #s, layer = layer }
-        if _G.VL3D_TEST_LF_DEBUG then
-            local c = _VL_PERSIST.lf_color
-            local o = _VL_PERSIST.lf_ogrid
-            _G.__VL_LF_DBG = {
-                bytes = #s, mip_ready = VL_BF.mip_ready and 1 or 0,
-                grid_bytes = (type(c) == "table" and type(c.grid) == "string") and #c.grid or -1,
-                grid_err = (type(c) == "table" and c.err) or "",
-                ogrid_bytes = (type(o) == "table" and type(o.blob) == "string") and #o.blob or -1,
-                n_occ = VL_BF.n_occ_active or 0, camocc = VL_BF.camocc_active or 0,
-            }
-        end
         return s
     end)
     return ok and type(payload) == "string"

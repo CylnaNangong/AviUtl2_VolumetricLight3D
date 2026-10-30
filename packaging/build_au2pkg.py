@@ -10,7 +10,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-VERSION = "v3.15"
+VERSION = "v3.16"
 
 
 def to_crlf(data: bytes) -> bytes:

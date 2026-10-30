@@ -9,6 +9,7 @@ local CACHE_KEYS = {
     "cache:vl3d/prep",
     "cache:vl3d/tmp",
     "cache:vl3d/mip",
+    "cache:vl3d/lfgrid",
     "cache:vl3d/occ_a",
     "cache:vl3d/occ_b",
     "cache:vl3d/shmap",

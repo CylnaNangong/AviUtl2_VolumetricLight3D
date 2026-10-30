@@ -10,7 +10,7 @@ Layer 3  体積光（3D）   ← 发布光场
 Layer 4  雪（3D）       ← 读取光场，粒子受光
 ```
 
-预览图（沙箱近似投影）：[`docs/assets/lightfield_snow_compare.png`](../../docs/assets/lightfield_snow_compare.png) ——
+预览图（沙箱近似投影）：[`docs/assets/lightfield_snow_compare.jpg`](../../docs/assets/lightfield_snow_compare.jpg) ——
 左为关闭、右为开启「被体积光照亮」。
 
 ---
@@ -52,7 +52,7 @@ git apply /path/to/integrations/snow3d/snow3d_lightfield.patch
 | 着色器 | 新增 `ps_snow_shape_tint`：把（已模糊的）图形纹理乘上光束色，保留 α |
 | 接收库 | `receiver.lua`：解析 `global` 光场 + 解析式圆/矩形体外受光采样 |
 | 粒子循环 | 每颗粒子算一次受光色与受光量（世界坐标） |
-| 绘制 | 主通道后追加「加算发光通道」：只画受光粒子，按受光量分 6 档批次 |
+| 绘制 | 主通道后追加「加算发光通道」：只画受光粒子；受光色量化成最多 **4 个颜色组**，每组重新染一次图形纹理、按受光量分 3 档批次（最多 4 色 × 3 档绘制） |
 
 新增参数：
 
@@ -69,8 +69,8 @@ git apply /path/to/integrations/snow3d/snow3d_lightfield.patch
 
 ## 3. 性能
 
-- 每帧一次解析（≤8 条光束，约 200 次浮点运算 + 少量 `string.byte`）。
-- 每颗粒子一次采样：约 30 次浮点运算 × 光束数。
+- 每帧一次解析（≤8 条光束，约 200 次浮点运算 + 少量 `string.byte`，网格按需惰性解码）。
+- 每颗粒子一次采样：约 40 次浮点运算 × 光束数（含颜色网格双线性 + 遮挡格子查询）。
 - 额外 GPU 开销：每帧 1 个 128×128 的像素着色器 pass + 受光粒子的一次加算绘制（按 6 档合批）。
 - 不新增缓冲（临时用 `cache:snow118/lf_src`，用完立即释放为 1×1）。
 
@@ -80,9 +80,9 @@ git apply /path/to/integrations/snow3d/snow3d_lightfield.patch
 
 ## 4. 已知限制
 
-1. 体积光的 2D/3D 前景遮挡不参与光场：被前景挡住的雪仍会发亮（v1 限制，见
-   [`docs/LIGHTFIELD_zh.md` §4](../../docs/LIGHTFIELD_zh.md)）。
-2. 彩色光源（彩绘玻璃等）在雪上会平均成单一色相。
+1. 遮挡网格是 32×18 的粗网格（与体积光自身渲染同一份遮挡信息）：被前景人物 / 3D 模型挡住的雪粒
+   **不再发亮**，但边界有约 1 格（画面 1/32）的量化；细镂空（发丝缝隙等）会被合并。
+2. 光源颜色是 12×12 网格：彩色玻璃的细花纹会被平滑，雪粒上最多呈现 4 种主色（按颜色聚类）。
 3. 加算通道使用 `obj.setoption("blend","add","force")`，绘制结束后会恢复图层原本的合成模式。
 4. 雪（3D）放在体积光**上方**时读到的是上一帧光场（播放时不可见，跳帧时可能差 1 帧）。
 
