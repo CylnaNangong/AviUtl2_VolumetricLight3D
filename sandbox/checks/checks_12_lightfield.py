@@ -37,7 +37,10 @@ REPO = HERE.parent.parent
 RECEIVER_LUA = REPO / "integrations" / "snow3d" / "lua" / "receiver.lua"
 PATCHER = REPO / "integrations" / "snow3d" / "apply_lightfield.py"
 
-PAYLOAD_LEN = 189
+PAYLOAD_V1_LEN = 189          # 光束形状のみ
+PAYLOAD_V2_LEN = 189 + 8      # v2 ヘッダ（グリッド無し）
+CGRID = 12                    # 光源色グリッドの一辺
+OGRID_W, OGRID_H = 32, 18     # 遮蔽グリッド
 BEAM_FLOATS = 26
 
 
@@ -78,6 +81,25 @@ def _decode(b: bytes) -> Dict:
            "scene": scene, "time": time_, "layer": layer, "src_layer": src_layer,
            "cam": cam, "kind": kind}
     out.update(dict(zip(names, vals)))
+    # ---- v2 拡張 ----
+    out["col_dim"] = b[189] if len(b) > 189 else 0
+    out["occ_w"] = b[190] if len(b) > 190 else 0
+    out["occ_h"] = b[191] if len(b) > 191 else 0
+    out["occ_zmax"] = struct.unpack_from("<f", b, 193)[0] if len(b) >= 197 else 0.0
+    off = 197  # グリッド開始（0 起点）
+    out["col_grid"] = None
+    out["occ_grid"] = None
+    if out["col_dim"]:
+        n = out["col_dim"] ** 2 * 3
+        if len(b) >= off + n:
+            out["col_grid"] = np.frombuffer(b[off:off + n], np.uint8).reshape(
+                out["col_dim"], out["col_dim"], 3)
+        off += n
+    if out["occ_w"] and out["occ_h"]:
+        n = out["occ_w"] * out["occ_h"] * 4
+        if len(b) >= off + n:
+            out["occ_grid"] = np.frombuffer(b[off:off + n], np.uint8).reshape(
+                out["occ_h"], out["occ_w"], 4)
     return out
 
 
@@ -98,6 +120,68 @@ def _snow3d_script() -> Optional[Path]:
     return None
 
 
+
+def _two_tone_source(w: int = 320, h: int = 180) -> np.ndarray:
+    """左半分=オレンジ, 右半分=青の光源（多色光源の最小再現）。"""
+    img = np.zeros((h, w, 4), np.uint8)
+    img[..., 3] = 255
+    img[:, : w // 2, 0] = 255
+    img[:, : w // 2, 1] = 110
+    img[:, : w // 2, 2] = 20
+    img[:, w // 2:, 0] = 20
+    img[:, w // 2:, 1] = 90
+    img[:, w // 2:, 2] = 255
+    return img
+
+
+def _asset(name: str) -> np.ndarray:
+    """sandbox/assets/lightfield/ のテスト素材を読み込み（プリマルチプライ済み）。"""
+    from PIL import Image
+
+    path = HERE.parent / "assets" / "lightfield" / name
+    if not path.is_file():
+        skip(f"テスト素材がありません: {path}")
+    im = Image.open(path).convert("RGBA")
+    a = np.asarray(im).astype(np.float32) / 255.0
+    if name.endswith(".jpg"):
+        a[..., :3] *= a[..., 3:4]      # JPEG 素材は不透明なので変化しない
+    return (a * 255.0 + 0.5).astype(np.uint8)
+
+
+def _with_v2(beam: bytes, col_grid: Optional[np.ndarray] = None,
+             occ_grid: Optional[np.ndarray] = None, zmax: float = 4096.0) -> bytes:
+    """v1 ペイロードに v2 ブロック（色グリッド／遮蔽グリッド）を追記する。"""
+    b = bytearray(beam)
+    b[5] = 2
+    flags = b[6]
+    cd = 0 if col_grid is None else col_grid.shape[0]
+    ow = 0 if occ_grid is None else occ_grid.shape[1]
+    oh = 0 if occ_grid is None else occ_grid.shape[0]
+    if col_grid is not None:
+        flags |= 8
+    if occ_grid is not None:
+        flags |= 16
+    b[6] = flags
+    b += bytes([cd, ow, oh, 0])
+    b += struct.pack("<f", zmax)
+    if col_grid is not None:
+        b += col_grid.astype(np.uint8).tobytes()
+    if occ_grid is not None:
+        b += occ_grid.astype(np.uint8).tobytes()
+    return bytes(b)
+
+
+def _feed(host: Host, payload: bytes, layer: int = 4, frame: int = 0) -> int:
+    host.lua.globals()["__payload"] = payload.hex()
+    host.lua.execute(
+        'global["VL3D_LF:%d"] = (__payload:gsub("%%x%%x", function(h) '
+        'return string.char(tonumber(h, 16)) end))' % layer
+        + 'global["VL3D_LF_IDX"] = "VL3LF1|%d|%d"' % (frame, layer)
+    )
+    host.lua.execute("__n = SNOW_LF.begin(obj, %d)" % frame)
+    return int(host.lua.globals()["__n"])
+
+
 # ---------------------------------------------------------------------------
 # 1. 公開側
 # ---------------------------------------------------------------------------
@@ -113,10 +197,19 @@ def publishes_field():
 
     b = _payload(host)
     require(b is not None, "layer 4 published no payload")
-    require(len(b) == PAYLOAD_LEN, f"payload is {len(b)} bytes (expected {PAYLOAD_LEN})")
+    require(len(b) in (PAYLOAD_V2_LEN,
+                       PAYLOAD_V2_LEN + CGRID * CGRID * 3,
+                       PAYLOAD_V2_LEN + OGRID_W * OGRID_H * 4,
+                       PAYLOAD_V2_LEN + CGRID * CGRID * 3 + OGRID_W * OGRID_H * 4),
+            f"payload is {len(b)} bytes (not a v2 layout)")
     d = _decode(b)
     require(d["magic"] == b"VL3LF", f"bad magic {d['magic']!r}")
-    require(d["version"] == 1, f"bad version {d['version']}")
+    require(d["version"] == 2, f"bad version {d['version']}")
+    require(d["col_dim"] == CGRID, f"colour grid dim {d['col_dim']}")
+    require(d["col_grid"] is not None, "colour grid declared but missing")
+    require(d["flags"] & 8, "flags bit3 (colour grid) not set")
+    require(d["occ_w"] in (0, OGRID_W) and d["occ_h"] in (0, OGRID_H),
+            f"occlusion grid dims {d['occ_w']}x{d['occ_h']}")
     require(d["layer"] == 4 and d["src_layer"] == 1,
             f"layer/src mismatch: {d['layer']}/{d['src_layer']}")
     require(0 <= d["frame"] <= 10 ** 6, f"scene frame out of range: {d['frame']}")
@@ -472,3 +565,169 @@ def integration_api_surface():
             "tint shader neither samples nor loads its source texture")
     require("SV_Position" in hlsl and "SV_Target" in hlsl, "tint shader lacks stage semantics")
     return stats
+
+
+# ---------------------------------------------------------------------------
+# 4. v2: 多色光源（光源色グリッド）
+# ---------------------------------------------------------------------------
+@check("lightfield: colour grid reproduces a multi-coloured source", tags=["lightfield"])
+def colour_grid_multicolour():
+    host = _publish({"spread": 0.0, "intensity": 220.0},
+                    layers=[Layer(index=1, image=_two_tone_source(), kind="image")],
+                    w=320, h=180)
+    b = _payload(host)
+    d = _decode(b)
+    require(d["col_dim"] == CGRID, f"colour grid dim {d['col_dim']}")
+    cg = d["col_grid"].astype(float) / 255.0
+    left = cg[:, : CGRID // 2].reshape(-1, 3).mean(axis=0)
+    right = cg[:, CGRID // 2:].reshape(-1, 3).mean(axis=0)
+    require(left[0] > 0.55 and left[2] < 0.35, f"left half should be orange: {left}")
+    require(right[2] > 0.55 and right[0] < 0.35, f"right half should be blue: {right}")
+
+    # 受信側: 光源面の左右で粒子の色が変わる
+    beam = _synthetic_field()
+    grid = np.zeros((CGRID, CGRID, 3), np.uint8)
+    grid[:, : CGRID // 2] = (255, 110, 20)
+    grid[:, CGRID // 2:] = (20, 90, 255)
+    payload = _with_v2(beam, col_grid=grid)
+    rh = Host(script(), [], HostConfig(screen_w=320, screen_h=180))
+    _receiver_lua(rh)
+    require(_feed(rh, payload) == 1, "receiver rejected the v2 payload")
+    sample = rh.lua.eval("SNOW_LF.sample")
+    lr, lg, lb, llit = sample(-100.0, 0.0, 500.0, 5.0)
+    rr, rg, rb, rlit = sample(100.0, 0.0, 500.0, 5.0)
+    require(llit > 0.1 and rlit > 0.1, f"both sides should be lit: {llit} / {rlit}")
+    require(lr > 0.55 and lb < 0.45, f"left particle should be orange: {lr},{lg},{lb}")
+    require(rb > 0.55 and rr < 0.45, f"right particle should be blue: {rr},{rg},{rb}")
+    return {"left": [round(float(x), 2) for x in left],
+            "right": [round(float(x), 2) for x in right]}
+
+
+@check("lightfield: occlusion grid drops the flakes hidden by a foreground layer",
+       tags=["lightfield", "occlusion"])
+def occlusion_grid_2d():
+    girl = _asset("figure.png")
+    glass = _asset("stained_glass.jpg")
+    w, h = 480, 270
+    host = _publish({"occ_mode": 2.0, "spread": 35.0, "intensity": 180.0, "slices": 24.0},
+                    layers=[Layer(index=1, image=glass, kind="image"),
+                            Layer(index=3, image=girl, kind="image", zoom=45.0, z=-150.0)],
+                    w=w, h=h, layer_index=5)
+    d = _decode(_payload(host, layer=5))
+    require(d["occ_w"] == OGRID_W and d["occ_h"] == OGRID_H,
+            f"occlusion grid {d['occ_w']}x{d['occ_h']}")
+    og = d["occ_grid"]
+    mask = og[..., 0]
+    depth = og[..., 3]
+    covered = int((mask > 0).sum())
+    require(covered > 20, f"the foreground silhouette covers nothing ({covered} cells)")
+    require(mask.max() == 255, "mask never reaches full opacity")
+    require(depth[mask > 0].min() < 255, "no occlusion plane depth was published")
+    # 遮蔽物は画面中央付近（人物の立ち位置）に現れる
+    ys, xs = np.nonzero(mask > 0)
+    cx, cy = xs.mean() / OGRID_W, ys.mean() / OGRID_H
+    require(0.25 < cx < 0.75 and 0.2 < cy < 0.9, f"mask is off-centre: ({cx:.2f},{cy:.2f})")
+
+    # 受信側: 遮蔽平面より奥の粒子は暗く、手前の粒子は明るいまま
+    beam = _synthetic_field()
+    cam = None
+    grid = np.zeros((OGRID_H, OGRID_W, 4), np.uint8)
+    grid[:, :] = (0, 0, 255, 255)              # 深度「無し」
+    grid[9, 16] = (255, 0, 255, 200)           # 中央セル（画面中心）に遮蔽平面 200/255*4096
+    payload = _with_v2(beam, occ_grid=grid)
+    rh = Host(script(), [], HostConfig(screen_w=320, screen_h=180))
+    _receiver_lua(rh)
+    require(_feed(rh, payload) == 1, "receiver rejected the occlusion payload")
+    sample = rh.lua.eval("SNOW_LF.sample")
+    _, _, _, behind = sample(0.0, 0.0, 500.0, 5.0)      # カメラ深度 1524 > 1606? -> 手前
+    require(behind > 0.1, f"particle in front of the occluder lost its light: {behind}")
+
+    grid2 = grid.copy()
+    grid2[9, 16] = (255, 0, 255, 51)             # 平面深度 51/255*4096 = 819（粒子より手前）
+    payload2 = _with_v2(beam, occ_grid=grid2)
+    rh2 = Host(script(), [], HostConfig(screen_w=320, screen_h=180))
+    _receiver_lua(rh2)
+    require(_feed(rh2, payload2) == 1, "second payload rejected")
+    _, _, _, hidden = rh2.lua.eval("SNOW_LF.sample")(0.0, 0.0, 500.0, 5.0)
+    require(hidden < 0.02, f"particle behind the occluder still glows: {hidden}")
+
+    # 遮蔽グリッドが無ければ従来どおり
+    rh3 = Host(script(), [], HostConfig(screen_w=320, screen_h=180))
+    _receiver_lua(rh3)
+    require(_feed(rh3, _synthetic_field()) == 1, "v1 payload rejected")
+    _, _, _, v1lit = rh3.lua.eval("SNOW_LF.sample")(0.0, 0.0, 500.0, 5.0)
+    require(abs(v1lit - behind) < 1e-6, "v1 payload should behave like an unoccluded v2 one")
+    return {"mask_cells": covered, "front": round(float(behind), 3),
+            "behind": round(float(hidden), 4)}
+
+
+@check("lightfield: patched 雪（3D）drops flakes behind the foreground figure and tints the rest",
+       tags=["lightfield", "integration"])
+def snow3d_occlusion_and_tint():
+    """ステンドグラス（光源）＋人物（前景遮蔽）で、遮蔽と多色染色を同時に確認する。"""
+    with tempfile.TemporaryDirectory() as td:
+        path = _isolated_snow_copy(Path(td))
+        r = subprocess.run([sys.executable, str(PATCHER), "--script", str(path),
+                            "--no-backup"], capture_output=True, text=True)
+        require(r.returncode == 0, f"patch failed: {r.stdout}{r.stderr}")
+        sc = session.script(path)
+
+        w, h = 480, 270
+        beam_host = _publish(
+            {"occ_mode": 2.0, "spread": 40.0, "intensity": 260.0, "slices": 24.0, "length": 4000.0},
+            layers=[Layer(index=1, image=_asset("stained_glass.jpg"), kind="image"),
+                    Layer(index=3, image=_asset("figure.png"), kind="image",
+                          zoom=55.0, z=-150.0)],
+            w=w, h=h, layer_index=5)
+        rows = beam_host.export_global()
+        payload = _payload(beam_host, layer=5)
+        d = _decode(payload)
+        require(d["occ_grid"] is not None, "the beam published no occlusion grid")
+        require(d["col_grid"] is not None, "the beam published no colour grid")
+
+        def cleared(rows_):
+            """遮蔽グリッドだけを無効化した global（比較用の負例）。"""
+            out = []
+            for key, hexs in rows_:
+                if not key.startswith("VL3D_LF:") or len(hexs) < 2 * 197:
+                    out.append((key, hexs))
+                    continue
+                b = bytearray(bytes.fromhex(hexs))
+                if b[190] and b[191]:
+                    off = 197 + (b[189] ** 2) * 3
+                    n = b[190] * b[191] * 4
+                    for i in range(n):
+                        b[off + i] = 0 if (i % 4) in (0, 1) else 255
+                    b[6] = b[6] | 16
+                out.append((key, bytes(b).hex()))
+            return out
+
+        cam = {"x": 0.0, "y": 0.0, "z": -1024.0, "tx": 0.0, "ty": 0.0, "tz": 0.0,
+               "ux": 0.0, "uy": -1.0, "uz": 0.0, "rz": 0.0, "d": 1024.0}
+
+        def run(rows_, occ=True):
+            hh = Host(sc, [], HostConfig(screen_w=w, screen_h=h, camera_mode=1, camera=cam),
+                      shader_lib=shader_library(path),
+                      params={"lf_enable": True, "count": 2200.0, "lf_strength": 220.0,
+                              "lf_tint": 85.0})
+            hh.import_global(rows_)
+            hh.layer_index = 4
+            require(hh.run_frame(0), f"snow frame failed: {hh.errors[:2]}")
+            log = next((p for p in hh.prints if "体積光連動" in p), "")
+            lit = int(log.split("受光粒子 ")[1].split(" /")[0]) if log else 0
+            return hh, lit
+
+        occ_host, lit_occ = run(rows)              # 遮蔽グリッドあり
+        free_host, lit_free = run(cleared(rows))   # 遮蔽グリッドを無効化（負例）
+        require(lit_free > 0, "no flake was lit at all")
+        require(lit_occ < lit_free,
+                f"occlusion did not remove any flake ({lit_occ} vs {lit_free})")
+        kept = 1.0 - lit_occ / max(lit_free, 1)
+        require(0.02 < kept < 0.999, f"occlusion removed {kept:.0%} of the lit flakes")
+        # 多色光源: 受光色が 2 系統以上に分かれている（単色ではない）
+        log_free = next((p for p in free_host.prints if "体積光連動" in p), "")
+        require("色 " in log_free, f"lit pass did not report colour groups: {log_free}")
+        n_groups = int(log_free.split("色 ")[1].split(" 系統")[0])
+        require(n_groups >= 2, f"all flakes got a single colour (groups={n_groups})")
+        return {"lit_free": lit_free, "lit_occluded": lit_occ,
+                "mask_cells": int((d["occ_grid"][..., 0] > 0).sum()), "w": w, "h": h}

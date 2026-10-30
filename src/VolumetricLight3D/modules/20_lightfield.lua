@@ -34,13 +34,33 @@
 --   [86..189] f32 beam[26]  (W(3), axis(3), right(3), down(3), apex(3),
 --                            r0, Hx, Hy, L, kdec,
 --                            col_r, col_g, col_b, lum, power, coverage)
+--
+-- v2 拡張（遮蔽・多色光源対応／189 バイト以降に追記。v1 の並びは不変）:
+--   [190]    u8  colgrid_dim  光源色グリッドの一辺（0 = 無し, 既定 12）
+--   [191]    u8  occgrid_w    遮蔽グリッドの幅（0 = 無し, 既定 32）
+--   [192]    u8  occgrid_h    遮蔽グリッドの高さ（既定 18, 画面 16:9 相当）
+--   [193]    u8  pad
+--   [194..197] f32 occ_zmax   遮蔽グリッド深度の正規化上限（カメラ深度）
+--   [198..]  色グリッド     colgrid_dim^2 * RGB8（光源面 UV の 0..1 に正規化）
+--   ...      遮蔽グリッド   occgrid_w * occgrid_h * RGBA8
+--                            R=2D 前景シルエット被覆率(occ_strength 適用済)
+--                            G=3D オブジェクト被覆率 / B=3D 表面深度(255=無し)
+--                            A=2D 遮蔽平面深度(255=無し)   B/A は 0..255 を
+--                            occ_zmax でスケールしたカメラ深度
+--   flags bit3 = 色グリッドあり / bit4 = 遮蔽グリッドあり
 ---------------------------------------------------------------------
 local VL_LF_MAGIC       = "VL3LF"
-local VL_LF_VERSION     = 1
+local VL_LF_VERSION     = 2      -- ペイロード版（インデックスは VL3LF1 のまま）
+local VL_LF_IDX_VER     = 1
 local VL_LF_IDX_KEY     = "VL3D_LF_IDX"
 local VL_LF_SLOT_PREFIX = "VL3D_LF:"
 local VL_LF_STALE       = 2      -- 受信側が無視する古さ（フレーム）
 local VL_LF_COLOR_EVERY = 3      -- 光源色の読み戻し間隔（フレーム）
+local VL_LF_CGRID       = 12     -- 光源色グリッドの一辺
+local VL_LF_OGRID_W     = 32     -- 遮蔽グリッドの幅
+local VL_LF_OGRID_H     = 18     -- 遮蔽グリッドの高さ
+local VL_LF_OCC_ZMAX    = 4096.0 -- 遮蔽グリッド深度の正規化上限
+local VL_LF_GRID_EVERY  = 2      -- 遮蔽グリッドの再構築間隔（フレーム）
 
 -- f32 / u16 / u32 パッカー（ffi が無い環境では純 Lua の IEEE754 変換へ退避）
 local _LF_FFI_OK, _LF_FFI = pcall(require, "ffi")
@@ -125,27 +145,33 @@ local function lf_source_color(scene_frame)
     if type(P.light_color) == "number" then
         return math.floor(P.light_color / 0x10000) % 0x100 / 255.0,
                math.floor(P.light_color / 0x100) % 0x100 / 255.0,
-               (P.light_color % 0x100) / 255.0, 1.0, 0
+               (P.light_color % 0x100) / 255.0, 1.0, 0, nil
     end
     if VL_BF.use_source == 0.0 then
-        return VL_BF.lc_r or 1.0, VL_BF.lc_g or 1.0, VL_BF.lc_b or 1.0, 1.0, 0
+        return VL_BF.lc_r or 1.0, VL_BF.lc_g or 1.0, VL_BF.lc_b or 1.0, 1.0, 0, nil
     end
     local cache = _VL_PERSIST.lf_color
     if type(cache) == "table" and type(cache.lum) == "number" then
         if cache.frame == scene_frame then
-            return cache.r, cache.g, cache.b, cache.lum, 1
+            return cache.r, cache.g, cache.b, cache.lum, 1, cache.grid
         end
         if type(scene_frame) == "number" and type(cache.frame) == "number"
             and scene_frame >= cache.frame and (scene_frame - cache.frame) < VL_LF_COLOR_EVERY then
-            return cache.r, cache.g, cache.b, cache.lum, 1
+            return cache.r, cache.g, cache.b, cache.lum, 1, cache.grid
         end
     end
     local r, g, b, lum = VL_BF.lc_r or 1.0, VL_BF.lc_g or 1.0, VL_BF.lc_b or 1.0, 1.0
+    local grid = nil
+    local err = nil
     if VL_BF.mip_ready and _LF_FFI_OK then
-        pcall(function()
+        local okc
+        okc, err = pcall(function()
             local ptr, mw, mh = obj.getpixeldata("cache:vl3d/mip", "rgba")
-            if ptr == nil or type(mw) ~= "number" or type(mh) ~= "number" then return end
-            if mw < 1 or mh < 1 then return end
+            if ptr == nil or type(mw) ~= "number" or type(mh) ~= "number" then
+                _G.__VL_LF_EARLY = string.format("ptr=%s w=%s h=%s", tostring(ptr), tostring(mw), tostring(mh))
+                return
+            end
+            if mw < 1 or mh < 1 then _G.__VL_LF_EARLY = "size" return end
             local px = _LF_FFI.cast("uint8_t*", ptr)
             local step_x = math.max(1, math.floor(mw / 24))
             local step_y = math.max(1, math.floor(mh / 24))
@@ -164,17 +190,109 @@ local function lf_source_color(scene_frame)
                     end
                 end
             end
-            if n < 1 or sa < 1.0 then return end
+            if n < 1 or sa < 1.0 then
+                _G.__VL_LF_EARLY = string.format("n=%d sa=%.1f mw=%d mh=%d a0=%d", n, sa, mw, mh, px[3])
+                return
+            end
             -- 乗算済み平均色 → ストレート色（ゲインは受信側の強さで調整）
             -- 実測の平均色をそのまま公開（暗い光源は暗いまま＝物理的に正しい）。
             -- 受信側は「受光の強さ」で持ち上げられる。
             local ir, ig, ib = math.min(1.0, sr / sa), math.min(1.0, sg / sa), math.min(1.0, sb / sa)
             r, g, b = ir, ig, ib
             lum = math.max(0.0, math.max(ir, math.max(ig, ib)))
+
+            -- ---- 光源色グリッド（光束色を粒子ごとに変える = ステンドグラス対応）----
+            -- しきい値で切り詰めた発光矩形 (u0..u1, v0..v1) を G x G に分割し、
+            -- セル中央の色を mip から拾う。受信側は粒子を光源面へ射影した UV で
+            -- これをバイリニア参照するので、赤い窓の前の雪は赤く、青い窓の前の
+            -- 雪は青く光る。
+            local gu0, gu1 = VL_BF.u0_s or 0.0, VL_BF.u1_s or 1.0
+            local gv0, gv1 = VL_BF.v0_s or 0.0, VL_BF.v1_s or 1.0
+            if not (gu1 > gu0) then gu0, gu1 = 0.0, 1.0 end
+            if not (gv1 > gv0) then gv0, gv1 = 0.0, 1.0 end
+            local G = VL_LF_CGRID
+            local cells = {}
+            for gy = 0, G - 1 do
+                local vv = gv0 + (gy + 0.5) / G * (gv1 - gv0)
+                local my = math.floor(vv * mh)
+                if my < 0 then my = 0 elseif my >= mh then my = mh - 1 end
+                local row = my * mw
+                for gx = 0, G - 1 do
+                    local uu = gu0 + (gx + 0.5) / G * (gu1 - gu0)
+                    local mx = math.floor(uu * mw)
+                    if mx < 0 then mx = 0 elseif mx >= mw then mx = mw - 1 end
+                    local idx = (row + mx) * 4
+                    local rr, gg, bb, aa = px[idx], px[idx + 1], px[idx + 2], px[idx + 3]
+                    if aa <= 8 then
+                        -- 透明（＝そこからは光が出ていない）: 黒 = 受光なし
+                        cells[#cells + 1] = "\0\0\0"
+                    else
+                        cells[#cells + 1] = string.char(rr, gg, bb)
+                    end
+                end
+            end
+            grid = table.concat(cells)
         end)
+        if not okc then err = tostring(err) end
     end
-    _VL_PERSIST.lf_color = { frame = scene_frame, r = r, g = g, b = b, lum = lum }
-    return r, g, b, lum, 1
+    _VL_PERSIST.lf_color = { frame = scene_frame, r = r, g = g, b = b, lum = lum,
+                             grid = grid, err = err }
+    return r, g, b, lum, 1, grid
+end
+
+-- ---------------------------------------------------------------
+-- 遮蔽グリッド（v2）
+--   このスクリプト自身が光束を描くときに使っている遮蔽情報を、そのまま
+--   画面 32x18 の粗いグリッドへ落とし込んで公開する。
+--     * 2D 前景シルエット … beamatlas と同じ「カメラ→セルの視線 × 遮蔽平面」
+--       交点で occ アトラスのマスクを引く（ps_vl_lfgrid）。
+--     * 3D オブジェクト（.obj / .vrm）… cache:vl3d/camocc の被覆率と
+--       カメラ深度をそのまま拾う。
+--   受信側は粒子の画面位置とカメラ深度だけで「影の中か」を判定できる。
+--   生成は GPU 1 パス（32x18 = 576 画素）+ 読み戻しなので、
+--   VL_LF_GRID_EVERY フレームに 1 回だけ更新して結果を再利用する。
+-- ---------------------------------------------------------------
+local function lf_build_occ_grid(scene_frame)
+    if not _LF_FFI_OK then return nil end
+    local cache = _VL_PERSIST.lf_ogrid
+    local n_occ = math.floor((VL_BF.n_occ_active or 0) + 0.5)
+    local camocc = (VL_BF.camocc_active or 0.0) > 0.5
+    if n_occ <= 0 and not camocc then
+        _VL_PERSIST.lf_ogrid = nil
+        return nil
+    end
+    if type(cache) == "table" and type(cache.blob) == "string"
+        and type(scene_frame) == "number" and type(cache.frame) == "number"
+        and scene_frame >= cache.frame and (scene_frame - cache.frame) < VL_LF_GRID_EVERY
+        and cache.n_occ == n_occ and cache.camocc == camocc then
+        return cache.blob
+    end
+    local blob = nil
+    pcall(function()
+        local c = {
+            VL_LF_OGRID_W, VL_LF_OGRID_H, VL_BF.scr_w or 1920.0, VL_BF.scr_h or 1080.0,
+            VL_BF.cam_x or 0.0, VL_BF.cam_y or 0.0, VL_BF.cam_z or 0.0, VL_BF.focal_d or 1024.0,
+            VL_BF.f_x or 0.0, VL_BF.f_y or 0.0, VL_BF.f_z or 1.0, n_occ,
+            VL_BF.r_x or 1.0, VL_BF.r_y or 0.0, VL_BF.r_z or 0.0, VL_BF.uv_span_x or 1.0,
+            VL_BF.d_x or 0.0, VL_BF.d_y or 1.0, VL_BF.d_z or 0.0, VL_BF.uv_span_y or 1.0,
+            VL_BF.occ_str_val or 1.0, VL_BF.camocc_w or 4.0, VL_BF.camocc_h or 4.0, VL_LF_OCC_ZMAX,
+            camocc and 1.0 or 0.0, 0.0, 0.0, 0.0,
+        }
+        for i = 1, 128 do c[#c + 1] = VL_BF.occ_flat[i] or 0.0 end
+        obj.clearbuffer("cache:vl3d/lfgrid", VL_LF_OGRID_W, VL_LF_OGRID_H)
+        obj.pixelshader("ps_vl_lfgrid", "cache:vl3d/lfgrid",
+            { VL_BF.occ_tex_name, VL_BF.camocc_tex_name }, c, "copy", "clip")
+        local ptr, gw, gh = obj.getpixeldata("cache:vl3d/lfgrid", "rgba")
+        if ptr == nil or type(gw) ~= "number" or type(gh) ~= "number" then return end
+        if gw < 1 or gh < 1 then return end
+        local need = gw * gh * 4
+        blob = _LF_FFI.string(_LF_FFI.cast("const char*", ptr), need)
+    end)
+    if type(blob) ~= "string" or #blob ~= VL_LF_OGRID_W * VL_LF_OGRID_H * 4 then
+        blob = nil
+    end
+    _VL_PERSIST.lf_ogrid = { frame = scene_frame, blob = blob, n_occ = n_occ, camocc = camocc }
+    return blob
 end
 
 -- ---------------------------------------------------------------
@@ -232,14 +350,18 @@ local function lf_build_payload(scene_frame)
 
     local L = math.max(1.0, VL_BF.L_tot or 1.0)
     local kdec = math.max(0.0, VL_BF.k_dec or 0.0)
-    local col_r, col_g, col_b, lum = lf_source_color(scene_frame)
+    local col_r, col_g, col_b, lum, col_from_src, col_grid = lf_source_color(scene_frame)
     local power = (P.intensity or 100.0) / 100.0
     local coverage = math.max(0.0, math.min(1.0, VL_BF.base_ratio or 1.0))
+
+    local occ_grid = lf_build_occ_grid(scene_frame)
 
     local flags = 0
     if type(P.light_color) ~= "number" and VL_BF.use_source ~= 0.0 then flags = flags + 1 end
     if VL_BF.any_occ_active then flags = flags + 2 end
     if VL_BF.cam_mode and VL_BF.cam_mode > 0 then flags = flags + 4 end
+    if col_grid then flags = flags + 8 end
+    if occ_grid then flags = flags + 16 end
 
     local t = {}
     t[#t + 1] = VL_LF_MAGIC
@@ -272,6 +394,14 @@ local function lf_build_payload(scene_frame)
     t[#t + 1] = lf_f32(lum)
     t[#t + 1] = lf_f32(power)
     t[#t + 1] = lf_f32(coverage)
+    -- ---- v2: 遮蔽グリッド / 光源色グリッド ----
+    local cdim = col_grid and VL_LF_CGRID or 0
+    local ow, oh = 0, 0
+    if occ_grid then ow, oh = VL_LF_OGRID_W, VL_LF_OGRID_H end
+    t[#t + 1] = string.char(cdim % 256, ow % 256, oh % 256, 0)
+    t[#t + 1] = lf_f32(VL_LF_OCC_ZMAX)
+    if cdim > 0 then t[#t + 1] = col_grid end
+    if ow > 0 then t[#t + 1] = occ_grid end
     return table.concat(t)
 end
 
@@ -309,10 +439,28 @@ local function lf_update_index(g, scene_frame, layer)
     if not seen[layer] then layers[#layers + 1] = layer end
     table.sort(layers)
     pcall(function()
-        g[VL_LF_IDX_KEY] = string.format("VL3LF%d|%d|%s", VL_LF_VERSION,
+        g[VL_LF_IDX_KEY] = string.format("VL3LF%d|%d|%s", VL_LF_IDX_VER,
             math.floor(scene_frame or 0), table.concat(layers, ","))
     end)
     return layers
+end
+
+-- ---------------------------------------------------------------
+-- フレーム途中（描画直前）の準備
+--   光源色グリッドと遮蔽グリッドは、光束の描画に使うキャッシュ
+--   （cache:vl3d/mip, occ アトラス, camocc）が生きている間にしか作れない。
+--   そこで vl_bf_render() の冒頭で 1 回だけ呼び、結果を
+--   _VL_PERSIST に貯めておく（フレーム末の公開時はそれを読むだけ）。
+-- ---------------------------------------------------------------
+function vl_lf_prepare()
+    if _G.VL3D_TEST_LF_DISABLE then return false end
+    pcall(function()
+        lf_source_color(vl_scene_frame())
+    end)
+    pcall(function()
+        lf_build_occ_grid(vl_scene_frame())
+    end)
+    return true
 end
 
 -- ---------------------------------------------------------------
@@ -343,6 +491,17 @@ local function vl_lf_publish()
         g[VL_LF_SLOT_PREFIX .. layer] = s
         lf_update_index(g, scene_frame, layer)
         _VL_PERSIST.lf_last = { frame = scene_frame, bytes = #s, layer = layer }
+        if _G.VL3D_TEST_LF_DEBUG then
+            local c = _VL_PERSIST.lf_color
+            local o = _VL_PERSIST.lf_ogrid
+            _G.__VL_LF_DBG = {
+                bytes = #s, mip_ready = VL_BF.mip_ready and 1 or 0,
+                grid_bytes = (type(c) == "table" and type(c.grid) == "string") and #c.grid or -1,
+                grid_err = (type(c) == "table" and c.err) or "",
+                ogrid_bytes = (type(o) == "table" and type(o.blob) == "string") and #o.blob or -1,
+                n_occ = VL_BF.n_occ_active or 0, camocc = VL_BF.camocc_active or 0,
+            }
+        end
         return s
     end)
     return ok and type(payload) == "string"

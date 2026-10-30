@@ -1,6 +1,9 @@
 local function vl_bf_render()
     -- 5) GPU マルチパス体積描画
     ------------------------------------------------------------
+    -- 光場（v2）用の光源色グリッド / 遮蔽グリッドは、mip と遮蔽キャッシュが
+    -- 生きているこのタイミングで作る（フレーム末の公開時には既に解放済みのため）。
+    pcall(vl_lf_prepare)
     VL_BF.TILES_X, VL_BF.ATLAS, VL_BF.TILE, VL_BF.PAD= 8, 2560, 320, 2.0
     VL_BF.k_gain_base= (P.intensity / 100.0) * 0.155 / VL_BF.L_char
     VL_BF.fog_amt= math.max(0.0, math.min(1.0, P.fog / 100.0))

@@ -76,6 +76,11 @@
     },
     {
       "kind": "pixelshader",
+      "name": "ps_vl_lfgrid",
+      "path": "shaders/ps_vl_lfgrid.hlsl"
+    },
+    {
+      "kind": "pixelshader",
       "name": "beamatlas",
       "path": "shaders/beamatlas.hlsl"
     },
