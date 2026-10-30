@@ -1,0 +1,116 @@
+{
+  "checks": [
+    {
+      "name": "A1 v3.06 verse1 render: no Lua error",
+      "ok": true,
+      "detail": "None"
+    },
+    {
+      "name": "A2 v3.06 HUD shows L4(m1) occlusion hit",
+      "ok": true,
+      "detail": "@info\t体積光（3D）v3.06 GPU=true 光源=レイヤー2(512x512) 遮蔽=L4(m1) アトラス=2560x2560x2 スライス=90(dz=16.3) 頂点=360 固有充填=0.40 キャッシュ頂点=0.87M"
+    },
+    {
+      "name": "A3 v3.06 occ OFF reference: no error",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "A5 v3.06 peak cache dots <= 16M budget",
+      "ok": true,
+      "detail": "peak=871,587"
+    },
+    {
+      "name": "A6 v3.06 opaque-rect fallback fired (L4*)",
+      "ok": true,
+      "detail": "fallback=True marker=True"
+    },
+    {
+      "name": "A7 v3.06 restricted host (os/io=nil) init-complete + no error",
+      "ok": true,
+      "detail": "None"
+    },
+    {
+      "name": "B1 v3.13 verse1 render: no Lua error",
+      "ok": true,
+      "detail": "None"
+    },
+    {
+      "name": "B2 v3.13 HUD occlusion L4(m1)",
+      "ok": true,
+      "detail": "@info\t体積光（3D）v3.13 GPU=true 光源=レイヤー2(512x512) 遮蔽=L4(m1) アトラス=2560x2560x2 スライス=90(dz=16.3) 頂点=360 固有充填=0.40 キャッシュ頂点=0.87M"
+    },
+    {
+      "name": "B3 v3.13 peak cache dots <= 16M",
+      "ok": true,
+      "detail": "peak=871,587"
+    },
+    {
+      "name": "B4 v3.13 multi-frame (147-149) stable, no errors",
+      "ok": true,
+      "detail": "errs=0"
+    },
+    {
+      "name": "B5 v3.13 param sweep x14 no errors",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "B5b sweep peak cache dots <= 16M",
+      "ok": true,
+      "detail": "peak=871,593"
+    },
+    {
+      "name": "D1 standalone (obj.module=nil) full fallback chain works",
+      "ok": true,
+      "detail": "None"
+    },
+    {
+      "name": "E1 v3.13 OBJ-layer render (pure-Lua rasterizer): no error",
+      "ok": true,
+      "detail": "None"
+    },
+    {
+      "name": "E1b Lua CPU rasterizer drew the OBJ triangles",
+      "ok": true,
+      "detail": "tris=2052 (obj file has 2052)"
+    },
+    {
+      "name": "E1c shmap silhouette fill 0.1-0.95 (cage shape, not solid rect)",
+      "ok": true,
+      "detail": "fill=0.264 shape=(1280, 1280, 4)"
+    },
+    {
+      "name": "E2 v3.13 OBJ-layer render (native C-API rasterizer): no error",
+      "ok": true,
+      "detail": "None"
+    },
+    {
+      "name": "E2b native bridge invoked from Lua (upload_mesh + rasterize_shadow)",
+      "ok": true,
+      "detail": "rast_shadow=1 has_mesh=1 upload_mesh=1"
+    },
+    {
+      "name": "E2c native rasterizer tris > 0",
+      "ok": true,
+      "detail": "tris=2052 backend=D3D11_CS"
+    },
+    {
+      "name": "E3 Lua vs native C++ rasterizer shmap consistency",
+      "ok": false,
+      "detail": "maxdiff=15"
+    }
+  ],
+  "env": {
+    "width": 640,
+    "height": 360,
+    "gpu": "cpu-shim",
+    "v306_shmap_shape": [
+      1,
+      1,
+      4
+    ],
+    "v306_peak_cache_dots": 871587,
+    "v313_peak_cache_dots": 871587
+  }
+}
