@@ -299,15 +299,24 @@ AviUtl ExEdit2 目前仍处于活跃迭代阶段，部分高阶宿主内部状�
 
 仓库在 [`src/VL3DBridge/`](src/VL3DBridge/) 目录下完整公开了 `VL3DBridge.aux2` 的 C++17 源码、内嵌 HLSL `cs_5_0` 着色器与跨平台整理的官方 SDK 头文件（不含任何宿主可执行文件），并在 [`packaging/`](packaging/) 下提供了 `.au2pkg.zip` 打包配置与脚本。
 
+主脚本现采用 **“模块化源码 → 单文件发布”**：21 个 Lua 构建片段与 14 个独立 HLSL 文件位于
+[`src/VolumetricLight3D/`](src/VolumetricLight3D/)，由 `manifest.json` 按原顺序组装。
+`Script/VolumetricLight3D.obj2` 仍是直接安装的单文件生成物，不需要在 AviUtl2 中加载额外模块；
+修改效果时请编辑模块源码，不要直接编辑生成物。详见[模块化源码说明](src/VolumetricLight3D/README.md)。
+
 ```bash
-# 1. 使用 CMake 构建 VL3DBridge.aux2（Visual Studio MSVC 或 MinGW-w64）
+# 1. 修改 Lua/HLSL 后重建主脚本，并检查源码与生成物无漂移（仅依赖 Python 标准库）
+python3 src/VolumetricLight3D/build.py
+python3 src/VolumetricLight3D/build.py --check
+
+# 2. 使用 CMake 构建 VL3DBridge.aux2（Visual Studio MSVC 或 MinGW-w64）
 cmake -S src/VL3DBridge -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 
 # （或使用 MinGW-w64 一键脚本构建至 Plugin/VL3DBridge.aux2）
 ./src/VL3DBridge/build_mingw64.sh
 
-# 2. 生成可拖入 AviUtl2 安装的 .au2pkg.zip 发布包（输出至 dist/）
+# 3. 生成可拖入 AviUtl2 安装的 .au2pkg.zip 发布包（输出至 dist/；会先自动重建主脚本）
 python3 packaging/build_au2pkg.py
 ```
 
@@ -322,7 +331,7 @@ python3 packaging/build_au2pkg.py
 ```bash
 cd sandbox
 python3 -m pip install -r requirements.txt
-python3 run_checks.py          # 91 个用例：静态分析 / 静态接口校验 / 宿主 API 契约 / HLSL / 运行时 / 遮挡 / 桥 / 性能
+python3 run_checks.py          # 97 个用例：模块构建 / 静态分析 / 接口契约 / HLSL / 运行时 / 遮挡 / 桥 / 性能
 python3 render_demo.py         # 渲染示例图到 out/demo/gallery.png
 ```
 

@@ -40,7 +40,7 @@ sandbox/
 │   ├── assets.py          # 测试素材：彩窗、剪影、渐变、单位立方体 .obj
 │   ├── session.py         # 高层 API：build scene → run_frame → PNG/统计
 │   └── harness.py         # 极简测试框架（@check / require / skip）
-├── checks/                # 10 组、94 个用例
+├── checks/                # 11 组、97 个用例
 │   ├── checks_01_script.py     # .obj2 静态分析（参数语法/分组/默认值/hide 语义/i18n/安全）
 │   ├── checks_02_language.py   # 4 个 .aul2 语言包完整性
 │   ├── checks_03_hlsl.py       # 14 段 HLSL 编译、数值行为、静态 uniform 布局
@@ -50,12 +50,32 @@ sandbox/
 │   ├── checks_07_perf.py       # 性能与显存/缓存预算
 │   ├── checks_08_api.py        # 宿主 API 契约（文档签名/键/返回值 ⇄ 模拟宿主）
 │   ├── checks_09_raster.py     # 低 alpha 阈值、图集快照及十六进制 HLSL 回归
-│   └── checks_10_brightness.py # 非聚光源常量 OIT 令牌、聚光源隔离与 3D .aup2 亮度回归
+│   ├── checks_10_brightness.py # 非聚光源常量 OIT 令牌、聚光源隔离与 3D .aup2 亮度回归
+│   └── checks_11_build.py      # 模块化源码 ⇄ 单文件生成物同步、确定性及故障注入
 └── out/                   # 全部产物（.gitignore 已忽略，可随时删除重建）
     ├── results.json       # 最近一次测试的机器可读结果
     ├── demo/ features/ hlsl/ bridge/ runtime/   # 各类 PNG / 日志
     └── build/native/      # 编译出的 libvl3d_test_<hash>.so
 ```
+
+### 1.1 主脚本的模块化源码
+
+`Script/VolumetricLight3D.obj2` 已改为由 [`src/VolumetricLight3D/`](../src/VolumetricLight3D/) 生成的单文件发布产物。
+唯一编辑源是 **21 个有序 Lua 片段 + 14 个独立 HLSL 文件 + `manifest.json`**；它们不是运行时的
+`require()` 模块，因此 AviUtl2 的安装方式、顶层局部变量作用域和文件数量均不变。
+C++17 插件源码仍在 `src/VL3DBridge/`。模块职责和构建规则见[模块化源码说明](../src/VolumetricLight3D/README.md)。
+
+```bash
+# 仓库根目录：重建并检查；--check 不写文件，漂移时退出码为 1
+python3 src/VolumetricLight3D/build.py
+python3 src/VolumetricLight3D/build.py --check
+
+# 只跑构建组（含漏登记/重复项/内容漂移故障注入）
+python3 sandbox/run_checks.py --only "build:"
+```
+
+`checks_11_build.py` 会实际重组并比对全部字节，而不只检查文件是否存在；隔离输出位于 `out/build/`。
+对拆分前的历史快照使用 `--repo` 时，若没有 `src/VolumetricLight3D/build.py`，该组会 SKIP，其余历史测试不受影响。
 
 ## 2. 环境与安装
 
@@ -75,7 +95,7 @@ g++ --version                                          # 需要支持 C++17（�
 ```bash
 cd sandbox
 
-python3 run_checks.py                  # 跑全部 94 个用例，输出 PASS/FAIL/WARN + out/results.json
+python3 run_checks.py                  # 跑全部 97 个用例，输出 PASS/FAIL/WARN + out/results.json
 python3 run_checks.py --repo /path/to/other-checkout  # 用本沙箱检验另一个仓库快照
 python3 run_checks.py --list           # 列出全部用例
 python3 run_checks.py --only hlsl      # 名字含 "hlsl" 的用例
