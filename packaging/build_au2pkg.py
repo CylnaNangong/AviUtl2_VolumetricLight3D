@@ -5,6 +5,8 @@ Builds AviUtl ExEdit2 drag-and-drop installation packages (*.au2pkg.zip) for Vol
   2. VolumetricLight3D-v3.14-ScriptOnly.au2pkg.zip  (Pure Script Edition: Script + Languages, without native .aux2)
 """
 import argparse
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -16,6 +18,14 @@ def to_crlf(data: bytes) -> bytes:
 
 
 def build_package(repo_root: Path, out_zip: Path, include_plugin: bool = True) -> None:
+    # The single .obj2 remains the release/install format, but its source of
+    # truth is src/VolumetricLight3D/. Always refresh it before packaging so a
+    # module-only edit can never silently ship an older generated script.
+    builder = repo_root / "src" / "VolumetricLight3D" / "build.py"
+    if not builder.is_file():
+        raise FileNotFoundError(f"modular script builder not found: {builder}")
+    subprocess.run([sys.executable, str(builder)], cwd=repo_root, check=True)
+
     out_zip.parent.mkdir(parents=True, exist_ok=True)
     pkg_dir = repo_root / "packaging"
 

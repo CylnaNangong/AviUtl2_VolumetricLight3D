@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "kind": "lua",
+      "path": "modules/00_header.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/01_properties.lua"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_ab_mask_proj",
+      "path": "shaders/ps_vl_ab_mask_proj.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_ab_env_init",
+      "path": "shaders/ps_vl_ab_env_init.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_ab_blur",
+      "path": "shaders/ps_vl_ab_blur.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_ab_sil_h",
+      "path": "shaders/ps_vl_ab_sil_h.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_ab_sil_v",
+      "path": "shaders/ps_vl_ab_sil_v.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_ab_shade",
+      "path": "shaders/ps_vl_ab_shade.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_water",
+      "path": "shaders/ps_vl_water.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_pool",
+      "path": "shaders/ps_vl_pool.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_prep",
+      "path": "shaders/ps_vl_prep.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_pack",
+      "path": "shaders/ps_vl_pack.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_blur",
+      "path": "shaders/ps_vl_blur.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_occ_blur",
+      "path": "shaders/ps_vl_occ_blur.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "ps_vl_white",
+      "path": "shaders/ps_vl_white.hlsl"
+    },
+    {
+      "kind": "pixelshader",
+      "name": "beamatlas",
+      "path": "shaders/beamatlas.hlsl"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/02_runtime_state.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/03_i18n.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/04_params.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/05_utils.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/06_win32.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/07_mesh_loaders.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/08_project_scan.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/09_layer_resolve.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/10_camera_lights.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/11_occlusion_support.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/12_bridge_raster.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/13_camera.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/14_frame_state.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/15_frame_prepare.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/16_geometry_mip.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/17_occlusion_pipeline.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/18_autoblend.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/19_render.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/20_main.lua"
+    }
+  ]
+}

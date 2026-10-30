@@ -16,6 +16,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Check modular script assembly
+        run: python3 src/VolumetricLight3D/build.py --check
+
       - name: Install dependencies
         run: |
           sudo apt-get update
