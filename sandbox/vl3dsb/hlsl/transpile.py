@@ -1102,6 +1102,7 @@ class CodeGen:
                     lines.append("        (idx_cb + 2 < np) ? p[idx_cb + 2] : 0.f,")
                     lines.append("        (idx_cb + 3 < np) ? p[idx_cb + 3] : 0.f);")
                     lines.append("    idx_cb += 4;")
+        lines.append("    #pragma omp parallel for schedule(dynamic, 16) if ((long long)w * h >= 65536)")
         lines.append("    for (int y = 0; y < h; ++y) {")
         lines.append("        for (int x = 0; x < w; ++x) {")
         lines.append(f"            V pos((float)x + 0.5f, (float)y + 0.5f, 0.f, 1.f);")

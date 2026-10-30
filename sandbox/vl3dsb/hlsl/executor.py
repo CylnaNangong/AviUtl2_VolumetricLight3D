@@ -123,7 +123,7 @@ class ShaderLibrary:
         digest = hashlib.sha256()
         digest.update(self.source.encode("utf-8"))
         digest.update(RUNTIME_HPP.read_bytes())
-        digest.update(b"g++-c++17-v1")
+        digest.update(b"g++-c++17-v2-omp")
         self.hash = digest.hexdigest()[:16]
 
     # -- compile -------------------------------------------------------------
@@ -138,7 +138,7 @@ class ShaderLibrary:
         src_path.write_text(self.source)
         self.build_log = ""
         if not lib_path.exists():
-            cmd = [self.cxx, "-std=c++17", "-O2", "-w", "-fPIC", "-shared",
+            cmd = [self.cxx, "-std=c++17", "-O3", "-fopenmp", "-w", "-fPIC", "-shared",
                    str(src_path), "-I", str(self.out_dir), "-o", str(lib_path)]
             proc = subprocess.run(cmd, capture_output=True, text=True)
             self.build_log = proc.stderr

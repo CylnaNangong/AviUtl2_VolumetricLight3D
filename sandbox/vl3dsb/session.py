@@ -115,9 +115,11 @@ class RenderResult:
 def run_frame(layers: Sequence[Layer], params: Optional[Dict[str, Any]] = None,
               *, width: int = 320, height: int = 200, frame: int = 0,
               layer_index: int = 4, scene_id: int = 0, frame_s: int = 0,
+              frame_e: int = 10 ** 9,
               camera: Optional[Dict[str, float]] = None, camera_mode: int = 0,
               gui: bool = True, bridge: bool = True, copybuffer: bool = True,
               script_path: Optional[Path] = None, extra_cfg: Optional[Dict[str, Any]] = None,
+              rasterize_2d: bool = True,
               host_factory=None) -> RenderResult:
     sc = script(script_path)
     cfg = HostConfig(screen_w=width, screen_h=height, gui=gui, camera_mode=camera_mode,
@@ -135,11 +137,11 @@ def run_frame(layers: Sequence[Layer], params: Optional[Dict[str, Any]] = None,
     host.layer_index = layer_index
     host.scene_id = scene_id
     host.frame_s = frame_s
-    host.frame_e = 10 ** 9
+    host.frame_e = frame_e
     t0 = time.time()
     host.run_frame(frame)
     dt = time.time() - t0
-    vol = host.volume_layer()
+    vol = host.volume_layer() if rasterize_2d else None
     return RenderResult(frame=frame, volume=vol, host=host, seconds=dt,
                         log=list(host.prints))
 

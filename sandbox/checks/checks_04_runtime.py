@@ -36,7 +36,11 @@ def basic():
     require(not r.host.errors, f"host raised: {r.host.errors[:1]}")
     require(r.volume is not None, "no geometry was emitted")
     st = r.stats()
-    require(st["alpha_mean"] > 0.005, f"beam is essentially empty: {st}")
+    # Constant-token OIT (v3.00..v3.07, v3.14) emits a minimal coverage token
+    # (1/255 * 0.27 ~= 0.001059 per slice -> preview alpha_mean ~ 0.004) while
+    # carrying full brightness in RGB (rgb_mean ~ 0.031).
+    require(st["alpha_mean"] > 0.002 and st["rgb_mean"] > 0.015,
+            f"beam is essentially empty: {st}")
     log = "\n".join(r.log)
     require("初期化中" in log or "Initializing" in log, "missing init-start log line")
     require("初期化完了" in log or "Initialized" in log, "missing init-complete log line")

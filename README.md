@@ -5,7 +5,7 @@
 🎉 **震撼首发！！！**  
 **面向 AviUtl ExEdit2 的真·3D 丁达尔体积光自定义对象 · 内置 3D 联动「前景融入背景」 · 可选 D3D11 CS 硬件阴影加速插件**
 
-`VolumetricLight3D.obj2 v3.13` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.14` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 语言切换 / Language:** &nbsp; **简体中文** &nbsp;|&nbsp; **[日本語 (Japanese)](docs/README_ja.md)** &nbsp;|&nbsp; **[English](docs/README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](docs/README_de.md)**
 
@@ -97,8 +97,8 @@
 ### 🚀 方式一：使用 `.au2pkg.zip` 安装包一键拖入（推荐 · 开袋即食！）
 
 1. 前往仓库右侧的 **GitHub Releases** 页面下载最新安装包（**请勿解压**，保留 `.au2pkg.zip` 后缀）：
-   - **`VolumetricLight3D-v3.13.au2pkg.zip`**（完整推荐版：含核心脚本 + `VL3DBridge.aux2` GPU 加速插件 + 四语语言包）
-   - *或 `VolumetricLight3D-v3.13-ScriptOnly.au2pkg.zip`（纯脚本轻量版：仅含 `.obj2` 脚本 + 四语语言包）*
+   - **`VolumetricLight3D-v3.14.au2pkg.zip`**（完整推荐版：含核心脚本 + `VL3DBridge.aux2` GPU 加速插件 + 四语语言包）
+   - *或 `VolumetricLight3D-v3.14-ScriptOnly.au2pkg.zip`（纯脚本轻量版：仅含 `.obj2` 脚本 + 四语语言包）*
 2. 打开 AviUtl ExEdit2，将下载好的 `.au2pkg.zip` 文件**直接用鼠标拖放（Drag & Drop）到 AviUtl2 预览窗口**中，在弹出的确认框点击安装即可自动部署全部文件！
 3. 若包含 `VL3DBridge.aux2` 插件更新，安装后**重启一次 AviUtl2** 即可生效（日后也可随时在 AviUtl2 菜单的「包信息 / `パッケージ情報`」中一键查看或卸载）。
 
@@ -109,7 +109,7 @@
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── VolumetricLight3D.obj2                  # [必需] 核心自定义对象脚本（v3.13）
+│   └── VolumetricLight3D.obj2                  # [必需] 核心自定义对象脚本（v3.14）
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [强烈推荐/可选] 无锁读取 + D3D11 CS 硬件 3D 阴影加速插件（v1.21）
 │   └── VL3DBridge.ini                     # [可选] 插件安全白名单与 GPU 开关配置（与 .aux2 同目录）
@@ -288,7 +288,7 @@ AviUtl ExEdit2 目前仍处于活跃迭代阶段，部分高阶宿主内部状�
 ## 8. 问题反馈（Bug 报告途径）
 
 - **首选 [GitHub Issues](./issues)（最推荐！）**。反馈时请尽量附上：
-  - 脚本版本号（勾选「画面に状態表示 / 状态显示」后可在画面左上角 HUD 看到，例如 `v3.13`）与 `AviUtl ExEdit2` 本体版本；
+  - 脚本版本号（勾选「画面に状態表示 / 状态显示」后可在画面左上角 HUD 看到，例如 `v3.14`）与 `AviUtl ExEdit2` 本体版本；
   - 复现步骤、时间轴图层构成截图、以及异常效果的截图（**请保留 HUD 信息一起截**，里面的 `遮挡=…`、`光源=…` 等字段是定位问题的关键线索哦！）；
   - 若 HUD 遮挡栏出现 `,opq`（遮罩近乎全不透明，请检查遮挡图层素材是否带 Alpha 透明通道）或 `L4*`（该图层已自动回退为原始图像加载）标记，也请一并说明 ^_^
 - **Discord 社区**：也可以加入日文 AviUtl2 情报共享社区 **「AviUtl2の情報が知りたいだろって‼」**（[点击加入](https://discord.gg/8qzmGY5NgQ)），在服务器里找 **南宫若馨Cylna**（`@nangongerregtcylna`，作者本人）就可以直接反馈啦～
@@ -348,7 +348,7 @@ python3 render_demo.py         # 渲染示例图到 out/demo/gallery.png
 - **ＫＥＮくん（KENkun）**（[AviUtlのお部屋](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)） — 开发了强大的 AviUtl ExEdit2 与官方 Plugin SDK。
 
 #### AI 协作伙伴
-- **Arena.ai Agent** — 协助完成 `v2.90`～`v3.13` 全链路重构、`VL3DBridge.aux2` 无锁只读桥接与 D3D11 ComputeShader 硬件光栅化、`AutoBlendLight` 3D 融合集成及极限分辨率加固。
+- **Arena.ai Agent** — 协助完成 `v2.90`～`v3.14` 全链路重构、`VL3DBridge.aux2` 无锁只读桥接与 D3D11 ComputeShader 硬件光栅化、`AutoBlendLight` 3D 融合集成及极限分辨率加固。
 - **ChatGPT** — 协助代码审查抓虫（精准抓出了 3D 烟雾噪声三线性插值角点坐标的隐蔽 Bug！）。
 - **Gemini** — 编写了最早期的「体积雾」HLSL 着色器原型（某种意义上，同系列的《体积雾（3D）》也正是体积光研发途中的副产物 XD）。
 - **Microsoft Copilot** — 在最早给超大图应用 `OpenGlow` 遭遇缓存爆仓时，耐心协助排查定位根因并整理文档。

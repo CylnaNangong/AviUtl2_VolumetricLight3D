@@ -1,4 +1,4 @@
---information:VolumetricLight3D v3.13
+--information:VolumetricLight3D v3.14
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -30,6 +30,20 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
+-- v3.14 更新点（2026-10-29・v3.08 以降の非スポット体積光における輝度低下リグレッションの根治）：
+--   1. 【2D レイヤー光源・平行光・点光源（非スポット経路）で v3.08〜v3.13 に発生していた光束の減光不具合を修正】
+--      ・原因特定：`v3.08` でカメラ制御スポット光源のスライス段差対策として全経路へ一律導入された (a) 比例アルファ符号化
+--        （`wboit_ka = 0.24` による `out_a < min_a` 低輝度画素破棄ゲート＋WBOIT `Reveal` 減衰）、(b) 縮小 `poly_alpha`
+--        （`0.045..0.27`）＋切り上げ `min_opt_a = ceil(0.00103*255/poly_alpha)/255`（`min_a = 6/255` による破棄閾値の
+--        約 4 倍上昇・`ceil` 端数による実効 α 膨張・8-bit アトラス `s_max > 1` 早期飽和）、および (c) `v3.09` でスポット経路から
+--        残存した単一スカラー量子化ディザ `d_q`（3 チャンネル独立ディザ比でバイリニア `2x2` 近傍の Shader #118 α テスト生存率が低下）
+--        の複合作用により、`v3.07` 以前と比べて光束輝度が約 12〜16/255 低下していた（仮想スポット経路は `v3.09`〜`v3.12` で
+--        独立分岐済みだったため `else` 側にのみ旧設定が残留）。
+--      ・解決策：非スポットの光学体積光経路（`P.fill_mode ~= 1` かつ `not is_virtual_spot`）を `v3.07` 以前の定数最小 OIT トークン
+--        （`wboit_ka = 0.0`, `poly_alpha = 0.27`, `min_opt_a = 1/255` → `a118 = 0.001059`、外縁ゼロ隣接バイリニア破棄と最大
+--        スライスダイナミックレンジを両立）および 3 チャンネル無相関ディザ `d3` へ復元。`v3.08`〜`v3.13` の 3D シャドウ
+--        ヤコビアン PCF・仮想スポット光源（`spot_env`）弦積分・カメラ光源 `ltype` 対応・編集カメラ追従・HUD 制御は 100% 維持。
+--
 -- v3.13 更新点（2026-10-26・3D カメラ近クリップ面による HUD 消失の修正 ＆ 動画出力時の HUD 自動非表示化）：
 --   1. 【3D カメラ／編集カメラ下で「画面に状態表示（HUD）」が表示されなくなっていた不具合の修正】
 --      ・原因特定：`v3.12` で HUD ビルボードを `z_cam = 32`（`k_hud = 32 / focal_d`）へ配置した際、AviUtl / ExEdit2 の 3D カメラ透視投影における
@@ -2092,8 +2106,9 @@
         {
             scaled_rgb *= (1.0 / s_max);
         }
-        float d_q = frac(52.9829189 * frac(dot(float2(tile_px), float2(0.06711056, 0.00583715))) + g_si_f * 0.61803399);
-        float3 q_rgb = floor(saturate(scaled_rgb) * 255.0 + float3(d_q, d_q, d_q)) * (1.0 / 255.0);
+        float2 rnd_c2 = pcg3d_rand2(uint3(tile_px.x ^ 0x5bd1u, tile_px.y ^ 0x1b87u, 277u + g_si_u));
+        float3 d3 = frac(float3(ign2, rnd_c2.x, rnd_c2.y) + float3(0.0, 0.38196601, 0.72360680));
+        float3 q_rgb = floor(saturate(scaled_rgb) * 255.0 + d3) * (1.0 / 255.0);
         float q_max = max(q_rgb.r, max(q_rgb.g, q_rgb.b));
         if (q_max < (0.5 / 255.0))
         {
@@ -2316,34 +2331,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.13] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.13] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.13] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.13] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.14] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.14] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.14] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.14] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.13 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.13 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.13 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.13 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.14 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.14 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.14 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.14 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.13 シェーダー失敗: ",
-        zh = "体积光（3D）v3.13 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.13 shader error: ",
-        de = "Volumenlicht (3D) v3.13 Shader-Fehler: ",
+        ja = "体積光（3D）v3.14 シェーダー失敗: ",
+        zh = "体积光（3D）v3.14 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.14 shader error: ",
+        de = "Volumenlicht (3D) v3.14 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.13：初期化中……",
-        zh = "体积光（3D）v3.13：初始化中……",
-        en = "Volumetric Light (3D) v3.13: Initializing...",
-        de = "Volumenlicht (3D) v3.13: Initialisierung läuft...",
+        ja = "体積光（3D）v3.14：初期化中……",
+        zh = "体积光（3D）v3.14：初始化中……",
+        en = "Volumetric Light (3D) v3.14: Initializing...",
+        de = "Volumenlicht (3D) v3.14: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.13：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.13：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.13: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.13: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.14：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.14：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.14: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.14: Initialisiert (%.2fs)",
     },
 }
 
@@ -9013,19 +9028,9 @@ local function vl_bf_render()
             VL_BF.cam_comp   = 0.48
             wboit_ka         = 0.0
         else
-            wboit_ka = 0.24
-            local eff_lum_pa = 1.0
-            if cam_comp_mode > 0.5 and cam_comp_mode < 1.5 and cl_pr ~= nil then
-                eff_lum_pa = math.max(0.05, tonumber(cl_pr.lum) or 1.0)
-            end
-            local est_slice_e = VL_BF.k_gain_base * VL_BF.base_alpha * 1.05 * (VL_BF.dz or 16.4) * 1.6 * eff_lum_pa
-            if est_slice_e < 0.030 then
-                VL_BF.poly_alpha = math.max(0.045, math.min(0.14, 0.14 - est_slice_e * 3.1))
-            else
-                VL_BF.poly_alpha = math.max(0.045, math.min(0.27, est_slice_e * 0.65))
-            end
-            local min_k_opt = math.ceil(0.00103 * 255.0 / VL_BF.poly_alpha)
-            VL_BF.min_opt_a = min_k_opt / 255.0
+            VL_BF.poly_alpha = 0.27
+            VL_BF.min_opt_a  = 1.0 / 255.0
+            wboit_ka         = 0.0
         end
     end
     VL_BF.k_gain_gpu= VL_BF.k_gain_base * (VL_BF.base_alpha / VL_BF.poly_alpha) * 1.05 * VL_BF.cam_comp
@@ -9518,7 +9523,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.13 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.14 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -9547,7 +9552,7 @@ local function vl_run_frame()
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.13 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.14 error: " .. tostring(err)) end)
     end
     return ok
 end

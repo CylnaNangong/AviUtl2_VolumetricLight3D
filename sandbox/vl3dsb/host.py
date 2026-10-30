@@ -66,6 +66,7 @@ class Layer:
     end: int = 10 ** 9
     enabled: bool = True
     fx_name: str = ""
+    raw_image: Optional[np.ndarray] = None  # (h,w,4) uint8 when effect=False differs from image
 
     @property
     def w(self) -> int:
@@ -313,12 +314,20 @@ class Host:
             return False
         if w > self.cfg.max_buffer_dim or h > self.cfg.max_buffer_dim:
             return False
-        other = sum(b.shape[0] * b.shape[1] for n, b in self.buffers.items() if n != name)
-        if other + w * h > self.cfg.cache_pixels:
+        # AviUtl2's TemporaryImageCacheSize pool tracks cache:* and tempbuffer;
+        # the active "object" and "framebuffer" render targets live outside it.
+        is_temp_cache = name not in ("object", "framebuffer")
+        other = sum(
+            b.shape[0] * b.shape[1]
+            for n, b in self.buffers.items()
+            if n != name and n not in ("object", "framebuffer")
+        )
+        if is_temp_cache and other + w * h > self.cfg.cache_pixels:
             return False
         img = np.zeros((h, w, 4), np.uint8) if clear else np.zeros((h, w, 4), np.uint8)
         self.buffers[name] = img
-        self.peak_cache_pixels = max(self.peak_cache_pixels, other + w * h)
+        if is_temp_cache:
+            self.peak_cache_pixels = max(self.peak_cache_pixels, other + w * h)
         return True
 
     def buf(self, name: str) -> Optional[np.ndarray]:
@@ -632,9 +641,12 @@ class Host:
             return False
         idx = int(arg)
         layer = self._layer(idx)
-        if layer is None or layer.image is None:
+        if layer is None or (layer.image is None and layer.raw_image is None):
             return False
-        img = layer.image
+        if not bool(effect) and layer.raw_image is not None:
+            img = layer.raw_image
+        else:
+            img = layer.image if layer.image is not None else layer.raw_image
         if layer.fx_name and bool(effect) and self._fx_bug(layer):
             alpha = np.full(img.shape[:2], 255, np.uint8)
             img = np.concatenate([img[..., :3], alpha[..., None]], axis=-1)
@@ -726,14 +738,45 @@ class Host:
             if len(widths) > 1:
                 self.errors.append(f"drawpoly: mixed vertex tuple widths {sorted(widths)}")
                 return False
-        self.draw_calls.append({"type": "poly", "n": len(prims), "alpha": float(alpha)})
+        lua_obj = self.lua.globals().obj
+        def _of(k: str, d: float = 0.0) -> float:
+            try:
+                v = lua_obj[k]
+                return float(v) if isinstance(v, (int, float)) else d
+            except Exception:
+                return d
+        obj_alpha = _of("alpha", 1.0)
+        eff_alpha = max(0.0, min(1.0, float(alpha) * obj_alpha))
+        obj_tf = {
+            "x": _of("x"), "y": _of("y"), "z": _of("z"),
+            "ox": _of("ox"), "oy": _of("oy"), "oz": _of("oz"),
+            "rx": _of("rx"), "ry": _of("ry"), "rz": _of("rz"),
+            "cx": _of("cx"), "cy": _of("cy"), "cz": _of("cz"),
+            "zoom": _of("zoom", 1.0),
+        }
+        blend = str(self.setoptions.get("blend", "none"))
+        billboard = int(self.setoptions.get("billboard", 0) or 0)
+        sampler = str(self.setoptions.get("sampler", "clamp"))
+        drawtarget = str(self.setoptions.get("drawtarget", "framebuffer"))
+        self.draw_calls.append({"type": "poly", "n": len(prims), "alpha": eff_alpha, "blend": blend})
         # Each draw call uses the object image as it exists *now*. A later
         # shader dispatch may replace or clear it for the next 64-slice atlas.
         # Snapshot once per call (shared by all its quads), rather than using
         # the last atlas for every recorded slice at the end of the frame.
         texture = self.buf("object")
         atlas = None if texture is None else np.array(texture, copy=True)
-        self.quads.extend([{"verts": q, "alpha": float(alpha), "atlas": atlas} for q in prims])
+        self.quads.extend([{
+            "verts": q,
+            "alpha": eff_alpha,
+            "poly_alpha": float(alpha),
+            "obj_alpha": obj_alpha,
+            "obj_tf": obj_tf,
+            "blend": blend,
+            "billboard": billboard,
+            "sampler": sampler,
+            "drawtarget": drawtarget,
+            "atlas": atlas,
+        } for q in prims])
         return True
 
     def _api_draw(self, x=0, y=0, z=0, zoom=1.0, alpha=1.0, rx=0.0, ry=0.0, rz=0.0):

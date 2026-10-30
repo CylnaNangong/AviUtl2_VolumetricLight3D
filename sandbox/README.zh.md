@@ -22,9 +22,11 @@ sandbox/
 ├── ablate_brightness.py   # 配对消融 v3.13 alpha 编码与低 alpha 门
 ├── compare_screenshots.py # 截图区域测量与指定几何配准
 ├── probe_observed_scene.py # 按实机界面可见设置构造 CPU 假设场景
+├── verify_aup2_brightness.py # 解析真实 .aup2 子合成并执行 3D OIT 跨版本亮度对比
 ├── requirements.txt       # lupa / numpy / pillow
 ├── vl3dsb/                # 沙箱核心
 │   ├── obj2.py            # .obj2 / .aul2 解析器（参数、分组、hide 规则、HLSL 块、i18n）
+│   ├── aup2.py            # .aup2 工程与 OpenGlow 解析器（多语言参数键映射与关键帧插值）
 │   ├── luasurface.py      # 扫描 Lua 里的 obj.* 调用 / 字段读 / 字面量键（不执行）
 │   ├── apidoc.py          # 官方宿主 API 签名与键表（docs.aviutl2.jp/lua 的转录）
 │   ├── api_lint.py        # 宿主 API 契约 linter（脚本 ⇄ 文档 ⇄ 模拟宿主）
@@ -34,10 +36,11 @@ sandbox/
 │   ├── hlsl/              # HLSL→C++ 转译器（transpile.py）与执行器（executor.py）
 │   │   └── interface.py   # 静态接口校验：cbuffer 布局 ⇄ Lua 调用点（Astra 规则移植）
 │   ├── raster.py          # 四边形近似光栅化（RGBA8 预览 / 两种浮点假设模型）
+│   ├── compositor3d.py    # C++17+OpenMP 3D 摄像机透视 + 深度缓冲 + Shader #118 OIT 合成器
 │   ├── assets.py          # 测试素材：彩窗、剪影、渐变、单位立方体 .obj
 │   ├── session.py         # 高层 API：build scene → run_frame → PNG/统计
 │   └── harness.py         # 极简测试框架（@check / require / skip）
-├── checks/                # 9 组、90 个用例
+├── checks/                # 10 组、94 个用例
 │   ├── checks_01_script.py     # .obj2 静态分析（参数语法/分组/默认值/hide 语义/i18n/安全）
 │   ├── checks_02_language.py   # 4 个 .aul2 语言包完整性
 │   ├── checks_03_hlsl.py       # 14 段 HLSL 编译、数值行为、静态 uniform 布局
@@ -46,7 +49,8 @@ sandbox/
 │   ├── checks_06_features.py   # 端到端特性（2D/3D 遮挡、AutoBlend、雾…）
 │   ├── checks_07_perf.py       # 性能与显存/缓存预算
 │   ├── checks_08_api.py        # 宿主 API 契约（文档签名/键/返回值 ⇄ 模拟宿主）
-│   └── checks_09_raster.py     # 低 alpha 阈值、图集快照及十六进制 HLSL 回归
+│   ├── checks_09_raster.py     # 低 alpha 阈值、图集快照及十六进制 HLSL 回归
+│   └── checks_10_brightness.py # 非聚光源常量 OIT 令牌、聚光源隔离与 3D .aup2 亮度回归
 └── out/                   # 全部产物（.gitignore 已忽略，可随时删除重建）
     ├── results.json       # 最近一次测试的机器可读结果
     ├── demo/ features/ hlsl/ bridge/ runtime/   # 各类 PNG / 日志
@@ -71,7 +75,7 @@ g++ --version                                          # 需要支持 C++17（�
 ```bash
 cd sandbox
 
-python3 run_checks.py                  # 跑全部 91 个用例，输出 PASS/FAIL/WARN + out/results.json
+python3 run_checks.py                  # 跑全部 94 个用例，输出 PASS/FAIL/WARN + out/results.json
 python3 run_checks.py --repo /path/to/other-checkout  # 用本沙箱检验另一个仓库快照
 python3 run_checks.py --list           # 列出全部用例
 python3 run_checks.py --only hlsl      # 名字含 "hlsl" 的用例
@@ -120,6 +124,15 @@ python3 sandbox/compare_brightness.py \
 
 不提供 `--window/--character` 则使用沙箱生成素材；可省略 `--reference`。
 脚本固定 256×144、缩放素材并自设参数，不会读取 `.aup2`；两种浮点模型不含真实宿主光照和深度权重。
+
+若要直接加载真实 `.aup2` 工程的子合成（含关键帧插值、`OpenGlow` 与 3D 透视 + Shader #118 OIT 合成）进行跨版本逐版复现，可使用：
+
+```bash
+python3 sandbox/verify_aup2_brightness.py \
+  --aup2 /path/to/project.aup2 --scene autoblend测试 \
+  --assets /path/to/assets_dir \
+  --scripts v3.07=/path/to/v3.07.obj2 v3.13=/path/to/v3.13.obj2 v3.14=Script/VolumetricLight3D.obj2
+```
 输出的亮度代理只用于对比**该模型和该场景**，不能直接声称真机提升百分比。
 
 如需分离比例/常量 alpha 与 HLSL 低 alpha 门的作用，可运行：

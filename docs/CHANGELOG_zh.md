@@ -1,5 +1,16 @@
 # 更新历史 — 体积光（3D） / VL3DBridge
 
+## v3.14（2026-10-29）· 修复 v3.08 引入的非聚光源光束变暗回归 & 扩充 3D 沙箱
+
+- **根治非聚光源路径（2D 图层光源 / 平行光 / 点光源）自 `v3.08` 起的亮度下降回归**：
+  - **定位结论**：全版本逐版回放（`v3.00`～`v3.13`）与对照消融证实，亮度跳变**唯一发生在 `v3.08`（提交 `a86c0ae`）**，`v3.00`～`v3.07` 完全一致、`v3.08`～`v3.13` 完全一致。当时为消除摄像机聚光源切片年轮，在所有光学体积光路径（`fill_mode ~= 1`）统一引入了：
+    1. 比例 alpha 编码 `wboit_ka = 0.24`（同时触发 `beamatlas` 内 `out_a < min_a` 低亮度纹素清零门，以及宿主 WBOIT `Reveal` 烟雾衰减）；
+    2. 动态压低的 `poly_alpha = 0.045..0.27` 与向上取整 `min_opt_a = ceil(0.00103*255/poly_alpha)/255`（在常规强度下 `poly_alpha = 0.045, min_opt_a = 6/255`，使 `out_a < min_a` 丢弃门槛抬高约 4 倍、部分区间 `ceil` 膨胀有效 `a118`，并压缩单切片 8-bit 动态范围）；
+    3. `v3.09` 从聚光源路径残留到非聚光源路径的单标量抖动 `d_q`（相较 `v3.07` 的三通道独立 PCG+IGN 抖动 `d3`，降低了暗部纹素在 `2x2` 双线性邻域内通过 Shader #118 `a118 > 0.001` 阈值的存活概率）。
+    而虚拟聚光源在 `v3.09`～`v3.12` 已独立拆分至 `is_virtual_spot` / `spot_env` 分支，导致上述旧参数仅残留在非聚光源 `else` 分支。
+  - **修复方案**：将非聚光源光学体积光分支恢复为 `poly_alpha = 0.27`、`min_opt_a = 1/255`、`wboit_ka = 0.0`（`a118 = 0.001059`，兼顾内点通过宿主 `0.001` 阈值与外缘零邻接双线性硬件丢弃）及三通道去相关抖动 `d3`；完整保留 `v3.08`～`v3.13` 的 3D 阴影雅可比 PCF、`spot_env` 虚拟聚光源弦积分、摄像机光源 `ltype` 兼容、编辑视角回退与导出自动隐藏 HUD。
+- **沙箱扩充（94 PASS / 0 FAIL）**：新增 `.aup2` 工程加载器（`sandbox/vl3dsb/aup2.py`，含 `OpenGlow` 近似与多语言参数映射）、C++17/OpenMP 3D 透视 + 深度缓冲 + Shader #118 OIT 合成器（`sandbox/vl3dsb/compositor3d.py`）、复现工具 `sandbox/verify_aup2_brightness.py` 及回归用例 `sandbox/checks/checks_10_brightness.py`。
+
 ## 测试沙箱扩充（2026-10-29）· 本体代码未变更
 
 > 本节只记录**测试与文档**改动：`Script/VolumetricLight3D.obj2`、`src/VL3DBridge`、`Language/*.aul2`
