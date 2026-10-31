@@ -1,5 +1,19 @@
 # 更新历史 — 体积光（3D） / VL3DBridge
 
+## v3.16（2026-10-31）· 跨脚本共享真 3D 光场与遮挡阴影协议（`VL3DLF v3`）& `Snow3D（雪（3D））v1.23` 丁达尔受光/阴影联动
+
+- **新增跨脚本真 3D 光场发布器（`ps_vl_lfpack.hlsl` + `18b_lightfield.lua`，协议 `VL3DLF v3`）**：
+  - **单次 GPU 打包、零额外缓存开销**：在 `beamatlas` 覆写 `"object"` 前，利用 `48×48` / `48×96` / `48×114` 单次像素着色器调用（`ps_vl_lfpack`）将三大物理场一次性打包并写出至官方跨脚本共享表 `global["VL3D_LF:<scene_id>:<layer>"]` 与索引 `global["VL3D_LF_IDX:<scene_id>"]`（`+0` 峰值缓存像素、零新增 UI 参数）：
+    1. **Band 0（`48×48` 光源辐射亮度场）**：保留阈值过滤后的局部光强与彩绘玻璃多色光 RGB；
+    2. **Band 1（`48×48` 光线投射阴影深度场，16-bit 精度）**：在 GPU 上统一融合 `.obj`/`.vrm` 3D 阴影贴图（`g_shmap`）与最多 8 层 2D 遮挡平面光线求交（`g_occ`），精确记录每条体积光线首次被遮挡的深度 `t_occ`；
+    3. **Band 2（`48×18` 相机空间前景遮罩深度场，16-bit 精度）**：统一融合 3D 模型相机深度图（`g_camocc`）与 2D 前景剪影平面视向深度，支持 `occ_mode = 2 / 3` 前景轮廓保护。
+  - **全純 7-bit ASCII Base64 传输封包（`VL3DB64:...`）与严密生命周期管理**：所有跨脚本字符串均不含任何 `\0` 字节，彻底免疫宿主 C++ 桥接层 `lua_tostring` / `c_str()` 截断风险；严格按 `scene_id` 隔离主合成与子场景，并在强度归零、源图层失效或异常回退时通过 `vl_lf_withdraw()` 立即撤回槽位，杜绝跨场景串光与停用残光。
+- **体积光与粒子图层互不误遮挡加固（`05_utils.lua` / `17_occlusion_pipeline.lua` / `18_autoblend.lua`）**：
+  - 统一抽取 `is_volume_fx_name()`，自动排除日/中/英/德多语言环境下的 `雪（3D）` / `Snow3D` 及其他 `VolumetricLight3D` 图层被误捕获为 2D 剪影遮挡物或前景逆光融合目标。
+- **配套交付 `Snow3D（雪（3D））v1.23`（位于 `integrations/snow3d/`，含一键同步脚本 `apply_to_snow3d.py`）**：
+  - 新增「体积光联动」折叠参数组（受体积光照亮 / 受光强度 / 光色染色度 / 光束外与阴影压暗 / 受光晕染范围）及中英德四语 `.aul2` 完整词条与悬停提示；实现**光束内雪花按局部光强与彩绘玻璃颜色发亮，进入 3D/2D 阴影柱或前景遮罩后自动熄灭（“能够被照亮 + 被遮挡就不亮”）**，无体积光时与 `v1.22` 逐顶点逐像素完全一致。
+- **沙箱端到端光学与阴影测试扩充（106 PASS / 0 FAIL / 0 WARN）**：扩展 `sandbox/vl3dsb/host.py` 支持跨脚本共享 `global` 与 `obj.load("figure", ...)`，新增 `sandbox/checks/checks_12_lightfield.py`（覆盖平行光/点光源发散/汇聚光/相机 3D 聚光灯、斜向 3D `.obj` 与 2D 投射阴影柱消光、前景遮罩前后分层、彩绘玻璃红蓝分色与暗铅条消光、对象旋转变换、多光源叠加、子场景隔离与撤回清理），详见 `docs/LIGHTFIELD_SYNC.zh.md` 与 `sandbox/docs/DSH_HANDOFF_v3.16_Snow3D_v1.23.zh.md`。
+
 ## v3.15（2026-10-31）· AviUtl ExEdit2 v2.1.16 完整适配 & VL3DBridge v1.22 修复内置文本对齐/描边 SDK 覆盖缺陷 & ASLR 不变 SHA-256
 
 - **AviUtl ExEdit2 `v2.1.16`（2026-10-31 发布）与官方 Plugin SDK `[2026/10/31]` 完整适配**：

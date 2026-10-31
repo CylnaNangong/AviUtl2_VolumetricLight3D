@@ -1,17 +1,17 @@
 local function beam_frame()
     vl_bf_reset()
     vl_bf_prepare()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_capture()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_geometry()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_mip()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_occlusion()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_render()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
 end
 
 
@@ -41,7 +41,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.15 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.16 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -52,25 +52,26 @@ local function vl_run_frame()
     local ok, err = pcall(function()
         vl_bf_reset()
         vl_bf_prepare()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         vl_bf_capture()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         _VL_PERSIST.in_beam_stage = 2
         vl_bf_geometry()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         vl_bf_mip()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         vl_bf_occlusion()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         vl_bf_render()
     end)
     _VL_PERSIST.in_beam_layers[self_key] = nil
     _VL_PERSIST.in_beam_stage = 0
     _VL_PERSIST.in_beam = false
     if not ok then
+        vl_lf_withdraw()
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.15 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.16 error: " .. tostring(err)) end)
     end
     return ok
 end

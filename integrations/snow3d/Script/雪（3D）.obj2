@@ -1,0 +1,2204 @@
+--information:雪（3D）v1.23
+--
+-- v1.23 更新点 (VolumetricLight3D v3.16+ との 3D 光場・遮蔽影共有に対応):
+--   ・「体積光連動」設定グループを新設（既定 ON・折りたたみ収納、単体使用時は負荷・見た目とも v1.22 と完全同一）。
+--   ・同一シーン内の「体積光（3D）v3.16+」が出力する 3D 光場パック（VL3DLF v3：48×48 放射輝度＆色、
+--     48×48 3Dモデル/2Dレイヤー投影シャドウマップ、48×18 カメラ空間前景マスク）を受信し、
+--     平行光・放射点光源・収束光・カメラ制御 3D スポットライト・ステンドグラス多色光・複数光源の重畳に対応。
+--   ・光束内の雪粒子を光色で発光させると同時に、3D モデル（.obj/.vrm）や 2D 遮蔽レイヤーの 3D 影柱に入った粒子、
+--     および前景遮蔽マスク背後の粒子では自動的に受光を遮断（「光が当たれば輝き、遮られれば光らない」真の 3D 光学連動）。
+--   ・オブジェクト自身の回転（rx/ry/rz）・中心ずれ（cx/cy/cz）・個別拡大率を含む完全なローカル→ワールド変換に対応し、
+--     GPU 図形テクスチャ描画パスと CPU 頂点色フォールバック円描画パスの双方で一貫した受光表現を実現。
+--
+-- v1.22 更新点 (カメラ制御「目標レイヤー＝自身」設定時の発生領域基準補正):
+--   ・カメラ制御オブジェクトの「目標レイヤー」にカメラ制御自身のレイヤー番号を指定した際、
+--     AviUtl2 公式仕様（Default.aul2: カメラの位置が目標基準になる）により目標オフセット (0,0,0) で
+--     注視点 (cam.tx, cam.ty, cam.tz) がカメラ座標 (cam.x, cam.y, cam.z) と一致（距離 0）し、
+--     「カメラに追従」有効時に発生領域の中心がレンズ位置へ移動して粒子の約半分がカメラ背面へ回り込み
+--     消滅・残りの粒子がレンズ直前で極端に巨大ボケ化する問題を修正。
+--   ・注視点とカメラ座標が一致（|target - cam| < 1e-4）している場合は、カメラ前方ベクトル f に沿って
+--     焦点距離 cam.d（既定 1024）だけ前方の基準注視点 (cam + f * d) を用いるよう補正し、
+--     「目標レイヤー＝---（未指定）」と「目標レイヤー＝カメラ制御自身（目標オフセット 0）」で
+--     粒子配置・密度・粒径・奥行き減衰が 100% 完全一致するよう統一。
+--
+-- v1.21 更新点 (AviUtl ExEdit2 v2.1.15 / SDK 2026-10-24 対応):
+--   ・AviUtl2 の制限付き Lua 実行環境（io == nil / os == nil）において、従来の io.open が
+--     利用できずログ言語が常に日本語へフォールバックしていた問題を修正。Win32 Unicode API
+--     （GetModuleFileNameW / GetEnvironmentVariableW / CreateFileW）による aviutl2.ini 直接
+--     読み取りを追加し、中国語・英語・ドイツ語 UI の自動検出を完全対応。
+--
+-- v1.20 更新点:
+--   ・カメラ制御が無い標準 3D 描画時（cam == nil）の仮想カメラ座標を (0, 0, 0) から
+--     AviUtl2 標準視点 (0, 0, -1024) へ修正し、「近景カット」有効時に雪の約 61.5% が
+--     誤って消滅する不具合および奥行き減衰の基準距離ずれを解消。
+--   ・全 9 個のチェック項目（--check）に厳密な真偽値変換（as_bool）を導入し、
+--     ホストから数値 0 が渡された際に ON と誤判定される問題を修正。
+--   ・カメラの Z 軸回転（ロール角 cam.rz）をビルボード基底 (r, u) および視錐台フィットへ反映。
+--   ・図形テクスチャ描画時の「奥行き順に描画」を 8 層深度スライス × 12 段階 α バッチ化へ改良し、
+--     粒径ごとの明度係数（bright）を有効 α へ反映。
+--   ・CPU フォールバック円描画（最大 144,000 頂点）を 5,400 頂点単位で分割送信しバッファ溢れを防止。
+--   ・aviutl2.ini の UI 言語判定をセッション永続キャッシュ（_G._SNOW3D_PERSIST）化し毎フレーム I/O を排除。
+
+--group:雪,true
+--track@count:粒子数,1,4000,400,1
+--track@psize:粒径,0.1,400,8,0.1
+--track@size_var:大きさのばらつき,0,100,50,1
+--figure@fig:図形,円
+--track@soft:エッジのぼかし,0,100,100,1
+--color@snow_color:雪の色,0xffffff
+--group
+
+--group:運動,true
+--track@vel_x:初速X,-3000,3000,0,1
+--track@vel_y:初速Y,-3000,3000,200,1
+--track@vel_z:初速Z,-3000,3000,0,1
+--track@spread:初速のばらつき,0,85,25,1
+--track@gravity:重力,-5000,5000,400,1
+--track@wind_x:風X,-3000,3000,0,1
+--track@wind_y:風Y,-3000,3000,0,1
+--track@wind_z:風Z,-3000,3000,0,1
+--track@sway:揺れ幅,0,500,30,1
+--track@sway_speed:揺れ速さ,0,20,2,0.1
+--track@spin:回転速度,-720,720,90,1
+--group
+
+--group:領域,true
+--track@margin:領域の余裕,0,200,20,5
+--track@area_w:幅(X),10,20000,1920,10
+--track@area_h:高さ(Y),10,20000,1080,10
+--track@area_d:奥行き(Z),10,20000,1500,10
+--track@area_x:中心X,-20000,20000,0,10
+--track@area_y:中心Y,-20000,20000,0,10
+--track@area_z:中心Z,-20000,20000,0,10
+--check@sync_size:画面サイズに同期,false
+--check@fit_view:壁を画面の外へ,false
+--check@follow:カメラに追従,true
+--check@world_fixed:世界座標に固定,true
+--track@wrap_soft:折り返しのぼかし,0,100,40,1
+--check@show_box:領域の枠を表示,false
+--group
+
+--group:寿命,true
+--check@auto_life:移動時間から自動,true
+--track@life_sec:生存時間,0.1,60,6,0.1
+--track@fade_in:出現フェード,0,50,10,1
+--track@fade_out:消滅フェード,0,100,30,1
+--group
+
+--group:描画,true
+--track@depth_fade:奥行き減衰,0,100,30,1
+--check@near_cull:近景カット,false
+--track@near_dist:近景カット距離,0,5000,150,10
+--check@sort_depth:奥行き順に描画,true
+--check@log_mode:ログに描画モードを出力,true
+--track@seed:乱数シード,0,9999,0,1
+--group
+
+--group:体積光連動,false
+--check@vl_enable:体積光に照らされる,true
+--track@vl_strength:受光の強さ,0,300,120,1
+--track@vl_tint:光色の染まり,0,100,85,1
+--track@vl_shade:光束外・影の減光,0,100,30,1
+--track@vl_glow:発光の広がり,100,280,135,1
+--hide@vl_strength:vl_enable==0
+--hide@vl_tint:vl_enable==0
+--hide@vl_shade:vl_enable==0
+--hide@vl_glow:vl_enable==0
+--group
+
+--------------------------------------------------------------------
+-- 雪（3D）
+--   ・3D空間上に粒子を発生させ、重力・風・揺らぎで運動させる
+--   ・各粒子はカメラに正対するビルボードとして描画する
+--   ・粒子の絵柄は AviUtl2 標準の図形（円/四角形/三角/星/心…）を
+--     そのままテクスチャとして使用する
+--   ・頂点座標にZを持つため、カメラ制御の透視投影が効く
+--   ・シミュレーションは obj.time の純関数なのでシークしても破綻しない
+--------------------------------------------------------------------
+
+
+--[[pixelshader@ps_snow_shape_blur:
+Texture2D Src : register(t0);
+cbuffer SnowCB : register(b0) { float4 dims; float4 cfg; };
+// dims=source width,height,output width,height
+// cfg=axis(0 horizontal+pad,1 vertical),sigma,radius,pad
+float4 read_safe(int2 q) {
+    if (q.x < 0 || q.y < 0 || q.x >= (int)dims.x || q.y >= (int)dims.y)
+        return float4(0,0,0,0);
+    return Src.Load(int3(q,0));
+}
+float4 ps_snow_shape_blur(float4 pos : SV_Position) : SV_Target {
+    int2 p = int2(pos.xy);
+    int2 base = p;
+    if (cfg.x < 0.5) base -= int2((int)cfg.w,(int)cfg.w);
+    float4 sum = float4(0,0,0,0);
+    float total = 0;
+    for (int j=-72; j<=72; ++j) {
+        int aj = (j < 0) ? -j : j;
+        if (aj > (int)cfg.z) continue;
+        float w = exp(-0.5*j*j/max(cfg.y*cfg.y,0.0001));
+        int2 delta = cfg.x < 0.5 ? int2(j,0) : int2(0,j);
+        sum += read_safe(base+delta)*w;
+        total += w;
+    }
+    return sum/max(total,0.00001);
+}
+]]
+
+--[[pixelshader@ps_snow_shape_tint:
+Texture2D Src : register(t0);
+cbuffer SnowTintCB : register(b0) { float4 tint; };
+float4 ps_snow_shape_tint(float4 pos : SV_Position) : SV_Target {
+    float4 s = Src.Load(int3(int2(pos.xy), 0));
+    float a = saturate(s.a * tint.a);
+    return float4(saturate(tint.rgb) * a, a);
+}
+]]
+
+local obj, math = obj, math
+
+_G._SNOW3D_PERSIST = _G._SNOW3D_PERSIST or {}
+local _SNOW_PERSIST = _G._SNOW3D_PERSIST
+
+local function as_bool(v, def)
+    if v == nil then return def end
+    if type(v) == "boolean" then return v end
+    if type(v) == "number" then return v ~= 0 end
+    if type(v) == "string" then
+        return v == "1" or v:lower() == "true"
+    end
+    return def
+end
+
+local function snow_utf8_to_u16(ffi, s)
+    local codes = {}
+    local i, n = 1, #s
+    while i <= n do
+        local b1 = s:byte(i)
+        local cp
+        if b1 < 0x80 then cp = b1; i = i + 1
+        elseif b1 < 0xE0 and i + 1 <= n then cp = (b1 - 0xC0) * 64 + (s:byte(i + 1) - 0x80); i = i + 2
+        elseif b1 < 0xF0 and i + 2 <= n then cp = (b1 - 0xE0) * 4096 + (s:byte(i + 1) - 0x80) * 64 + (s:byte(i + 2) - 0x80); i = i + 3
+        elseif i + 3 <= n then cp = (b1 - 0xF0) * 262144 + (s:byte(i + 1) - 0x80) * 4096 + (s:byte(i + 2) - 0x80) * 64 + (s:byte(i + 3) - 0x80); i = i + 4
+        else cp = 0x3F; i = i + 1 end
+        if cp >= 0x10000 then
+            cp = cp - 0x10000
+            codes[#codes + 1] = 0xD800 + math.floor(cp / 1024)
+            codes[#codes + 1] = 0xDC00 + (cp % 1024)
+        else
+            codes[#codes + 1] = cp
+        end
+    end
+    local buf = ffi.new("uint16_t[?]", #codes + 1)
+    for k = 1, #codes do buf[k - 1] = codes[k] end
+    buf[#codes] = 0
+    return buf
+end
+
+local function snow_u16_to_utf8(ffi, wptr, nlen)
+    local p = ffi.cast("const uint16_t*", wptr)
+    local out = {}
+    local i = 0
+    while i < nlen do
+        local u = p[i]
+        if u == 0 then break end
+        if u >= 0xD800 and u <= 0xDBFF and i + 1 < nlen then
+            local u2 = p[i + 1]
+            if u2 >= 0xDC00 and u2 <= 0xDFFF then
+                u = 0x10000 + (u - 0xD800) * 1024 + (u2 - 0xDC00)
+                i = i + 1
+            end
+        end
+        i = i + 1
+        if u < 0x80 then out[#out + 1] = string.char(u)
+        elseif u < 0x800 then out[#out + 1] = string.char(0xC0 + math.floor(u / 64), 0x80 + (u % 64))
+        elseif u < 0x10000 then out[#out + 1] = string.char(0xE0 + math.floor(u / 4096), 0x80 + (math.floor(u / 64) % 64), 0x80 + (u % 64))
+        else out[#out + 1] = string.char(0xF0 + math.floor(u / 262144), 0x80 + (math.floor(u / 4096) % 64), 0x80 + (math.floor(u / 64) % 64), 0x80 + (u % 64)) end
+    end
+    return table.concat(out)
+end
+
+local function snow_get_w32_io()
+    if type(_G.VL3D_TEST_W32_API) == "table" then return _G.VL3D_TEST_W32_API end
+    local api = _SNOW_PERSIST.w32_io
+    if api ~= nil then return api or nil end
+    api = false
+    pcall(function()
+        local ok_f, ffi = pcall(require, "ffi")
+        if not (ok_f and ffi ~= nil and ffi.os == "Windows") then return end
+        pcall(ffi.cdef, "void* GetModuleHandleA(const char*); void* GetProcAddress(void*, const char*);")
+        local gmh = ffi.cast("void* (__stdcall *)(const char*)", ffi.C.GetModuleHandleA)
+        local gpa = ffi.cast("void* (__stdcall *)(void*, const char*)", ffi.C.GetProcAddress)
+        local k32 = gmh("kernel32.dll")
+        if k32 == nil then return end
+        local p_cf = gpa(k32, "CreateFileW")
+        local p_rf = gpa(k32, "ReadFile")
+        local p_ch = gpa(k32, "CloseHandle")
+        local p_ge = gpa(k32, "GetEnvironmentVariableW")
+        local p_gm = gpa(k32, "GetModuleFileNameW")
+        if p_cf ~= nil and p_rf ~= nil and p_ch ~= nil then
+            api = {
+                CreateFileW = ffi.cast("intptr_t (__stdcall *)(const uint16_t*, uint32_t, uint32_t, void*, uint32_t, uint32_t, void*)", p_cf),
+                ReadFile    = ffi.cast("int (__stdcall *)(intptr_t, void*, uint32_t, uint32_t*, void*)", p_rf),
+                CloseHandle = ffi.cast("int (__stdcall *)(intptr_t)", p_ch),
+                GetEnvW     = p_ge ~= nil and ffi.cast("uint32_t (__stdcall *)(const uint16_t*, uint16_t*, uint32_t)", p_ge) or nil,
+                GetModW     = p_gm ~= nil and ffi.cast("uint32_t (__stdcall *)(void*, uint16_t*, uint32_t)", p_gm) or nil,
+            }
+        end
+    end)
+    _SNOW_PERSIST.w32_io = api
+    return api or nil
+end
+
+local function snow_read_file_utf8(path_utf8)
+    if type(path_utf8) ~= "string" or #path_utf8 == 0 then return nil end
+    if type(io) == "table" and type(io.open) == "function" then
+        local fh = io.open(path_utf8, "rb")
+        if fh ~= nil then
+            local d = fh:read("*a")
+            fh:close()
+            if type(d) == "string" and #d > 0 then return d end
+        end
+    end
+    local out = nil
+    pcall(function()
+        local ok_f, ffi = pcall(require, "ffi")
+        if not (ok_f and ffi ~= nil) then return end
+        local api = snow_get_w32_io()
+        if not api then return end
+        local wbuf = snow_utf8_to_u16(ffi, path_utf8)
+        local hf = tonumber(api.CreateFileW(wbuf, 0x80000000, 7, nil, 3, 0x80, nil)) or -1
+        if hf == 0 or hf == -1 then return end
+        local buf = ffi.new("uint8_t[65536]")
+        local rd = ffi.new("uint32_t[1]")
+        if api.ReadFile(hf, buf, 65536, rd, nil) ~= 0 and rd[0] > 0 then
+            out = ffi.string(buf, rd[0])
+        end
+        api.CloseHandle(hf)
+    end)
+    return out
+end
+
+local function snow_get_win_dirs()
+    local pdata, exe_dir = nil, nil
+    if type(os) == "table" and type(os.getenv) == "function" then
+        pdata = os.getenv("ProgramData")
+    end
+    pcall(function()
+        local ok_f, ffi = pcall(require, "ffi")
+        if not (ok_f and ffi ~= nil) then return end
+        local api = snow_get_w32_io()
+        if not api then return end
+        if (type(pdata) ~= "string" or #pdata == 0) and api.GetEnvW ~= nil then
+            local wn = snow_utf8_to_u16(ffi, "ProgramData")
+            local wbuf = ffi.new("uint16_t[520]")
+            local n = tonumber(api.GetEnvW(wn, wbuf, 519)) or 0
+            if n > 0 and n < 519 then pdata = snow_u16_to_utf8(ffi, wbuf, n) end
+        end
+        if api.GetModW ~= nil then
+            local mbuf = ffi.new("uint16_t[1024]")
+            local mn = tonumber(api.GetModW(nil, mbuf, 1023)) or 0
+            if mn > 0 and mn < 1023 then
+                local full = snow_u16_to_utf8(ffi, mbuf, mn)
+                exe_dir = full:match("^(.*)[/\\][^/\\]+$")
+            end
+        end
+    end)
+    return pdata, exe_dir
+end
+
+local function snow_detect_ui_lang()
+    if type(_SNOW_PERSIST.ui_lang) == "string" then
+        return _SNOW_PERSIST.ui_lang
+    end
+    local ui_lang = "ja"
+    pcall(function()
+        local paths = {}
+        local sp = nil
+        pcall(function() sp = obj.getinfo("script_path") end)
+        if type(sp) == "string" and #sp > 0 then
+            local sep = sp:sub(-1)
+            if sep ~= "\\" and sep ~= "/" then sp = sp .. "/" end
+            paths[#paths + 1] = sp .. "../aviutl2.ini"
+            paths[#paths + 1] = sp .. "../../aviutl2.ini"
+            paths[#paths + 1] = sp .. "..\\aviutl2.ini"
+            paths[#paths + 1] = sp .. "..\\..\\aviutl2.ini"
+        end
+        local pdata, exe_dir = snow_get_win_dirs()
+        if type(exe_dir) == "string" and #exe_dir > 0 then
+            paths[#paths + 1] = exe_dir .. "\\aviutl2.ini"
+            paths[#paths + 1] = exe_dir .. "\\data\\aviutl2.ini"
+        end
+        if type(pdata) == "string" and #pdata > 0 then
+            paths[#paths + 1] = pdata .. "\\aviutl2\\aviutl2.ini"
+        end
+        paths[#paths + 1] = "C:\\ProgramData\\aviutl2\\aviutl2.ini"
+        for i = 1, #paths do
+            local content = snow_read_file_utf8(paths[i])
+            if type(content) == "string" and #content > 0 then
+                for line in content:gmatch("[^\r\n]+") do
+                    local val = line:match("^%s*[Ll]anguage%s*=%s*(.-)%s*$")
+                    if val ~= nil then
+                        local s = val:match("^%s*(.-)%s*$") or ""
+                        local low = s:lower()
+                        if s == "" then
+                            ui_lang = "ja"
+                        elseif s:find("中", 1, true) or s:find("简", 1, true) or s:find("簡", 1, true) or s:find("繁", 1, true)
+                            or low:find("chinese", 1, true) or low == "zh" or low == "cn" or low == "chs" or low == "cht"
+                            or low:find("^zh[_%-%. ]") or low:find("[_%-%. ]zh$") or low:find("[_%-%. ]cn$") then
+                            ui_lang = "zh"
+                        elseif s:find("德", 1, true) or s:find("独", 1, true)
+                            or low:find("deutsch", 1, true) or low:find("german", 1, true)
+                            or low == "de" or low == "deu" or low == "ger"
+                            or low:find("^de[_%-%. ]") or low:find("[_%-%. ]de$")
+                            or low:find("[_%-%. ]de[_%-%. ]") then
+                            ui_lang = "de"
+                        elseif low == "default" or s:find("日本", 1, true) or low:find("japanese", 1, true) or low:find("japan", 1, true)
+                            or low == "ja" or low == "jp" or low == "jpn"
+                            or low:find("^ja[_%-%. ]") or low:find("[_%-%. ]ja$") or low:find("[_%-%. ]jp$") then
+                            ui_lang = "ja"
+                        else
+                            ui_lang = "en"
+                        end
+                        break
+                    end
+                end
+                break
+            end
+        end
+    end)
+    _SNOW_PERSIST.ui_lang = ui_lang
+    return ui_lang
+end
+
+------------------------------------------------------------
+-- 設定値の読み取り
+--   ※ Lua/LuaJIT は 1 関数あたり 200 ローカルまで。AviUtl2 は設定項目の数だけ
+--     先頭に local を差し込んでくるので、ここは 1 個のテーブルにまとめる。
+--   AviUtl2 側で項目が読めなかった場合でも描画が止まらないよう、
+--   ここで必ず既定値を入れてから使う。
+------------------------------------------------------------
+local P = {}
+P.count = count or 400
+P.size = psize or 8
+if type(P.size) ~= "number" then P.size = 8 end
+if P.size < 0.1 then P.size = 0.1 end
+P.size_var = size_var or 50
+P.fig = fig or "円"
+P.color = snow_color or 0xffffff
+P.soft = soft or 100
+P.vel_x = vel_x or 0
+P.vel_y = vel_y or 200
+P.vel_z = vel_z or 0
+P.gravity = gravity or 400
+P.wind_x = wind_x or 0
+P.wind_y = wind_y or 0
+P.wind_z = wind_z or 0
+P.sway = sway or 30
+P.sway_rate = sway_speed or 2
+P.spin = spin or 90
+P.spread = spread or 25
+P.area_w = area_w or 1920
+P.area_h = area_h or 1080
+P.area_d = area_d or 1500
+P.area_x = area_x or 0
+P.area_y = area_y or 0
+P.area_z = area_z or 0
+P.follow = as_bool(follow, true)
+P.world_fixed = as_bool(world_fixed, true)
+P.sync_size = as_bool(sync_size, false)
+P.fit_view = as_bool(fit_view, false)
+P.margin = margin or 20
+P.wrap_soft = wrap_soft or 40
+if P.wrap_soft < 0 then P.wrap_soft = 0 elseif P.wrap_soft > 100 then P.wrap_soft = 100 end
+P.wrap_soft_k = P.wrap_soft / 100 * 6     -- フェード幅 = 粒径 × この値
+P.show_box = as_bool(show_box, false)
+P.auto_life = as_bool(auto_life, true)
+P.life = life_sec or 6
+P.fade_in = fade_in or 10
+P.fade_out = fade_out or 30
+P.depth_fade = depth_fade or 30
+P.sort = as_bool(sort_depth, true)
+P.log_mode = as_bool(log_mode, true)
+P.seed = seed or 0
+P.near_cull = as_bool(near_cull, false)
+P.near_dist = near_dist or 150
+if P.near_dist < 0 then P.near_dist = 0 end
+P.vl_enable   = as_bool(vl_enable, true)
+P.vl_strength = (type(vl_strength) == "number") and vl_strength or 120
+P.vl_tint     = (type(vl_tint) == "number") and vl_tint or 85
+P.vl_shade    = (type(vl_shade) == "number") and vl_shade or 30
+P.vl_glow     = (type(vl_glow) == "number") and vl_glow or 135
+
+------------------------------------------------------------
+-- 本体
+--   Lua/LuaJIT は 1 関数あたりのローカルが 200 個まで。
+--   AviUtl2 は設定項目の数だけ先頭に local を差し込んでくるため、
+--   本体を関数にまとめてローカル空間を分けている。
+------------------------------------------------------------
+-- Continuous view-angle feather; no previous-frame state.
+local function snow_axis_feather(f, short_width, deep_width)
+    local t = math.max(0, math.min(1, (math.abs(f) - 0.5) / 0.4))
+    t = t * t * (3 - 2 * t)
+    return short_width + (math.max(short_width, deep_width) - short_width) * t
+end
+
+------------------------------------------------------------
+-- VolumetricLight3D v3.16+ 共有 3D 光場レシーバー (VL3DLF v3)
+--   1 ローカルテーブルへ集約し snow3d_frame 内のローカル枠を圧迫しない設計。
+------------------------------------------------------------
+local SNOW_LF = (function()
+    local M = {}
+    local MAGIC     = "VL3DLF\3\0"
+    local HDR_BYTES = 264
+    local GW        = 48
+    local RAD_BYTES = 48 * 48 * 4 -- 9216
+    local SH_BYTES  = 48 * 48 * 4 -- 9216
+    local CAM_BYTES = 48 * 18 * 4 -- 3456
+    local ok_ffi, ffi = pcall(require, "ffi")
+    if not ok_ffi then ffi = nil end
+
+    local function clamp(x, lo, hi)
+        if x < lo then return lo elseif x > hi then return hi end
+        return x
+    end
+
+    local function smoothstep(e0, e1, x)
+        local t = (x - e0) / math.max(e1 - e0, 1e-6)
+        if t <= 0.0 then return 0.0 elseif t >= 1.0 then return 1.0 end
+        return t * t * (3.0 - 2.0 * t)
+    end
+
+    local function hash3(ix, iy, iz)
+        local h = math.sin(ix * 127.1 + iy * 311.7 + iz * 74.7) * 43758.5453
+        return h - math.floor(h)
+    end
+
+    local function vnoise3(x, y, z)
+        local ix, iy, iz = math.floor(x), math.floor(y), math.floor(z)
+        local fx, fy, fz = x - ix, y - iy, z - iz
+        local ux = fx * fx * (3.0 - 2.0 * fx)
+        local uy = fy * fy * (3.0 - 2.0 * fy)
+        local uz = fz * fz * (3.0 - 2.0 * fz)
+        local n000 = hash3(ix,     iy,     iz)
+        local n100 = hash3(ix + 1, iy,     iz)
+        local n010 = hash3(ix,     iy + 1, iz)
+        local n110 = hash3(ix + 1, iy + 1, iz)
+        local n001 = hash3(ix,     iy,     iz + 1)
+        local n101 = hash3(ix + 1, iy,     iz + 1)
+        local n011 = hash3(ix,     iy + 1, iz + 1)
+        local n111 = hash3(ix + 1, iy + 1, iz + 1)
+        local nx00 = n000 + (n100 - n000) * ux
+        local nx10 = n010 + (n110 - n010) * ux
+        local nx01 = n001 + (n101 - n001) * ux
+        local nx11 = n011 + (n111 - n011) * ux
+        local nxy0 = nx00 + (nx10 - nx00) * uy
+        local nxy1 = nx01 + (nx11 - nx01) * uy
+        return nxy0 + (nxy1 - nxy0) * uz
+    end
+
+    local function fbm3(x, y, z)
+        local v1 = vnoise3(x, y, z)
+        local v2 = vnoise3(x * 2.03 + 17.1, y * 2.03 + 31.7, z * 2.03 + 47.3)
+        return v1 * 0.6667 + v2 * 0.3333
+    end
+
+    local function unpack_i32_le(s, pos)
+        local b0, b1, b2, b3 = s:byte(pos, pos + 3)
+        local u = b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+        if u >= 2147483648 then u = u - 4294967296 end
+        return u
+    end
+
+    local function unpack_f32_le(s, pos)
+        local b0, b1, b2, b3 = s:byte(pos, pos + 3)
+        local sign = (b3 >= 128) and -1.0 or 1.0
+        local exp = (b3 % 128) * 2 + math.floor(b2 / 128)
+        local mant = (b2 % 128) * 65536 + b1 * 256 + b0
+        if exp == 0 then
+            if mant == 0 then return 0.0 end
+            return sign * math.ldexp(mant / 8388608.0, -126)
+        elseif exp == 255 then
+            return 0.0
+        end
+        return sign * math.ldexp(1.0 + mant / 8388608.0, exp - 127)
+    end
+
+    function M.scene_id()
+        if type(obj.scene_id) == "number" then
+            return math.floor(obj.scene_id + 0.5)
+        end
+        return 0
+    end
+
+    function M.scene_frame()
+        local f = (type(obj.frame) == "number") and math.floor(obj.frame + 0.5) or 0
+        local fs = (type(obj.frame_s) == "number") and math.floor(obj.frame_s + 0.5) or nil
+        if fs == nil and type(obj.getvalue) == "function" then
+            local ok_fs, v_fs = pcall(obj.getvalue, "frame_s")
+            if ok_fs and type(v_fs) == "number" then fs = math.floor(v_fs + 0.5) end
+        end
+        local sf = (fs or 0) + f
+        local fe = (type(obj.frame_e) == "number") and math.floor(obj.frame_e + 0.5) or nil
+        if fe ~= nil and fs ~= nil and fe >= fs and sf > fe then
+            sf = fe
+        end
+        return sf
+    end
+
+    function M.make_xform(ozm, ox0, oy0, oz0)
+        local sx = ozm * ((type(obj.sx) == "number") and obj.sx or 1.0)
+        local sy = ozm * ((type(obj.sy) == "number") and obj.sy or 1.0)
+        local sz = ozm * ((type(obj.sz) == "number") and obj.sz or 1.0)
+        local asp = (type(obj.aspect) == "number") and obj.aspect or 0.0
+        if asp > 1e-6 then
+            sy = sy * math.max(0.0, 1.0 - asp)
+        elseif asp < -1e-6 then
+            sx = sx * math.max(0.0, 1.0 + asp)
+        end
+        local cx = (type(obj.cx) == "number") and obj.cx or 0.0
+        local cy = (type(obj.cy) == "number") and obj.cy or 0.0
+        local cz = (type(obj.cz) == "number") and obj.cz or 0.0
+        local rx = (type(obj.rx) == "number") and obj.rx or 0.0
+        local ry = (type(obj.ry) == "number") and obj.ry or 0.0
+        local rz = (type(obj.rz) == "number") and obj.rz or 0.0
+        local tx = ox0 + ((type(obj.ox) == "number") and obj.ox or 0.0)
+        local ty = oy0 + ((type(obj.oy) == "number") and obj.oy or 0.0)
+        local tz = oz0 + ((type(obj.oz) == "number") and obj.oz or 0.0)
+        local has_rot = (math.abs(rx) + math.abs(ry) + math.abs(rz)) > 1e-5
+        local has_off = (math.abs(cx) + math.abs(cy) + math.abs(cz)) > 1e-5
+            or math.abs(sx - ozm) > 1e-6 or math.abs(sy - ozm) > 1e-6 or math.abs(sz - ozm) > 1e-6
+            or math.abs(tx - ox0) > 1e-6 or math.abs(ty - oy0) > 1e-6 or math.abs(tz - oz0) > 1e-6
+        if not has_rot and not has_off then
+            return { fast = true, ozm = ozm, tx = tx, ty = ty, tz = tz }
+        end
+        local d2r = math.pi / 180.0
+        local ax, ay, az = rx * d2r, ry * d2r, rz * d2r
+        local cxr, sxr = math.cos(ax), math.sin(ax)
+        local cyr, syr = math.cos(ay), math.sin(ay)
+        local czr, szr = math.cos(az), math.sin(az)
+        -- AviUtl2 rot_xyz (X -> Y -> Z):
+        -- v1 = Rx(v0), v2 = Ry(v1), v3 = Rz(v2)
+        return {
+            fast = false,
+            sx = sx, sy = sy, sz = sz,
+            cx = cx, cy = cy, cz = cz,
+            tx = tx, ty = ty, tz = tz,
+            m00 = cyr * czr,
+            m01 = sxr * syr * czr - cxr * szr,
+            m02 = cxr * syr * czr + sxr * szr,
+            m10 = cyr * szr,
+            m11 = sxr * syr * szr + cxr * czr,
+            m12 = cxr * syr * szr - sxr * czr,
+            m20 = -syr,
+            m21 = sxr * cyr,
+            m22 = cxr * cyr,
+        }
+    end
+
+    function M.to_world(xf, lx, ly, lz)
+        if xf.fast then
+            local z = xf.ozm
+            return lx * z + xf.tx, ly * z + xf.ty, lz * z + xf.tz
+        end
+        local x = (lx - xf.cx) * xf.sx
+        local y = (ly - xf.cy) * xf.sy
+        local z = (lz - xf.cz) * xf.sz
+        return x * xf.m00 + y * xf.m01 + z * xf.m02 + xf.tx,
+               x * xf.m10 + y * xf.m11 + z * xf.m12 + xf.ty,
+               x * xf.m20 + y * xf.m21 + z * xf.m22 + xf.tz
+    end
+
+    local B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local B64_DEC_LUA = {}
+    for i = 1, #B64_CHARS do B64_DEC_LUA[B64_CHARS:byte(i)] = i - 1 end
+    local b64_dec_ffi = nil
+    if ffi ~= nil then
+        b64_dec_ffi = ffi.new("int16_t[256]")
+        for i = 0, 255 do b64_dec_ffi[i] = -1 end
+        for i = 1, #B64_CHARS do b64_dec_ffi[B64_CHARS:byte(i)] = i - 1 end
+    end
+
+    local function decode_b64(s, start_idx)
+        local n = #s - start_idx + 1
+        if n < 4 then return nil end
+        if ffi ~= nil and b64_dec_ffi ~= nil then
+            local max_out = math.floor(n / 4) * 3 + 4
+            local out = ffi.new("uint8_t[?]", max_out)
+            local sp = ffi.cast("const uint8_t*", s) + (start_idx - 1)
+            local lut = b64_dec_ffi
+            local si, di = 0, 0
+            while si + 3 < n do
+                local c0 = lut[sp[si]]
+                local c1 = lut[sp[si + 1]]
+                local b2 = sp[si + 2]
+                local b3 = sp[si + 3]
+                if c0 < 0 or c1 < 0 then break end
+                local c2 = (b2 == 61) and 0 or lut[b2]
+                local c3 = (b3 == 61) and 0 or lut[b3]
+                if c2 < 0 or c3 < 0 then break end
+                local v = c0 * 262144 + c1 * 4096 + c2 * 64 + c3
+                out[di] = math.floor(v / 65536) % 256
+                di = di + 1
+                if b2 ~= 61 then
+                    out[di] = math.floor(v / 256) % 256
+                    di = di + 1
+                    if b3 ~= 61 then
+                        out[di] = v % 256
+                        di = di + 1
+                    end
+                end
+                si = si + 4
+            end
+            return ffi.string(out, di)
+        end
+        local chunks = {}
+        local ci = 0
+        local i = start_idx
+        local len_s = #s
+        while i + 3 <= len_s do
+            local a0, a1, a2, a3 = s:byte(i, i + 3)
+            local c0, c1 = B64_DEC_LUA[a0], B64_DEC_LUA[a1]
+            if c0 == nil or c1 == nil then break end
+            local c2 = (a2 == 61) and 0 or B64_DEC_LUA[a2]
+            local c3 = (a3 == 61) and 0 or B64_DEC_LUA[a3]
+            if c2 == nil or c3 == nil then break end
+            local v = c0 * 262144 + c1 * 4096 + c2 * 64 + c3
+            local o0 = math.floor(v / 65536) % 256
+            if a2 == 61 then
+                ci = ci + 1; chunks[ci] = string.char(o0)
+            elseif a3 == 61 then
+                ci = ci + 1; chunks[ci] = string.char(o0, math.floor(v / 256) % 256)
+            else
+                ci = ci + 1; chunks[ci] = string.char(o0, math.floor(v / 256) % 256, v % 256)
+            end
+            i = i + 4
+        end
+        return table.concat(chunks)
+    end
+
+    local function decode_slot(raw_slot, want_sid, cur_frame)
+        if type(raw_slot) ~= "string" or #raw_slot < 16 then return nil end
+        local blob = raw_slot
+        if raw_slot:sub(1, 8) == "VL3DB64:" then
+            blob = decode_b64(raw_slot, 9)
+        end
+        if type(blob) ~= "string" or #blob < HDR_BYTES then return nil end
+        if blob:sub(1, 8) ~= MAGIC then return nil end
+        local iv, fv, u8_ptr
+        if ffi ~= nil then
+            u8_ptr = ffi.cast("const uint8_t*", blob)
+            local ip = ffi.cast("const int32_t*", u8_ptr + 8)
+            local fp = ffi.cast("const float*", u8_ptr + 40)
+            iv = {}
+            for i = 1, 8 do iv[i] = tonumber(ip[i - 1]) or 0 end
+            fv = {}
+            for i = 1, 56 do fv[i] = tonumber(fp[i - 1]) or 0.0 end
+        else
+            iv = {}
+            for i = 1, 8 do iv[i] = unpack_i32_le(blob, 9 + (i - 1) * 4) end
+            fv = {}
+            for i = 1, 56 do fv[i] = unpack_f32_le(blob, 41 + (i - 1) * 4) end
+        end
+
+        local sid = iv[1]
+        local sframe = iv[3]
+        if sid ~= want_sid then return nil end
+        if math.abs(cur_frame - sframe) > 1 then return nil end
+
+        local flags = iv[6]
+        local function has_bit(b) return (math.floor(flags / b) % 2) == 1 end
+        local has_rad = has_bit(1)
+        local has_sh  = has_bit(2)
+        local has_cam = has_bit(4)
+        local need_len = HDR_BYTES
+            + (has_rad and RAD_BYTES or 0)
+            + (has_sh  and SH_BYTES  or 0)
+            + (has_cam and CAM_BYTES or 0)
+        if #blob < need_len then return nil end
+
+        local off_rad = HDR_BYTES
+        local off_sh  = off_rad + (has_rad and RAD_BYTES or 0)
+        local off_cam = off_sh  + (has_sh  and SH_BYTES  or 0)
+
+        return {
+            blob    = blob,
+            u8      = u8_ptr,
+            layer   = iv[2],
+            kind    = iv[5],
+            has_rad = has_rad,
+            has_sh  = has_sh,
+            has_cam = has_cam,
+            is_spot = has_bit(8),
+            fog_on  = has_bit(16),
+            occ3d_front_only = has_bit(32),
+            is_ortho_cam     = has_bit(64),
+            off_rad = off_rad,
+            off_sh  = off_sh,
+            off_cam = off_cam,
+            wx = fv[1], wy = fv[2], wz = fv[3],
+            Wrx = fv[4], Wry = fv[5], Wrz = fv[6],
+            Wdx = fv[7], Wdy = fv[8], Wdz = fv[9],
+            Wnx = fv[10], Wny = fv[11], Wnz = fv[12],
+            sx_p = fv[13], sy_p = fv[14], sz_p = fv[15],
+            inv_2Hx = fv[16], inv_2Hy = fv[17],
+            dS_wn = fv[18], u_wn = fv[19],
+            L_tot = fv[20], k_dec = fv[21], inv_end = fv[22],
+            u0_b = fv[23], u1_b = fv[24], v0_b = fv[25], v1_b = fv[26],
+            su0 = fv[27], su1 = fv[28], sv0 = fv[29], sv1 = fv[30],
+            gain_r = fv[31], gain_g = fv[32], gain_b = fv[33],
+            min_x = fv[34], min_y = fv[35], min_z = fv[36],
+            max_x = fv[37], max_y = fv[38], max_z = fv[39],
+            cl_px = fv[40], cl_py = fv[41], cl_pz = fv[42],
+            cl_dx = fv[43], cl_dy = fv[44], cl_dz = fv[45],
+            cos_in_sp = fv[46], cos_out_sp = fv[47], att_k_sp = fv[48],
+            cam_zmax = fv[49], z_win_cam = fv[50], sh_soft_t = fv[51],
+            fog_amt = fv[52], inv_fscale = fv[53],
+            wox = fv[54], woy = fv[55], woz = fv[56],
+        }
+    end
+
+    function M.collect(enable)
+        if not enable or global == nil then return {} end
+        local sid = M.scene_id()
+        local cur_f = M.scene_frame()
+        local idx_key = "VL3D_LF_IDX:" .. tostring(sid)
+        local ok_i, raw = pcall(function() return global[idx_key] end)
+        if not ok_i or type(raw) ~= "string" or raw == "" then return {} end
+        local out = {}
+        local seen = {}
+        for tok in raw:gmatch("(%d+)") do
+            local ln = tonumber(tok)
+            if ln ~= nil and ln > 0 and not seen[ln] then
+                seen[ln] = true
+                local sk = "VL3D_LF:" .. tostring(sid) .. ":" .. tostring(math.floor(ln))
+                local ok_b, blob = pcall(function() return global[sk] end)
+                if ok_b and type(blob) == "string" and #blob >= HDR_BYTES then
+                    local em = decode_slot(blob, sid, cur_f)
+                    if em ~= nil then out[#out + 1] = em end
+                end
+            end
+        end
+        return out
+    end
+
+    local function read_rgba01(em, base_off, w, h, ix, iy)
+        if ix < 0 then ix = 0 elseif ix >= w then ix = w - 1 end
+        if iy < 0 then iy = 0 elseif iy >= h then iy = h - 1 end
+        local off = base_off + (iy * w + ix) * 4
+        local r, g, b, a
+        if em.u8 ~= nil then
+            local p = em.u8
+            r, g, b, a = p[off], p[off + 1], p[off + 2], p[off + 3]
+        else
+            r, g, b, a = em.blob:byte(off + 1, off + 4)
+        end
+        local k = 1.0 / 255.0
+        return r * k, g * k, b * k, a * k
+    end
+
+    local function sample_rad_bilerp(em, nu, nv)
+        local fx = clamp(nu, 0.0, 1.0) * GW - 0.5
+        local fy = clamp(nv, 0.0, 1.0) * GW - 0.5
+        local x0 = math.floor(fx)
+        local y0 = math.floor(fy)
+        local tx = fx - x0
+        local ty = fy - y0
+        local r00, g00, b00, a00 = read_rgba01(em, em.off_rad, GW, GW, x0,     y0)
+        local r10, g10, b10, a10 = read_rgba01(em, em.off_rad, GW, GW, x0 + 1, y0)
+        local r01, g01, b01, a01 = read_rgba01(em, em.off_rad, GW, GW, x0,     y0 + 1)
+        local r11, g11, b11, a11 = read_rgba01(em, em.off_rad, GW, GW, x0 + 1, y0 + 1)
+        local w00 = (1.0 - tx) * (1.0 - ty)
+        local w10 = tx * (1.0 - ty)
+        local w01 = (1.0 - tx) * ty
+        local w11 = tx * ty
+        local pr = r00 * w00 + r10 * w10 + r01 * w01 + r11 * w11
+        local pg = g00 * w00 + g10 * w10 + g01 * w01 + g11 * w11
+        local pb = b00 * w00 + b10 * w10 + b01 * w01 + b11 * w11
+        local pa = a00 * w00 + a10 * w10 + a01 * w01 + a11 * w11
+        return pr, pg, pb, pa
+    end
+
+    local function eval_sh_corner(em, ix, iy, t_ray)
+        local r01, g01, cov, av = read_rgba01(em, em.off_sh, GW, GW, ix, iy)
+        if av < 0.5 or cov <= 0.004 then return 1.0 end
+        local hi = math.floor(r01 * 255.0 + 0.5)
+        local lo = math.floor(g01 * 255.0 + 0.5)
+        local tocc = (hi * 256.0 + lo) * (1.0 / 65535.0) * em.L_tot
+        local soft = em.sh_soft_t
+        return 1.0 - cov * smoothstep(tocc - soft * 0.35, tocc + soft, t_ray)
+    end
+
+    local function sample_sh_vis(em, u, v, t_ray)
+        if u < em.su0 or u > em.su1 or v < em.sv0 or v > em.sv1 then return 1.0 end
+        local nu = (u - em.su0) / math.max(em.su1 - em.su0, 1e-5)
+        local nv = (v - em.sv0) / math.max(em.sv1 - em.sv0, 1e-5)
+        local fx = clamp(nu, 0.0, 1.0) * GW - 0.5
+        local fy = clamp(nv, 0.0, 1.0) * GW - 0.5
+        local x0 = math.floor(fx)
+        local y0 = math.floor(fy)
+        local tx = fx - x0
+        local ty = fy - y0
+        local v00 = eval_sh_corner(em, x0,     y0,     t_ray)
+        local v10 = eval_sh_corner(em, x0 + 1, y0,     t_ray)
+        local v01 = eval_sh_corner(em, x0,     y0 + 1, t_ray)
+        local v11 = eval_sh_corner(em, x0 + 1, y0 + 1, t_ray)
+        local vx0 = v00 + (v10 - v00) * tx
+        local vx1 = v01 + (v11 - v01) * tx
+        return vx0 + (vx1 - vx0) * ty
+    end
+
+    local function eval_cam_corner(em, ix, iy, zc_snow)
+        local r01, g01, cov, av = read_rgba01(em, em.off_cam, GW, 18, ix, iy)
+        if av < 0.5 or cov <= 0.004 then return 1.0 end
+        local hi = math.floor(r01 * 255.0 + 0.5)
+        local lo = math.floor(g01 * 255.0 + 0.5)
+        local z_fg = (hi * 256.0 + lo) * (1.0 / 65535.0) * em.cam_zmax
+        if em.occ3d_front_only and z_fg >= em.z_win_cam - 2.0 then
+            return 1.0
+        end
+        return 1.0 - cov * smoothstep(z_fg - 6.0, z_fg + 14.0, zc_snow)
+    end
+
+    local function sample_cam_vis(em, su, sv, zc_snow)
+        if su < 0.0 or su > 1.0 or sv < 0.0 or sv > 1.0 then return 1.0 end
+        local fx = su * GW - 0.5
+        local fy = sv * 18.0 - 0.5
+        local x0 = math.floor(fx)
+        local y0 = math.floor(fy)
+        local tx = fx - x0
+        local ty = fy - y0
+        local v00 = eval_cam_corner(em, x0,     y0,     zc_snow)
+        local v10 = eval_cam_corner(em, x0 + 1, y0,     zc_snow)
+        local v01 = eval_cam_corner(em, x0,     y0 + 1, zc_snow)
+        local v11 = eval_cam_corner(em, x0 + 1, y0 + 1, zc_snow)
+        local vx0 = v00 + (v10 - v00) * tx
+        local vx1 = v01 + (v11 - v01) * tx
+        return vx0 + (vx1 - vx0) * ty
+    end
+
+    function M.sample(emitters, wx, wy, wz, dx_c, dy_c, dz_c, zc_snow, r_x, r_y, r_z, u_x, u_y, u_z, focal_d, scr_w, scr_h)
+        local acc_r, acc_g, acc_b = 0.0, 0.0, 0.0
+        local su_c, sv_c = nil, nil
+        for ei = 1, #emitters do
+            local em = emitters[ei]
+            if wx >= em.min_x and wx <= em.max_x
+                and wy >= em.min_y and wy <= em.max_y
+                and wz >= em.min_z and wz <= em.max_z then
+                local dwx, dwy, dwz = wx - em.wx, wy - em.wy, wz - em.wz
+                local d_wn = dwx * em.Wnx + dwy * em.Wny + dwz * em.Wnz
+                if d_wn < -2.0 then
+                    local spot_f = 1.0
+                    local ok_ray = true
+                    if em.is_spot then
+                        local vx, vy, vz = wx - em.cl_px, wy - em.cl_py, wz - em.cl_pz
+                        local ax = vx * em.cl_dx + vy * em.cl_dy + vz * em.cl_dz
+                        local d2 = vx * vx + vy * vy + vz * vz
+                        if ax <= 3.0 or d2 <= 1e-6 then
+                            ok_ray = false
+                        else
+                            local dist_sp = math.sqrt(d2)
+                            if dist_sp >= em.L_tot then
+                                ok_ray = false
+                            else
+                                local cos_sp = ax / dist_sp
+                                if cos_sp <= em.cos_out_sp then
+                                    ok_ray = false
+                                else
+                                    local dr = dist_sp * (1.0 / 800.0)
+                                    spot_f = smoothstep(em.cos_out_sp, em.cos_in_sp, cos_sp) / (1.0 + em.att_k_sp * dr * dr)
+                                end
+                            end
+                        end
+                    end
+
+                    if ok_ray then
+                        local qx, qy, qz, t_ray
+                        local g_div = 1.0
+                        if em.kind == 0 then
+                            t_ray = d_wn / em.u_wn
+                            if t_ray <= 0.0 or t_ray >= em.L_tot then
+                                ok_ray = false
+                            else
+                                qx = wx - em.sx_p * t_ray
+                                qy = wy - em.sy_p * t_ray
+                                qz = wz - em.sz_p * t_ray
+                            end
+                        elseif em.kind == 1 then
+                            local dvx, dvy, dvz = wx - em.sx_p, wy - em.sy_p, wz - em.sz_p
+                            local den = dvx * em.Wnx + dvy * em.Wny + dvz * em.Wnz
+                            if math.abs(den) <= 1e-4 then
+                                ok_ray = false
+                            else
+                                local alpha = em.dS_wn / den
+                                if alpha <= 0.0 or alpha >= 1.0 then
+                                    ok_ray = false
+                                else
+                                    local vlen = math.sqrt(dvx * dvx + dvy * dvy + dvz * dvz)
+                                    t_ray = math.abs(1.0 - alpha) * vlen
+                                    if t_ray >= em.L_tot then
+                                        ok_ray = false
+                                    else
+                                        qx = em.sx_p + dvx * alpha
+                                        qy = em.sy_p + dvy * alpha
+                                        qz = em.sz_p + dvz * alpha
+                                    end
+                                end
+                            end
+                        else
+                            local dvx, dvy, dvz = wx - em.sx_p, wy - em.sy_p, wz - em.sz_p
+                            local den = dvx * em.Wnx + dvy * em.Wny + dvz * em.Wnz
+                            if math.abs(den) <= 1e-4 then
+                                ok_ray = false
+                            else
+                                local alpha = em.dS_wn / den
+                                if alpha >= 0.0 and alpha <= 1.0 then
+                                    ok_ray = false
+                                else
+                                    local vlen = math.sqrt(dvx * dvx + dvy * dvy + dvz * dvz)
+                                    t_ray = math.abs(1.0 - alpha) * vlen
+                                    if t_ray >= em.L_tot then
+                                        ok_ray = false
+                                    else
+                                        qx = em.sx_p + dvx * alpha
+                                        qy = em.sy_p + dvy * alpha
+                                        qz = em.sz_p + dvz * alpha
+                                        local conc = math.min(9.0, math.max(1.0, math.abs(alpha)))
+                                        g_div = math.min(6.5, conc ^ 1.15)
+                                    end
+                                end
+                            end
+                        end
+
+                        if ok_ray then
+                            local dqx, dqy, dqz = qx - em.wx, qy - em.wy, qz - em.wz
+                            local u = 0.5 + (dqx * em.Wrx + dqy * em.Wry + dqz * em.Wrz) * em.inv_2Hx
+                            local v = 0.5 + (dqx * em.Wdx + dqy * em.Wdy + dqz * em.Wdz) * em.inv_2Hy
+                            if em.is_spot then
+                                u = clamp(u, 0.001, 0.999)
+                                v = clamp(v, 0.001, 0.999)
+                            elseif u < em.u0_b or u > em.u1_b or v < em.v0_b or v > em.v1_b then
+                                ok_ray = false
+                            end
+
+                            if ok_ray then
+                                local sr, sg, sb, sa = 1.0, 1.0, 1.0, 1.0
+                                if em.has_rad then
+                                    local nu = (u - em.u0_b) / math.max(em.u1_b - em.u0_b, 1e-5)
+                                    local nv = (v - em.v0_b) / math.max(em.v1_b - em.v0_b, 1e-5)
+                                    sr, sg, sb, sa = sample_rad_bilerp(em, nu, nv)
+                                end
+                                if sa > 0.004 then
+                                    local sh_vis = em.has_sh and sample_sh_vis(em, u, v, t_ray) or 1.0
+                                    if sh_vis > 0.004 then
+                                        local fg_vis = 1.0
+                                        if em.has_cam then
+                                            if su_c == nil then
+                                                local rx_c = dx_c * r_x + dy_c * r_y + dz_c * r_z
+                                                local dy_s = -(dx_c * u_x + dy_c * u_y + dz_c * u_z)
+                                                if em.is_ortho_cam then
+                                                    su_c = 0.5 + rx_c / scr_w
+                                                    sv_c = 0.5 + dy_s / scr_h
+                                                elseif zc_snow > 1.0 then
+                                                    local k_p = focal_d / zc_snow
+                                                    su_c = 0.5 + (rx_c * k_p) / scr_w
+                                                    sv_c = 0.5 + (dy_s * k_p) / scr_h
+                                                else
+                                                    su_c, sv_c = -1.0, -1.0
+                                                end
+                                            end
+                                            fg_vis = sample_cam_vis(em, su_c, sv_c, zc_snow)
+                                        end
+                                        if fg_vis > 0.004 then
+                                            local att = math.exp(-em.k_dec * t_ray) * smoothstep(0.0, 1.0, (em.L_tot - t_ray) * em.inv_end)
+                                            local fog_f = 1.0
+                                            if em.fog_on then
+                                                local n = fbm3((wx + em.wox) * em.inv_fscale, (wy + em.woy) * em.inv_fscale, (wz + em.woz) * em.inv_fscale)
+                                                fog_f = 1.0 + (smoothstep(0.16, 0.84, n) - 1.0) * em.fog_amt
+                                            end
+                                            local w_tot = g_div * spot_f * att * fog_f * sh_vis * fg_vis
+                                            acc_r = acc_r + sr * em.gain_r * w_tot
+                                            acc_g = acc_g + sg * em.gain_g * w_tot
+                                            acc_b = acc_b + sb * em.gain_b * w_tot
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return acc_r, acc_g, acc_b
+    end
+
+    function M.draw_lit_figure(parts, r_x, r_y, r_z, u_x, u_y, u_z, shape_scale_x, shape_scale_y, ow_fig, oh_fig, col_r, col_g, col_b, tint01, glow_mul)
+        -- 1) Build up to 6 RGB color clusters over illuminated particles (p[12] ~= nil)
+        local cells = {}
+        local lit_indices = {}
+        for k = 1, #parts do
+            local p = parts[k]
+            local lr = p[12]
+            if lr ~= nil then
+                local lg, lb = p[13], p[14]
+                local pk = math.max(lr, lg, lb)
+                if pk > 0.012 then
+                    lit_indices[#lit_indices + 1] = k
+                    local nr, ng, nb = lr / pk, lg / pk, lb / pk
+                    local tr = col_r + (nr - col_r) * tint01
+                    local tg = col_g + (ng - col_g) * tint01
+                    local tb = col_b + (nb - col_b) * tint01
+                    local qr = math.min(3, math.floor(clamp(tr, 0.0, 1.0) * 4.0))
+                    local qg = math.min(3, math.floor(clamp(tg, 0.0, 1.0) * 4.0))
+                    local qb = math.min(3, math.floor(clamp(tb, 0.0, 1.0) * 4.0))
+                    local cid = qr * 16 + qg * 4 + qb + 1
+                    local c = cells[cid]
+                    if c == nil then
+                        c = { w = 0.0, sr = 0.0, sg = 0.0, sb = 0.0 }
+                        cells[cid] = c
+                    end
+                    c.w  = c.w + pk
+                    c.sr = c.sr + tr * pk
+                    c.sg = c.sg + tg * pk
+                    c.sb = c.sb + tb * pk
+                end
+            end
+        end
+        if #lit_indices == 0 then return 0, 0 end
+
+        local clist = {}
+        for _, c in pairs(cells) do clist[#clist + 1] = c end
+        table.sort(clist, function(a, b) return a.w > b.w end)
+        local n_grp = math.min(6, #clist)
+        local groups = {}
+        for gi = 1, n_grp do
+            local c = clist[gi]
+            local inv_w = 1.0 / math.max(c.w, 1e-6)
+            local bks = {}
+            for bi = 1, 8 do bks[bi] = { list = {}, alpha_v = ((bi - 0.35) / 8.0) ^ 1.12 } end
+            groups[gi] = {
+                r = clamp(c.sr * inv_w, 0.0, 1.0),
+                g = clamp(c.sg * inv_w, 0.0, 1.0),
+                b = clamp(c.sb * inv_w, 0.0, 1.0),
+                bks = bks,
+                has_any = false,
+            }
+        end
+
+        for ii = 1, #lit_indices do
+            local p = parts[lit_indices[ii]]
+            local lr, lg, lb = p[12], p[13], p[14]
+            local pk = math.max(lr, lg, lb)
+            local nr, ng, nb = lr / pk, lg / pk, lb / pk
+            local tr = col_r + (nr - col_r) * tint01
+            local tg = col_g + (ng - col_g) * tint01
+            local tb = col_b + (nb - col_b) * tint01
+
+            local best_g = 1
+            if n_grp > 1 then
+                local best_d = 1e30
+                for gi = 1, n_grp do
+                    local grp = groups[gi]
+                    local dr, dg, db = tr - grp.r, tg - grp.g, tb - grp.b
+                    local d2 = dr * dr + dg * dg + db * db
+                    if d2 < best_d then best_d = d2; best_g = gi end
+                end
+            end
+
+            local amp = clamp(pk, 0.0, 1.0)
+            local bi = math.min(8, math.max(1, math.floor(amp * 8.0) + 1))
+            local grp = groups[best_g]
+            grp.has_any = true
+            local list = grp.bks[bi].list
+            local li = #list
+
+            local p_x, p_y, p_z = p[1], p[2], p[3]
+            local rs = p[4] * 0.5 * glow_mul
+            local rot = p[5]
+            local ca, sa = math.cos(rot), math.sin(rot)
+            local e_x = (r_x * ca + u_x * sa) * shape_scale_x
+            local e_y = (r_y * ca + u_y * sa) * shape_scale_x
+            local e_z = (r_z * ca + u_z * sa) * shape_scale_x
+            local g_x = (-r_x * sa + u_x * ca) * shape_scale_y
+            local g_y = (-r_y * sa + u_y * ca) * shape_scale_y
+            local g_z = (-r_z * sa + u_z * ca) * shape_scale_y
+
+            list[li + 1] = { p_x - e_x * rs + g_x * rs, p_y - e_y * rs + g_y * rs, p_z - e_z * rs + g_z * rs, 0, 0 }
+            list[li + 2] = { p_x + e_x * rs + g_x * rs, p_y + e_y * rs + g_y * rs, p_z + e_z * rs + g_z * rs, 1, 0 }
+            list[li + 3] = { p_x + e_x * rs - g_x * rs, p_y + e_y * rs - g_y * rs, p_z + e_z * rs - g_z * rs, 1, 1 }
+            list[li + 4] = { p_x - e_x * rs - g_x * rs, p_y - e_y * rs - g_y * rs, p_z - e_z * rs - g_z * rs, 0, 1 }
+        end
+
+        local added_v = 0
+        for gi = 1, n_grp do
+            local grp = groups[gi]
+            if grp.has_any then
+                local ok_t = false
+                pcall(function()
+                    if obj.clearbuffer("object", ow_fig, oh_fig) ~= false then
+                        if obj.pixelshader("ps_snow_shape_tint", "object",
+                            { "cache:snow118/fig_lit" }, { grp.r, grp.g, grp.b, 1.0 }, "copy") ~= false then
+                            ok_t = true
+                        end
+                    end
+                end)
+                if ok_t then
+                    obj.setoption("drawtarget", "framebuffer")
+                    obj.setoption("culling", 0)
+                    obj.setoption("sampler", "clip")
+                    pcall(function() obj.setoption("blend", "add") end)
+                    for bi = 1, 8 do
+                        local list = grp.bks[bi].list
+                        local alpha_v = grp.bks[bi].alpha_v
+                        if #list > 0 then
+                            for start = 1, #list, 6000 do
+                                local chunk = {}
+                                for j = start, math.min(start + 5999, #list) do
+                                    chunk[#chunk + 1] = list[j]
+                                end
+                                obj.drawpoly(chunk, 4, alpha_v)
+                                added_v = added_v + #chunk
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return #lit_indices, added_v
+    end
+
+    return M
+end)()
+
+local function snow3d_frame()
+
+    ------------------------------------------------------------
+    -- 決定的な擬似乱数
+    --   (粒子番号, 世代, 用途) から値を求める小型ハッシュ。
+    --   同じ時間なら必ず同じ値になるので、シークしても破綻しない。
+    --   隣り合う種の相関で粒子が筋状に並ばないよう、
+    --   乗算＋二乗で撹拌している（ビット演算を使わないので
+    --   LuaJIT / Lua 5.4 のどちらでも同じ結果になる）。
+    ------------------------------------------------------------
+    local HASH_P = 67108859      -- 2^26 未満の素数
+    local function rand01(a, b, c)
+        local x = (a * 196613 + b * 104729 + c * 51949 + P.seed * 7919 + 12345) % HASH_P
+        x = (x * 40503 + 9973) % HASH_P
+        x = (x * x + 3) % HASH_P
+        x = (x * x + 11) % HASH_P
+        return x / HASH_P
+    end
+
+    ------------------------------------------------------------
+    -- 設定値の整理
+    ------------------------------------------------------------
+    local num = math.floor(P.count + 0.5)
+    if num < 1 then num = 1 end
+    if num > 4000 then num = 4000 end
+
+    local base_size = P.size
+    if base_size < 0.1 then base_size = 0.1 end
+    local var_size = P.size_var / 100
+
+    -- 不透明度は「標準属性」の値だけを使う（このオブジェクトには持たない）
+    --   フレームバッファへ直接描くので、標準側の値を自分で掛ける必要がある
+    local base_alpha = obj.alpha or 1
+    if base_alpha < 0 then base_alpha = 0 elseif base_alpha > 1 then base_alpha = 1 end
+
+    local col_r = math.floor(P.color / 0x10000) % 0x100 / 255
+    local col_g = math.floor(P.color / 0x100) % 0x100 / 255
+    local col_b = P.color % 0x100 / 255
+
+    -- 運動のベクトル化
+    --   Y は AviUtl 座標系と同じく「プラスが下方向」。
+    --   初速Y = +200  → 下向きに 200px/秒（普通の雪）
+    --   初速Y = -200  → 上向きに 200px/秒（上昇する塵）
+    --   重力  = +400  → 下向きに加速（普通の雪）
+    --   重力  = -400  → 上向きに加速（加速しながら昇る粒子）
+    --   風    = (X, Y, Z) の一定速度を全粒子に足す
+    local vel0_x = P.vel_x
+    local vel0_y = P.vel_y
+    local vel0_z = P.vel_z
+    local grav   = P.gravity
+    local wind_x = P.wind_x
+    local wind_y = P.wind_y
+    local wind_z = P.wind_z
+
+    local vel_len = math.sqrt(vel0_x * vel0_x + vel0_y * vel0_y + vel0_z * vel0_z)
+
+    -- 進行方向の単位ベクトル d（発生面と寿命の計算に使う）
+    --   初速が 0 のときは重力の向き、それも 0 なら真下を使う
+    local d_x, d_y, d_z = 0, 1, 0
+    if vel_len > 1e-6 then
+        d_x, d_y, d_z = vel0_x / vel_len, vel0_y / vel_len, vel0_z / vel_len
+    elseif math.abs(grav) > 1e-6 then
+        d_y = 1
+        if grav < 0 then d_y = -1 end
+    end
+
+    -- d に垂直な基底（初速のばらつきを円錐状に散らすため）
+    local e1_x, e1_y, e1_z, e2_x, e2_y, e2_z
+    do
+        local hx, hy, hz
+        if math.abs(d_y) < 0.9 then hx, hy, hz = 0, 1, 0 else hx, hy, hz = 1, 0, 0 end
+        local ax = d_y * hz - d_z * hy
+        local ay = d_z * hx - d_x * hz
+        local az = d_x * hy - d_y * hx
+        local al = math.sqrt(ax * ax + ay * ay + az * az)
+        if al < 1e-6 then ax, ay, az, al = 1, 0, 0, 1 end
+        e1_x, e1_y, e1_z = ax / al, ay / al, az / al
+        e2_x = d_y * e1_z - d_z * e1_y
+        e2_y = d_z * e1_x - d_x * e1_z
+        e2_z = d_x * e1_y - d_y * e1_x
+    end
+
+    -- 進行方向に沿った加速度（寿命の計算用）
+    local acc_d = grav * d_y
+
+    local sway_amp = P.sway
+    local sway_w = 2 * math.pi * P.sway_rate
+    local spin_v = P.spin * math.pi / 180
+
+    local spread_v = P.spread * math.pi / 180
+    if spread_v > 1.4835 then spread_v = 1.4835 end   -- 85度まで
+    local spread_k = math.tan(spread_v)
+
+    local box_w = P.area_w
+    local box_h = P.area_h
+    local box_d = P.area_d
+    if P.sync_size then
+        -- 画面（合成プロジェクト）のサイズに合わせる（カスタムオブジェクトでは obj.screen_w/h を優先）
+        --   3840x2160 や 4000x4000 の合成でも画面全体に雪が広がる
+        local fw, fh = obj.screen_w, obj.screen_h
+        if type(fw) ~= "number" or fw < 1 then fw = obj.w end
+        if type(fh) ~= "number" or fh < 1 then fh = obj.h end
+        if type(fw) ~= "number" or fw < 1 then fw = box_w end
+        if type(fh) ~= "number" or fh < 1 then fh = box_h end
+        local mk = 1 + P.margin / 100
+        box_w = fw * mk
+        box_h = fh * mk
+    end
+    if box_w < 1 then box_w = 1 end
+    if box_h < 1 then box_h = 1 end
+    if box_d < 1 then box_d = 1 end
+
+    local fin = P.fade_in / 100
+    local fout = P.fade_out / 100
+    if fin < 0.001 then fin = 0.001 end
+    if fout < 0.001 then fout = 0.001 end
+    if fin + fout > 0.98 then
+        local sc = 0.98 / (fin + fout)
+        fin = fin * sc
+        fout = fout * sc
+    end
+
+    local dfade = P.depth_fade / 100
+    if dfade < 0 then dfade = 0 elseif dfade > 1 then dfade = 1 end
+
+    ------------------------------------------------------------
+    -- カメラ制御の基底ベクトル（前方・右・上）
+    --   ※ cam == nil（カメラ制御なし）のときも AviUtl2 標準透視投影の視点 (0, 0, -1024) を基準にする
+    ------------------------------------------------------------
+    local cam = nil
+    pcall(function() cam = obj.getoption("camera_param") end)
+    local cam_x, cam_y, cam_z = 0, 0, -1024
+    local f_x, f_y, f_z = 0, 0, 1     -- カメラから見た前方
+    local r_x, r_y, r_z = 1, 0, 0     -- 画面の右
+    local u_x, u_y, u_z = 0, -1, 0    -- 画面の上（AviUtlは+Yが下方向）
+    local cam_target_degenerate = false
+
+    if cam ~= nil then
+        cam_x = cam.x or 0
+        cam_y = cam.y or 0
+        cam_z = cam.z or -1024
+
+        local dx = (cam.tx or 0) - cam_x
+        local dy = (cam.ty or 0) - cam_y
+        local dz = (cam.tz or 0) - cam_z
+        local len = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if len < 1e-4 then
+            cam_target_degenerate = true
+        end
+        if len < 1e-6 then
+            dx, dy, dz, len = 0, 0, 1, 1
+        end
+        f_x, f_y, f_z = dx / len, dy / len, dz / len
+
+        local t_x = cam.ux or 0
+        local t_y = cam.uy or 0
+        local t_z = cam.uz or 0
+        if t_x * t_x + t_y * t_y + t_z * t_z < 1e-9 then
+            t_x, t_y, t_z = 0, -1, 0
+        end
+
+        -- right = forward x up
+        local a_x = f_y * t_z - f_z * t_y
+        local a_y = f_z * t_x - f_x * t_z
+        local a_z = f_x * t_y - f_y * t_x
+        local al = math.sqrt(a_x * a_x + a_y * a_y + a_z * a_z)
+        if al < 1e-6 then
+            a_x, a_y, a_z, al = 1, 0, 0, 1
+        end
+        r_x, r_y, r_z = a_x / al, a_y / al, a_z / al
+
+        -- up = right x forward
+        u_x = r_y * f_z - r_z * f_y
+        u_y = r_z * f_x - r_x * f_z
+        u_z = r_x * f_y - r_y * f_x
+
+        -- カメラ Z 軸ロール角 cam.rz（u = -d のため r' = r*cr - u*sr, u' = r*sr + u*cr）
+        if type(cam.rz) == "number" and math.abs(cam.rz) > 1e-5 then
+            local cr = math.cos(math.rad(cam.rz))
+            local sr = math.sin(math.rad(cam.rz))
+            local nr_x, nr_y, nr_z = r_x * cr - u_x * sr, r_y * cr - u_y * sr, r_z * cr - u_z * sr
+            local nu_x, nu_y, nu_z = r_x * sr + u_x * cr, r_y * sr + u_y * cr, r_z * sr + u_z * cr
+            r_x, r_y, r_z = nr_x, nr_y, nr_z
+            u_x, u_y, u_z = nu_x, nu_y, nu_z
+        end
+    end
+
+    ------------------------------------------------------------
+    -- 発生領域の中心
+    ------------------------------------------------------------
+    local c_x, c_y, c_z = P.area_x, P.area_y, P.area_z
+    if P.follow and cam ~= nil then
+        -- カメラ制御の注視点に領域を寄せる
+        --   ※「目標レイヤー」にカメラ制御自身のレイヤーを指定した場合（目標基準＝カメラ座標）等で
+        --     注視点とカメラ座標が一致（距離 0）しているときは、レンズ前方 cam.d（既定 1024）を基準注視点とする。
+        local zoom = obj.zoom or 1
+        if zoom == nil or zoom < 1e-6 then zoom = 1 end
+        local eff_tx, eff_ty, eff_tz = cam.tx or 0, cam.ty or 0, cam.tz or 0
+        if cam_target_degenerate then
+            local cam_d_ref = (type(cam.d) == "number" and cam.d >= 1) and cam.d or 1024
+            eff_tx = cam_x + f_x * cam_d_ref
+            eff_ty = cam_y + f_y * cam_d_ref
+            eff_tz = cam_z + f_z * cam_d_ref
+        end
+        c_x = (eff_tx - (obj.x or 0)) / zoom + P.area_x
+        c_y = (eff_ty - (obj.y or 0)) / zoom + P.area_y
+        c_z = (eff_tz - (obj.z or 0)) / zoom + P.area_z
+    end
+
+    -- 世界座標に固定するモード
+    --   発生位置はカメラではなくオブジェクト基準の固定点に置き、
+    --   出来上がった位置をカメラ中心の箱へ折り返して表示する。
+    --   こうするとカメラが動いても粒子の軌道は変わらず、
+    --   なおかつカメラの前には必ず雪が存在する。
+    local wrapping = false
+    local a_x, a_y, a_z = c_x, c_y, c_z
+    if P.world_fixed and P.follow and cam ~= nil then
+        wrapping = true
+        a_x, a_y, a_z = P.area_x, P.area_y, P.area_z
+    end
+
+    -- オブジェクトのローカル→ワールド変換パラメータ
+    local ozm = (type(obj.zoom) == "number" and obj.zoom > 1e-6) and obj.zoom or 1
+    local ox0, oy0, oz0 = (obj.x or 0), (obj.y or 0), (obj.z or 0)
+    local vl_ctx = {
+        xf       = SNOW_LF.make_xform(ozm, ox0, oy0, oz0),
+        emitters = SNOW_LF.collect(P.vl_enable and P.vl_strength > 0.01),
+        str_k    = math.max(0.0, P.vl_strength / 100.0),
+        tint01   = math.max(0.0, math.min(1.0, P.vl_tint / 100.0)),
+        shade01  = math.max(0.0, math.min(1.0, P.vl_shade / 100.0)),
+        glow_mul = math.max(1.0, math.min(2.8, P.vl_glow / 100.0)),
+        focal_d  = (cam ~= nil and type(cam.d) == "number" and cam.d >= 1) and cam.d or 1024.0,
+        scr_w    = (type(obj.screen_w) == "number" and obj.screen_w >= 1) and obj.screen_w or 1920.0,
+        scr_h    = (type(obj.screen_h) == "number" and obj.screen_h >= 1) and obj.screen_h or 1080.0,
+        has_lit  = false,
+        n_lit    = 0,
+    }
+
+    -- 奥行き減衰の基準（ローカル c をワールド座標へ戻してからカメラ距離を算出）
+    local c_d = ((c_x * ozm + ox0) - cam_x) * f_x
+              + ((c_y * ozm + oy0) - cam_y) * f_y
+              + ((c_z * ozm + oz0) - cam_z) * f_z
+
+    ------------------------------------------------------------
+    -- 画面に見えている範囲（折り返し箱の大きさを決めるのに使う）
+    --   drawpoly の座標は「オブジェクトのローカル座標」なので、
+    --   画面に写る範囲は 焦点距離 d と オブジェクトの拡大率 zoom と
+    --   カメラからの距離で決まる。箱がこれより小さいと、箱の壁
+    --   （＝折り返しで薄くなる帯）が画面の中に入って「断层」になる。
+    ------------------------------------------------------------
+    local vis_w, vis_h = 0, 0
+    if cam ~= nil then
+        local dz = cam.d or 1024
+        if type(dz) ~= "number" or dz < 1 then dz = 1024 end
+        local zoom = ozm
+        local fw, fh = obj.screen_w, obj.screen_h
+        if type(fw) ~= "number" or fw < 1 then fw = obj.w end
+        if type(fh) ~= "number" or fh < 1 then fh = obj.h end
+        if type(fw) ~= "number" or fw < 1 then fw = 1920 end
+        if type(fh) ~= "number" or fh < 1 then fh = 1080 end
+        local world_hd = (box_d * zoom) * 0.5
+        local near_s = c_d - world_hd
+        if near_s < 1 then near_s = 1 end
+        local far_s = c_d + world_hd
+        if far_s < near_s then far_s = near_s end
+        vis_w = fw * far_s / (zoom * dz)
+        vis_h = fh * far_s / (zoom * dz)
+
+        -- 壁を画面の外へ
+        --   画面に見えている視錐台（8 隅）をワールド座標で求めて、
+        --   ローカル折り返し箱へ逆変換して広げる。縮めはしない。
+        if P.fit_view then
+            local mnx, mxx = 1e30, -1e30
+            local mny, mxy = 1e30, -1e30
+            local mnz, mxz = 1e30, -1e30
+            for _, sc in ipairs({ near_s, far_s }) do
+                local ex = (fw * 0.5) * sc / dz
+                local ey = (fh * 0.5) * sc / dz
+                for _, sx in ipairs({ -1, 1 }) do
+                    for _, sy in ipairs({ -1, 1 }) do
+                        local wx = cam_x + f_x * sc + r_x * ex * sx + u_x * ey * sy
+                        local wy = cam_y + f_y * sc + r_y * ex * sx + u_y * ey * sy
+                        local wz = cam_z + f_z * sc + r_z * ex * sx + u_z * ey * sy
+                        if wx < mnx then mnx = wx end
+                        if wx > mxx then mxx = wx end
+                        if wy < mny then mny = wy end
+                        if wy > mxy then mxy = wy end
+                        if wz < mnz then mnz = wz end
+                        if wz > mxz then mxz = wz end
+                    end
+                end
+            end
+            -- 視線に平行な軸は「奥行き」なので触らない（ワールド AABB → ローカル座標へ逆変換）
+            if math.abs(f_x) < 0.8 and (mxx - mnx) / zoom > box_w then
+                box_w = (mxx - mnx) / zoom
+                c_x = ((mnx + mxx) * 0.5 - ox0) / zoom
+            end
+            if math.abs(f_y) < 0.8 and (mxy - mny) / zoom > box_h then
+                box_h = (mxy - mny) / zoom
+                c_y = ((mny + mxy) * 0.5 - oy0) / zoom
+            end
+            if math.abs(f_z) < 0.8 and (mxz - mnz) / zoom > box_d then
+                box_d = (mxz - mnz) / zoom
+                c_z = ((mnz + mxz) * 0.5 - oz0) / zoom
+            end
+        end
+    end
+
+    -- 進行方向に沿った領域の半径と、横切る距離
+    local hw = box_w * 0.5
+    local hh = box_h * 0.5
+    local hd = box_d * 0.5
+    local support = math.abs(d_x) * hw + math.abs(d_y) * hh + math.abs(d_z) * hd
+    if support < 1 then support = 1 end
+    local travel = 2 * support
+
+    c_d = ((c_x * ozm + ox0) - cam_x) * f_x
+        + ((c_y * ozm + oy0) - cam_y) * f_y
+        + ((c_z * ozm + oz0) - cam_z) * f_z
+    local fade_d0 = c_d - (box_d * ozm) * 0.5
+    local fade_span = box_d * ozm
+    if fade_span < 1 then fade_span = 1 end
+
+    ------------------------------------------------------------
+    -- 粒子の計算
+    --   位置は「時間 t の純関数」として求めるため、シークや
+    --   途中からの再生でも同じ結果になる。
+    ------------------------------------------------------------
+    local t = obj.time
+    local parts = {}
+
+    for i = 0, num - 1 do
+        local r_ph = rand01(i, 0, 1)   -- 周期内の位相
+        local r_sz = rand01(i, 0, 2)   -- 大きさ
+        local r_sp = rand01(i, 0, 3)   -- 移動速度
+        local r_sw = rand01(i, 0, 4)   -- 揺らぎ
+        local r_ro = rand01(i, 0, 5)   -- 回転
+
+        -- 初速のばらつき（円錐の広がり係数）
+        local vk = 0.6 + 0.8 * r_sp
+
+        -- 進行方向成分（初速＋風）。風で速くなる分も寿命に反映する
+        local w_d = wind_x * d_x + wind_y * d_y + wind_z * d_z
+        local v_d = vel_len * vk + w_d
+        local hw2 = 0
+        if v_d > 0 then hw2 = v_d end
+
+        -- 寿命（自動のときは「進行方向に領域を横切る時間」）
+        local life
+        if P.auto_life then
+            if acc_d >= 0 then
+                if acc_d > 1e-6 then
+                    life = (math.sqrt(hw2 * hw2 + 2 * acc_d * travel) - hw2) / acc_d
+                elseif hw2 > 1e-6 then
+                    life = travel / hw2
+                else
+                    life = 1
+                end
+            else
+                -- 進行方向に対して減速する（上向きの雪・下向きの重力 など）
+                local dec = -acc_d
+                local t_turn = hw2 / dec
+                local d_turn = hw2 * hw2 / (2 * dec)
+                if d_turn >= travel then
+                    local disc = hw2 * hw2 - 2 * dec * travel
+                    if disc > 0 then
+                        life = (hw2 - math.sqrt(disc)) / dec
+                    else
+                        life = t_turn
+                    end
+                else
+                    life = 2 * t_turn
+                end
+            end
+        else
+            life = P.life
+        end
+        if life < 0.05 then life = 0.05 end
+
+        -- 進行方向に実際に進める距離（cover）
+        --   重力で減速して途中で折り返す場合、領域を横切りきれず
+        --   発生面の近くにしか粒子が存在しなくなる。その場合は
+        --   発生位置を領域全体にばらまいて密度を均一にする。
+        local cover
+        if acc_d < 0 then
+            local dec = -acc_d
+            local d_turn = 0
+            if v_d > 0 then d_turn = v_d * v_d / (2 * dec) end
+            local t_turn = 0
+            if v_d > 0 then t_turn = v_d / dec end
+            if v_d > 0 and life >= t_turn then
+                cover = d_turn          -- 途中で折り返す
+            else
+                cover = v_d * life + 0.5 * acc_d * life * life
+            end
+        else
+            cover = v_d * life + 0.5 * acc_d * life * life
+        end
+        if cover < 0 then cover = 0 end
+        if cover > travel then cover = travel end
+
+        -- 周期内の年齢
+        local tt = t + r_ph * life
+        local cyc = math.floor(tt / life)
+        local u = tt - cyc * life
+
+        -- 世代ごとの乱数（繰り返しのたびに位置が変わる）
+        local q_x = (rand01(i, cyc, 11) - 0.5) * box_w
+        local q_y = (rand01(i, cyc, 12) - 0.5) * box_h
+        local q_z = (rand01(i, cyc, 14) - 0.5) * box_d
+
+        -- 開始位置
+        --   領域を横切りきれる場合は「進行方向の入口面」から発生させる
+        --   （初速Y=+200 なら従来どおり領域の上面から降ってくる）。
+        --   折り返しなどで横切りきれない場合は、進行方向の軸に沿って
+        --   領域全体へ均等にばらまく（入口面だけだと密度が偏る）。
+        local along = q_x * d_x + q_y * d_y + q_z * d_z
+        local s_x, s_y, s_z
+        if wrapping then
+            -- 折り返し中は「箱の中に一様」に置く
+            --   入口面から出すと、動きの向きと箱の軸がずれているときに
+            --   箱の中へ斜めの板が周期的に折り込まれ、密度の空洞
+            --   （＝横一直線の「断层」）ができる。
+            --   一様な分布は、等速で動かして折り返しても一様なままなので、
+            --   どの向きから見てもムラが出ない。
+            s_x = a_x + q_x
+            s_y = a_y + q_y
+            s_z = a_z + q_z
+        elseif cover >= travel - 1e-6 then
+            local push = along + support
+            s_x = a_x + q_x - d_x * push
+            s_y = a_y + q_y - d_y * push
+            s_z = a_z + q_z - d_z * push
+        else
+            local room = travel - cover
+            local t01 = (along + support) / travel
+            local b = -support + t01 * room
+            local px = q_x - d_x * along      -- 進行方向に垂直な成分
+            local py = q_y - d_y * along
+            local pz = q_z - d_z * along
+            s_x = a_x + px + d_x * b
+            s_y = a_y + py + d_y * b
+            s_z = a_z + pz + d_z * b
+        end
+
+        -- 初速（初速ベクトル + 円錐状のばらつき + 風）
+        local sp_ang = rand01(i, cyc, 13) * 2 * math.pi
+        local sp_c = math.cos(sp_ang) * vel_len * spread_k
+        local sp_s = math.sin(sp_ang) * vel_len * spread_k
+        local vx = vel0_x * vk + e1_x * sp_c + e2_x * sp_s + wind_x
+        local vy = vel0_y * vk + e1_y * sp_c + e2_y * sp_s + wind_y
+        local vz = vel0_z * vk + e1_z * sp_c + e2_z * sp_s + wind_z
+
+        -- 位置（等加速度運動＋揺らぎ）
+        --   加速度は (0, grav, 0)。grav が負なら上向きに加速する。
+        local sw_ph = r_sw * 2 * math.pi
+        local sw_w = sway_w * (0.6 + 0.8 * r_sw)
+        local p_x = s_x + vx * u + sway_amp * math.sin(sw_w * u + sw_ph)
+        local p_y = s_y + vy * u + 0.5 * grav * u * u
+        local p_z = s_z + vz * u + sway_amp * 0.6 * math.sin(sw_w * 0.83 * u + sw_ph * 1.7)
+
+        -- 透明度（出現／消滅のフェード）
+        local fr = u / life
+
+        -- 粒の大きさ（折り返しのフェード幅にも使う）
+        local sz = base_size * (1 - var_size + 2 * var_size * r_sz)
+        sz = sz * (0.7 + 0.3 * math.sin(math.pi * fr))
+
+        -- 世界固定モード：カメラ中心の箱へ折り返す
+        --   （軌道そのものは世界座標のまま。箱を出たら反対側へ移動）
+        local e_fade = 1
+        if wrapping then
+            local rel_x = p_x - c_x
+            local rel_y = p_y - c_y
+            local rel_z = p_z - c_z
+            p_x = p_x - math.floor(rel_x / box_w + 0.5) * box_w
+            p_y = p_y - math.floor(rel_y / box_h + 0.5) * box_h
+            p_z = p_z - math.floor(rel_z / box_d + 0.5) * box_d
+
+            local ddx = hw - math.abs(p_x - c_x)
+            local ddy = hh - math.abs(p_y - c_y)
+            local ddz = hd - math.abs(p_z - c_z)
+
+            -- 折り返し地点は「粒の直径に比例した幅」でふわっと消す
+            --   壁は（同期オンなら）画面の外にあるので、ここは保険
+            local bandw = sz * P.wrap_soft_k
+
+            -- ただし「視線にほぼ平行な軸」だけは別扱い。
+            --   その軸の壁はカメラの正面にあり、透視投影で縮んだ
+            --   箱として画面の内側に写る。粒の大きさ程度の短い帯で
+            --   消すと、その縮んだ箱の輪郭が一本の「分界线」になる。
+            --   奥行き側は粒ではなく箱の深さに比例した長い帯で
+            --   消し、壁のところでちょうど α=0 になるようにする。
+            local bw_x, bw_y, bw_z = bandw, bandw, bandw
+            local DEEP = 0.25
+            bw_x = snow_axis_feather(f_x, bandw, box_w * DEEP)
+            bw_y = snow_axis_feather(f_y, bandw, box_h * DEEP)
+            bw_z = snow_axis_feather(f_z, bandw, box_d * DEEP)
+
+            if bw_x > 0 and ddx < bw_x then
+                local kk = ddx / bw_x
+                if kk < 0 then kk = 0 end
+                e_fade = e_fade * (kk * kk * (3 - 2 * kk))
+            end
+            if bw_y > 0 and ddy < bw_y then
+                local kk = ddy / bw_y
+                if kk < 0 then kk = 0 end
+                e_fade = e_fade * (kk * kk * (3 - 2 * kk))
+            end
+            if bw_z > 0 and ddz < bw_z then
+                local kk = ddz / bw_z
+                if kk < 0 then kk = 0 end
+                e_fade = e_fade * (kk * kk * (3 - 2 * kk))
+            end
+        end
+
+        local a = e_fade
+        if fr < fin then a = a * (fr / fin) end
+        if fr > 1 - fout then a = a * ((1 - fr) / fout) end
+
+        -- カメラからの奥行き（ローカル p をワールド座標へ戻してから計算）
+        local wx_p, wy_p, wz_p = SNOW_LF.to_world(vl_ctx.xf, p_x, p_y, p_z)
+        local d_x = wx_p - cam_x
+        local d_y = wy_p - cam_y
+        local d_z = wz_p - cam_z
+        local depth = d_x * f_x + d_y * f_y + d_z * f_z
+
+        ----------------------------------------------------------
+        -- 近景カット（レンズに近すぎる粒子を消す）
+        --   ・ON のときは depth <= 0（カメラの後ろ）も消える
+        --   ・しきい値で「いきなり」消すと、粒子がしきい値の前後を
+        --     行き来するたびに点滅して見える。そこで
+        --       depth <= 近景カット距離        → α = 0
+        --       depth >= 近景カット距離 × 1.6  → α = 1
+        --     の間を smoothstep でつなぐ。
+        --     位置は時間の連続関数なので、α も連続に変わる＝ちらつかない。
+        --     （履歴を持つヒステリシスは使わない：シークで結果が
+        --       変わってしまうため、このスクリプトの前提に反する）
+        ----------------------------------------------------------
+        local near_fade = 1
+        if P.near_cull then
+            local d0 = P.near_dist
+            local d1 = d0 * 1.6
+            if depth <= d0 then
+                near_fade = 0
+            elseif depth < d1 then
+                local kk = (depth - d0) / (d1 - d0)
+                near_fade = kk * kk * (3 - 2 * kk)
+            end
+            a = a * near_fade
+        end
+        -- OFF のときは何もしない（v1.13 までと同じ挙動）。
+        --   後ろに回った粒子は AviUtl2 側のクリップに任せる。
+
+        -- 奥行きによる減衰（航空写真的な霞み）
+        if dfade > 0 then
+            local k = (depth - fade_d0) / fade_span
+            if k < 0 then k = 0 elseif k > 1 then k = 1 end
+            a = a * (1 - dfade * k)
+        end
+
+        a = a * base_alpha
+        if a > 0.001 then
+            local rot = spin_v * t * (0.4 + 1.2 * r_ro) + r_ro * 2 * math.pi
+            local bright = 0.85 + 0.3 * r_sz
+            local lr, lg, lb = nil, nil, nil
+            local shade_mul = 1.0
+            if #vl_ctx.emitters > 0 then
+                local ir, ig, ib = SNOW_LF.sample(
+                    vl_ctx.emitters,
+                    wx_p, wy_p, wz_p,
+                    d_x, d_y, d_z, depth,
+                    r_x, r_y, r_z, u_x, u_y, u_z,
+                    vl_ctx.focal_d, vl_ctx.scr_w, vl_ctx.scr_h
+                )
+                local raw_pk = math.max(ir, ig, ib)
+                if vl_ctx.shade01 > 0.0 then
+                    local lit_cov = math.min(1.0, raw_pk * 1.35)
+                    shade_mul = 1.0 - vl_ctx.shade01 * (1.0 - lit_cov)
+                end
+                local eff_pk = raw_pk * vl_ctx.str_k * a
+                if eff_pk > 0.012 then
+                    lr = ir * vl_ctx.str_k * a
+                    lg = ig * vl_ctx.str_k * a
+                    lb = ib * vl_ctx.str_k * a
+                    vl_ctx.has_lit = true
+                end
+            end
+
+            local a_sh = a * shade_mul
+            -- 乗算済み α：明るさ補正で 1 を超えないよう、α でクランプする
+            local rr = col_r * bright * a_sh
+            local gg = col_g * bright * a_sh
+            local bb = col_b * bright * a_sh
+            if rr > a_sh then rr = a_sh end
+            if gg > a_sh then gg = a_sh end
+            if bb > a_sh then bb = a_sh end
+            local a_fig = a_sh * bright
+            if a_fig > 1.0 then a_fig = 1.0 end
+            if a_fig > 0.001 or lr ~= nil then
+                parts[#parts + 1] = {
+                    p_x, p_y, p_z,            -- 位置
+                    sz,                       -- 大きさ
+                    rot,                      -- 回転角
+                    rr, gg, bb,               -- 色（乗算済みα）
+                    a_sh,                     -- 透明度（CPU頂点色用）
+                    depth,                    -- 奥行き
+                    a_fig,                    -- 図形テクスチャ有効α（bright・減光反映済み）
+                    lr, lg, lb                -- 体積光受光RGB（未受光時は nil）
+                }
+            end
+        end
+    end
+
+    ------------------------------------------------------------
+    -- 奥→手前の順に並べ替え（半透明の重なりを正しくする）
+    ------------------------------------------------------------
+    if P.sort and #parts > 1 then
+        table.sort(parts, function(p, q) return p[10] > q[10] end)
+    end
+
+    ------------------------------------------------------------
+    -- 描画
+    ------------------------------------------------------------
+    -- 合成モードは「標準属性」の設定をそのまま使う
+    --   （このオブジェクトからは obj.setoption("blend", …) を呼ばない）
+
+    obj.setoption("culling", 0)
+    obj.setoption("sampler", "clip")
+
+    local nx, ny, nz = -f_x, -f_y, -f_z    -- 粒子法線（カメラ向き）
+
+    -- エッジのぼかし（0=図形そのまま / >0=図形テクスチャをGPUでぼかす）
+    local soft_v = P.soft / 100
+    if soft_v < 0 then soft_v = 0 elseif soft_v > 1 then soft_v = 1 end
+    if soft_v < 0.01 then soft_v = 0 end
+
+    -- AviUtl2 標準の図形をテクスチャとして読み込む
+    --   「純色」や読み込みに失敗した場合は、色付き多角形で代用する
+    --   ぼかし使用時も同じ図形テクスチャを処理する
+    local FIG_SIZE = 128
+    local fig_ok = false
+    if P.fig ~= nil and P.fig ~= "" then
+        local ok = obj.load("figure", P.fig, P.color, FIG_SIZE)
+        if ok == true then fig_ok = true end
+    end
+
+    -- v1.18 experiment: image-space filtering only; never drawpoly into a texture.
+    local shape_scale_x, shape_scale_y = 1, 1
+    local shape_blur_ok = false
+    local shape_blur_failed = false
+    if fig_ok and soft_v > 0 then
+        local ok, result = pcall(function()
+            local w, h = obj.getpixel()
+            if type(w) ~= "number" or type(h) ~= "number" or w < 1 or h < 1 then return false end
+            local sigma = math.max(0.15, soft_v * 24)
+            local radius = math.min(72, math.ceil(sigma * 3))
+            local pad = radius + 2
+            local ow, oh = w + pad * 2, h + pad * 2
+            if obj.copybuffer("cache:snow118/raw", "object") == false then return false end
+            if obj.clearbuffer("cache:snow118/tmp", ow, oh) == false then return false end
+            if obj.pixelshader("ps_snow_shape_blur", "cache:snow118/tmp",
+                {"cache:snow118/raw"}, {w,h,ow,oh,0,sigma,radius,pad}, "copy") == false then return false end
+            if obj.clearbuffer("object", ow, oh) == false then return false end
+            if obj.pixelshader("ps_snow_shape_blur", "object",
+                {"cache:snow118/tmp"}, {ow,oh,ow,oh,1,sigma,radius,pad}, "copy") == false then return false end
+            shape_scale_x, shape_scale_y = ow / w, oh / h
+            return true
+        end)
+        shape_blur_ok = ok and result == true
+        shape_blur_failed = not shape_blur_ok
+        if shape_blur_failed then
+            -- Do not silently replace arbitrary figures by a circle.
+            local loaded = obj.load("figure", P.fig, P.color, FIG_SIZE)
+            fig_ok = loaded == true
+            shape_scale_x, shape_scale_y = 1, 1
+        end
+    end
+
+    if fig_ok and vl_ctx.has_lit then
+        local fw_l, fh_l = obj.getpixel()
+        if type(fw_l) == "number" and type(fh_l) == "number" and fw_l >= 1 and fh_l >= 1 then
+            vl_ctx.ow_fig, vl_ctx.oh_fig = fw_l, fh_l
+            pcall(function()
+                if obj.copybuffer("cache:snow118/fig_lit", "object") ~= false then
+                    vl_ctx.fig_lit_ok = true
+                end
+            end)
+        end
+    end
+
+    ------------------------------------------------------------
+    -- 描画先は常にフレームバッファ
+    --   （仮想バッファに描くとオブジェクトの座標変換＝カメラの
+    --     透視投影が効かなくなるため、3D のまま描く必要がある）
+    ------------------------------------------------------------
+    -- 描画先をフレームバッファへ戻す
+    obj.setoption("drawtarget", "framebuffer")
+    obj.setoption("culling", 0)
+
+    local draw_verts = 0
+
+    if fig_ok then
+        ----------------------------------------------------------
+        -- 図形テクスチャを貼ったビルボード
+        --   drawpoly の透明度はポリゴンバッチ単位なので:
+        --   ・「奥行き順に描画」ON 時: 奥→手前に並んだ粒子列を 8 層の深度スライスに分割し、
+        --     各層内で有効 α（bright 反映済み）を 12 段階に量子化して奥の層から順に描画する。
+        --   ・「奥行き順に描画」OFF 時: α バケットのみ（24 / 12 段階）で高速バッチ描画する。
+        ----------------------------------------------------------
+        local n_parts = #parts
+        local n_strata = (P.sort and n_parts > 1) and math.min(8, n_parts) or 1
+        local n_alpha  = P.sort and 12 or (shape_blur_ok and 24 or 12)
+        local total_bk = n_strata * n_alpha
+        local buckets = {}
+        for b = 1, total_bk do
+            buckets[b] = { list = {}, n = 0, dsum = 0, alpha_v = 1.0 }
+        end
+
+        for k = 1, n_parts do
+            local p = parts[k]
+            local p_x, p_y, p_z = p[1], p[2], p[3]
+            local rs = p[4] * 0.5
+            local rot = p[5]
+            local a_eff = p[11] or p[9]
+            local ca = math.cos(rot)
+            local sa = math.sin(rot)
+            local e_x = (r_x * ca + u_x * sa) * shape_scale_x
+            local e_y = (r_y * ca + u_y * sa) * shape_scale_x
+            local e_z = (r_z * ca + u_z * sa) * shape_scale_x
+            local g_x = (-r_x * sa + u_x * ca) * shape_scale_y
+            local g_y = (-r_y * sa + u_y * ca) * shape_scale_y
+            local g_z = (-r_z * sa + u_z * ca) * shape_scale_y
+
+            local st_idx = (n_strata > 1) and math.min(n_strata - 1, math.floor((k - 1) * n_strata / n_parts)) or 0
+            local ab = math.floor(a_eff * n_alpha)
+            if ab < 0 then ab = 0 elseif ab >= n_alpha then ab = n_alpha - 1 end
+            local bk_idx = st_idx * n_alpha + ab + 1
+            local bk = buckets[bk_idx]
+            bk.alpha_v = (ab + 0.5) / n_alpha
+            local li = #bk.list
+
+            -- 左上 → 右上 → 右下 → 左下（カメラから見て時計回り）
+            bk.list[li + 1] = { p_x - e_x * rs + g_x * rs,
+                                p_y - e_y * rs + g_y * rs,
+                                p_z - e_z * rs + g_z * rs, 0, 0 }
+            bk.list[li + 2] = { p_x + e_x * rs + g_x * rs,
+                                p_y + e_y * rs + g_y * rs,
+                                p_z + e_z * rs + g_z * rs, 1, 0 }
+            bk.list[li + 3] = { p_x + e_x * rs - g_x * rs,
+                                p_y + e_y * rs - g_y * rs,
+                                p_z + e_z * rs - g_z * rs, 1, 1 }
+            bk.list[li + 4] = { p_x - e_x * rs - g_x * rs,
+                                p_y - e_y * rs - g_y * rs,
+                                p_z - e_z * rs - g_z * rs, 0, 1 }
+            bk.n = bk.n + 1
+            bk.dsum = bk.dsum + p[10]
+        end
+
+        -- 深度層 0（最奥）→ n_strata-1（最手前）の順に、各層内でも平均深度の深い順で描画
+        for st = 0, n_strata - 1 do
+            local order = {}
+            local base_b = st * n_alpha
+            for ab = 1, n_alpha do
+                local b = base_b + ab
+                if buckets[b].n > 0 then order[#order + 1] = b end
+            end
+            if #order > 1 then
+                table.sort(order, function(x, y)
+                    return buckets[x].dsum / buckets[x].n > buckets[y].dsum / buckets[y].n
+                end)
+            end
+            for oi = 1, #order do
+                local b = order[oi]
+                local list = buckets[b].list
+                local alpha_v = buckets[b].alpha_v
+                for start = 1, #list, 6000 do
+                    local chunk = {}
+                    for j = start, math.min(start + 5999, #list) do chunk[#chunk+1] = list[j] end
+                    obj.drawpoly(chunk, 4, alpha_v)
+                    draw_verts = draw_verts + #chunk
+                end
+            end
+        end
+
+        if vl_ctx.fig_lit_ok then
+            local saved_blend = "none"
+            pcall(function()
+                local b = obj.getoption("blend")
+                if type(b) == "string" and b ~= "" then saved_blend = b end
+            end)
+            local n_l, v_l = SNOW_LF.draw_lit_figure(
+                parts, r_x, r_y, r_z, u_x, u_y, u_z,
+                shape_scale_x, shape_scale_y,
+                vl_ctx.ow_fig, vl_ctx.oh_fig,
+                col_r, col_g, col_b, vl_ctx.tint01, vl_ctx.glow_mul
+            )
+            vl_ctx.n_lit = n_l
+            draw_verts = draw_verts + v_l
+            pcall(function() obj.setoption("blend", saved_blend) end)
+        end
+    else
+        ----------------------------------------------------------
+        -- 予備：色付きの円（図形が読めないとき）
+        --   頂点色（乗算済みα）で描くので透明度は粒子ごとに正確
+        --   ※ 最大 144,000 頂点を 5,400 頂点（1,800 三角形）単位で分割送信
+        ----------------------------------------------------------
+        local SEG = 12
+        local verts = {}
+        local vi = 0
+        for k = 1, #parts do
+            local p = parts[k]
+            local p_x, p_y, p_z = p[1], p[2], p[3]
+            local rs = p[4] * 0.5
+            local rot = p[5]
+            local rr, gg, bb, aa = p[6], p[7], p[8], p[9]
+            local lr = p[12]
+            if lr ~= nil then
+                local lg, lb = p[13], p[14]
+                local pk = math.max(lr, lg, lb)
+                if pk > 0.012 then
+                    vl_ctx.n_lit = vl_ctx.n_lit + 1
+                    local nr, ng, nb = lr / pk, lg / pk, lb / pk
+                    local tr = col_r + (nr - col_r) * vl_ctx.tint01
+                    local tg = col_g + (ng - col_g) * vl_ctx.tint01
+                    local tb = col_b + (nb - col_b) * vl_ctx.tint01
+                    local amp = math.min(1.0, pk)
+                    local mix_c = math.min(1.0, amp * (0.45 + 0.55 * vl_ctx.tint01))
+                    aa = math.min(1.0, aa + amp * 0.65)
+                    local base_u = 1.0 - mix_c
+                    rr = math.min(aa, rr * base_u + aa * tr * mix_c + tr * amp * 0.35)
+                    gg = math.min(aa, gg * base_u + aa * tg * mix_c + tg * amp * 0.35)
+                    bb = math.min(aa, bb * base_u + aa * tb * mix_c + tb * amp * 0.35)
+                    rs = rs * (1.0 + (vl_ctx.glow_mul - 1.0) * math.min(1.0, pk * 0.8))
+                end
+            end
+            local ca = math.cos(rot)
+            local sa = math.sin(rot)
+            local e_x = r_x * ca + u_x * sa
+            local e_y = r_y * ca + u_y * sa
+            local e_z = r_z * ca + u_z * sa
+            local g_x = -r_x * sa + u_x * ca
+            local g_y = -r_y * sa + u_y * ca
+            local g_z = -r_z * sa + u_z * ca
+            for j = 0, SEG - 1 do
+                local a0 = 2 * math.pi * j / SEG
+                local a1 = 2 * math.pi * (j + 1) / SEG
+                local x1 = p_x + (e_x * math.cos(a0) + g_x * math.sin(a0)) * rs
+                local y1 = p_y + (e_y * math.cos(a0) + g_y * math.sin(a0)) * rs
+                local z1 = p_z + (e_z * math.cos(a0) + g_z * math.sin(a0)) * rs
+                local x2 = p_x + (e_x * math.cos(a1) + g_x * math.sin(a1)) * rs
+                local y2 = p_y + (e_y * math.cos(a1) + g_y * math.sin(a1)) * rs
+                local z2 = p_z + (e_z * math.cos(a1) + g_z * math.sin(a1)) * rs
+                vi = vi + 1
+                verts[vi] = { p_x, p_y, p_z, rr, gg, bb, aa, nx, ny, nz }
+                vi = vi + 1
+                verts[vi] = { x2, y2, z2, rr, gg, bb, aa, nx, ny, nz }
+                vi = vi + 1
+                verts[vi] = { x1, y1, z1, rr, gg, bb, aa, nx, ny, nz }
+            end
+            if vi >= 5400 then
+                obj.drawpoly(verts, 3)
+                draw_verts = draw_verts + vi
+                verts = {}
+                vi = 0
+            end
+        end
+        if vi > 0 then
+            obj.drawpoly(verts, 3)
+            draw_verts = draw_verts + vi
+        end
+    end
+
+
+    ------------------------------------------------------------
+    -- ログ出力（描画モードの可視化）
+    --   AviUtl2 の「ログ」ウィンドウに、いま GPU 側のテクスチャ描画と
+    --   CPU 側の頂点グラデーション描画のどちらで動いているかを出す。
+    --   モードが変わったときだけ出力するのでログは溢れない。
+    ------------------------------------------------------------
+    pcall(function() obj.clearbuffer("cache:snow118/raw", 1, 1) end)
+    pcall(function() obj.clearbuffer("cache:snow118/tmp", 1, 1) end)
+    pcall(function() obj.clearbuffer("cache:snow118/fig_lit", 1, 1) end)
+
+    if P.log_mode then
+        -- デバッグ機能なので、ここでエラーが出ても描画は止めない
+        pcall(function()
+            local ui_lang = snow_detect_ui_lang()
+
+            local mode, desc_ja, desc_zh, desc_en, desc_de
+            if shape_blur_ok then
+                mode = "figure-blur(GPU-exp)"
+                desc_ja = "図形を保持したGPUぼかし"
+                desc_zh = "保留图形的GPU柔边"
+                desc_en = "Shape-preserving GPU blur"
+                desc_de = "Formerhaltende GPU-Weichzeichnung"
+            elseif shape_blur_failed and fig_ok then
+                mode = "figure-blur-FAILED"
+                desc_ja = "ぼかし失敗：元の図形へ復帰"
+                desc_zh = "柔边失败：已退回原始图形"
+                desc_en = "Blur failed: original figure restored"
+                desc_de = "Weichzeichnung fehlgeschlagen: Originalform"
+            elseif fig_ok then
+                mode = "figure-texture(GPU)"
+                desc_ja = "図形テクスチャ（GPU サンプリング）"
+                desc_zh = "图形纹理（GPU 采样）"
+                desc_en = "Figure texture (GPU sampling)"
+                desc_de = "Form-Textur (GPU-Sampling)"
+            else
+                mode = "flat-circle(CPU)"
+                desc_ja = "単色円（図形の読み込みに失敗）"
+                desc_zh = "纯色圆（图形加载失败）"
+                desc_en = "Flat circle (figure load failed)"
+                desc_de = "Einfarbiger Kreis (Form-Laden fehlgeschlagen)"
+            end
+
+            local t_now = obj.time or 0
+            if type(t_now) ~= "number" then t_now = 0 end
+
+            local vl_tag = (#vl_ctx.emitters > 0) and string.format("+vl3d(%d)", #vl_ctx.emitters) or ""
+            local log_key = mode .. vl_tag .. ":" .. ui_lang
+            local last_mode = _SNOW_PERSIST.last_mode
+            local last_t = _SNOW_PERSIST.last_t or -1e9
+            if global ~= nil and last_mode == nil then
+                pcall(function()
+                    local pack = global.snow3d_log
+                    if type(pack) == "string" then
+                        local m, ts = string.match(pack, "^([^|]*)|(.*)$")
+                        if m ~= nil and m ~= "" then last_mode = m end
+                        local tn = tonumber(ts)
+                        if tn ~= nil then last_t = tn end
+                    end
+                end)
+            end
+
+            local changed = (last_mode ~= log_key) or (t_now < last_t)
+            if changed and (math.abs(t_now - last_t) > 0.5 or last_mode ~= log_key) then
+                _SNOW_PERSIST.last_mode = log_key
+                _SNOW_PERSIST.last_t = t_now
+                if global ~= nil then
+                    pcall(function() global.snow3d_log = string.format("%s|%.6f", log_key, t_now) end)
+                end
+                local near_txt = "OFF"
+                if P.near_cull then near_txt = string.format("%.0f", P.near_dist) end
+                local vl_txt = (#vl_ctx.emitters > 0)
+                    and string.format("ON(%d:%d)", #vl_ctx.emitters, vl_ctx.n_lit)
+                    or (P.vl_enable and "WAIT" or "OFF")
+                local msg
+                if ui_lang == "zh" then
+                    msg = string.format(
+                        "雪（3D）v1.23  模式=%s  粒子=%d  顶点=%d  模糊=%d  体积光=%s  体积盒=%.0fx%.0fx%.0f  可视=%.0fx%.0f  近景裁剪=%s  →%s",
+                        mode, #parts, draw_verts, P.soft, vl_txt, box_w, box_h, box_d, vis_w, vis_h, near_txt, desc_zh)
+                elseif ui_lang == "de" then
+                    msg = string.format(
+                        "Schnee (3D) v1.23  Modus=%s  Partikel=%d  Verts=%d  Weich=%d  VolLicht=%s  Box=%.0fx%.0fx%.0f  Sicht=%.0fx%.0f  Nahschnitt=%s  -> %s",
+                        mode, #parts, draw_verts, P.soft, vl_txt, box_w, box_h, box_d, vis_w, vis_h, near_txt, desc_de)
+                elseif ui_lang == "en" then
+                    msg = string.format(
+                        "Snow (3D) v1.23  mode=%s  particles=%d  verts=%d  soft=%d  vl3d=%s  box=%.0fx%.0fx%.0f  view=%.0fx%.0f  near=%s  -> %s",
+                        mode, #parts, draw_verts, P.soft, vl_txt, box_w, box_h, box_d, vis_w, vis_h, near_txt, desc_en)
+                else
+                    msg = string.format(
+                        "雪（3D）v1.23  mode=%s  粒子=%d  頂点=%d  ぼかし=%d  体積光=%s  箱=%.0fx%.0fx%.0f  可視=%.0fx%.0f  近景=%s  →%s",
+                        mode, #parts, draw_verts, P.soft, vl_txt, box_w, box_h, box_d, vis_w, vis_h, near_txt, desc_ja)
+                end
+                if mode == "flat-circle(CPU)" then
+                    print("@warn", msg)
+                else
+                    print("@info", msg)
+                end
+            end
+        end)
+    end
+
+------------------------------------------------------------
+    -- 発生領域の枠（位置調整用の補助表示）
+    ------------------------------------------------------------
+    if P.show_box then
+        local hx, hy, hz = box_w * 0.5, box_h * 0.5, box_d * 0.5
+        local cx0, cx1 = c_x - hx, c_x + hx
+        local cy0, cy1 = c_y - hy, c_y + hy
+        local cz0, cz1 = c_z - hz, c_z + hz
+        local thick = 2.0
+        local verts = {}
+        local vi = 0
+        local function edge(ax, ay, az, bx, by, bz)
+            local dx, dy, dz = bx - ax, by - ay, bz - az
+            local ox = dy * nz - dz * ny
+            local oy = dz * nx - dx * nz
+            local oz = dx * ny - dy * nx
+            local ol = math.sqrt(ox * ox + oy * oy + oz * oz)
+            if ol < 1e-6 then
+                -- 視線と平行な辺は右方向ベクトルとの外積で太さを付ける
+                ox = dy * r_z - dz * r_y
+                oy = dz * r_x - dx * r_z
+                oz = dx * r_y - dy * r_x
+                ol = math.sqrt(ox * ox + oy * oy + oz * oz)
+            end
+            if ol > 1e-6 then
+                ox = ox / ol * thick * 0.5
+                oy = oy / ol * thick * 0.5
+                oz = oz / ol * thick * 0.5
+                vi = vi + 1
+                verts[vi] = {ax - ox, ay - oy, az - oz, 0.16, 0.56, 0.80, 0.8, nx, ny, nz}
+                vi = vi + 1
+                verts[vi] = {bx - ox, by - oy, bz - oz, 0.16, 0.56, 0.80, 0.8, nx, ny, nz}
+                vi = vi + 1
+                verts[vi] = {bx + ox, by + oy, bz + oz, 0.16, 0.56, 0.80, 0.8, nx, ny, nz}
+                vi = vi + 1
+                verts[vi] = {ax + ox, ay + oy, az + oz, 0.16, 0.56, 0.80, 0.8, nx, ny, nz}
+            end
+        end
+        edge(cx0, cy0, cz0, cx1, cy0, cz0)
+        edge(cx1, cy0, cz0, cx1, cy1, cz0)
+        edge(cx1, cy1, cz0, cx0, cy1, cz0)
+        edge(cx0, cy1, cz0, cx0, cy0, cz0)
+        edge(cx0, cy0, cz1, cx1, cy0, cz1)
+        edge(cx1, cy0, cz1, cx1, cy1, cz1)
+        edge(cx1, cy1, cz1, cx0, cy1, cz1)
+        edge(cx0, cy1, cz1, cx0, cy0, cz1)
+        edge(cx0, cy0, cz0, cx0, cy0, cz1)
+        edge(cx1, cy0, cz0, cx1, cy0, cz1)
+        edge(cx1, cy1, cz0, cx1, cy1, cz1)
+        edge(cx0, cy1, cz0, cx0, cy1, cz1)
+        if vi > 0 then
+            obj.drawpoly(verts, 4)
+        end
+    end
+
+end
+
+snow3d_frame()

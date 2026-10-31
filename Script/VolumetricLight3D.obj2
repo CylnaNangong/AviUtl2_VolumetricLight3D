@@ -1,4 +1,4 @@
---information:VolumetricLight3D v3.15
+--information:VolumetricLight3D v3.16
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -12,6 +12,8 @@
 --   3D 影柱（物理遮光）と前景シルエット保護に対応。
 -- ・選択した前方 2D レイヤーを背景および 3D 体積光環境へ自然に馴染ませる
 --   「前景なじませ（AutoBlendLight 3D 連動）」機能を内蔵（既定 OFF）。
+-- ・3D 光場共有（VL3DLF v3）：「雪（3D）v1.23+」等の 3D 粒子オブジェクトへ 3D 光束・ステンドグラス色・
+--   3D/2D 投影遮蔽シャドウ・カメラ前景マスクをリアルタイム共有し、光束内の雪を照らし影の中では消灯します。
 -- ・ネイティブ補助プラグイン「VL3DBridge.aux2」併用時は、無ロック読取ブリッジと
 --   Direct3D 11 ComputeShader（cs_5_0）ハードウェア 3D ラスタライザにより、
 --   高ポリゴン 3D モデルのリアルタイムドラッグ編集・未保存テキストの文字揃え追従を高速化します
@@ -30,6 +32,19 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
+-- v3.16 更新点（2026-10-31・3D 光場共有 VL3DLF v3 新搭載：「雪（3D）v1.23+」連動照明＆真の 3D 遮蔽影）：
+--   1. 【3D 光場パブリッシャー（VL3DLF v3 / `ps_vl_lfpack`）新搭載】
+--      ・描画直前の `object` バッファ上で単一パス GPU パック（`48×48` しきい値適用済み放射輝度＆ステンドグラス色、
+--        `48×48` 4×4 超サンプリング 3D メッシュ影＋2D レイヤー光線交差シャドウマップ、`48×18` カメラ空間前景マスク）を
+--        生成し、追加 `TemporaryImageCacheSize` 消費ゼロ（`+0.000M dots`）で `global` 共有テーブルへシーン単位分離出力。
+--      ・平行光／放射点光源／収束光／カメラ制御 3D スポットライト／霧ゆらぎ／複数体積光インスタンス重畳に完全対応し、
+--        「雪（3D）v1.23+」の粒子が光束内で発光し、3D/2D 遮蔽物の影柱や前景背後では確実に消灯する物理光場共有を実現。
+--      ・早期終了時（強さ 0・長さ 0・光源未選択・しきい値全暗等）は即座に `vl_lf_withdraw()` でスロットを撤回し残光を防止。
+--   2. 【体積エフェクト同士の相互 2D 遮蔽除外強化】
+--      ・`is_volume_effect_layer` および `is_volume_fx_name` に `VolumetricLight3D`／`雪（3D）`／`VolumetricFog3D` の
+--        内部エフェクト名判定を追加し、非日本語 UI や `VL3DBridge` 併用時でも粒子・霧・別インスタンス体積光レイヤーが
+--        2D 前景遮蔽や前景なじませ対象へ誤混入しないよう保護。
+--
 -- v3.15 更新点（2026-10-31・AviUtl ExEdit2 v2.1.16 完全対応 ＆ VL3DBridge v1.22 テキスト揃え/ASLR 不変ハッシュ修正）：
 --   1. 【AviUtl ExEdit2 v2.1.16（2026-10-31 公開）および Plugin SDK [2026/10/31] への完全対応】
 --      ・`VL3DBridge.aux2`（v1.22）および `VL3DBridge.ini` の公式ホワイトリストに `v2.1.16`（`0x6AE538B8, 0x005F6000`）を
@@ -1110,6 +1125,308 @@
             cov = c * sqrt(max(c, 0.0));
         }
         return float4(cov, cov, cov, cov);
+    }
+]]
+
+--[[pixelshader@ps_vl_lfpack:
+    // VolumetricLight3D v3.16 — Shared 3D Light Field Packer (VL3DLF v3)
+    // Packs up to 3 bands into a single 48 x H_pack RGBA8 target in one GPU pass:
+    //   Band 0 (rows 0..47)             : 48x48 thresholded source radiance RGB + coverage A
+    //   Band 1 (rows row_sh..row_sh+47) : 48x48 unified 3D shmap + 2D occ cast-shadow depth (RG16 + B=cov)
+    //   Band 2 (rows row_cm..row_cm+17) : 48x18 unified 3D camocc + 2D occ foreground depth (RG16 + B=cov)
+
+    Texture2D g_mip    : register(t0);
+    Texture2D g_occ    : register(t1);
+    Texture2D g_shmap  : register(t2);
+    Texture2D g_camocc : register(t3);
+    SamplerState g_smp : register(s0);
+
+    cbuffer LfPackCB : register(b0)
+    {
+        float4 q0;   // x: out_w(48), y: rad_h(48/0), z: sh_h(48/0), w: cam_h(18/0)
+        float4 q1;   // x: row_sh, y: row_cam, z: mode_kind, w: spot_env
+        float4 q2;   // xyz: W0, w: Hx
+        float4 q3;   // xyz: Wr, w: Hy
+        float4 q4;   // xyz: Wd, w: L_tot
+        float4 q5;   // xyz: Wn, w: has_tex
+        float4 q6;   // xyz: S_or_U, w: sh3d_on
+        float4 q7;   // x: u0_b, y: u1_b, z: v0_b, w: v1_b
+        float4 q8;   // x: su0,  y: su1,  z: sv0,  w: sv1
+        float4 q9;   // xyz: light_rgb, w: n_occ
+        float4 q10;  // x: occ_str, y: cam_zmax, z: sh_res, w: cam3d_on
+        float4 q11;  // x: uv_span_x, y: uv_span_y, z: camocc_w, w: camocc_h
+        float4 q12;  // xyz: cam_pos, w: is_edit
+        float4 q13;  // xyz: cam_f,   w: do_fg_2d
+        float4 q14;  // xyz: cam_r,   w: inv_fsw  (scr_w / focal_d)
+        float4 q15;  // xyz: cam_d,   w: inv_fsh  (scr_h / focal_d)
+        float4 occ[32];
+    };
+
+    float4 lf_proc_rose(float2 uv)
+    {
+        float2 d = uv * 2.0 - 1.0;
+        float r = length(d);
+        if (r > 0.98) return float4(0.0, 0.0, 0.0, 0.0);
+        float a = atan2(d.y, d.x);
+        float spoke = abs(sin(a * 6.0));
+        float ring1 = abs(r - 0.52);
+        float ring2 = abs(r - 0.92);
+        float lead = (spoke < 0.075 || ring1 < 0.032 || ring2 < 0.045) ? 0.08 : 1.0;
+        float sector = floor((a + 3.14159265) / (6.28318530 / 12.0));
+        float3 pal0 = float3(1.00, 0.34, 0.22);
+        float3 pal1 = float3(0.24, 0.68, 1.00);
+        float3 pal2 = float3(1.00, 0.80, 0.24);
+        float3 pal3 = float3(0.45, 0.95, 0.62);
+        int idx = ((int)sector) & 3;
+        float3 col = (idx == 0) ? pal0 : ((idx == 1) ? pal1 : ((idx == 2) ? pal2 : pal3));
+        if (r < 0.20) col = float3(1.0, 0.95, 0.80);
+        float vig = saturate(1.12 - r * r * 0.55);
+        return float4(col * lead * vig, lead);
+    }
+
+    float4 pack_depth16(float tn, float cov)
+    {
+        float tc = saturate(tn);
+        float scaled = floor(tc * 65535.0 + 0.5);
+        float hi = floor(scaled * (1.0 / 256.0));
+        float lo = scaled - hi * 256.0;
+        return float4(hi * (1.0 / 255.0), lo * (1.0 / 255.0), saturate(cov), 1.0);
+    }
+
+    float4 ps_vl_lfpack(float4 pos : SV_Position) : SV_Target
+    {
+        int ix = (int)pos.x;
+        int iy = (int)pos.y;
+        int out_w = (int)(q0.x + 0.5);
+        int rad_h = (int)(q0.y + 0.5);
+        int sh_h  = (int)(q0.z + 0.5);
+        int cam_h = (int)(q0.w + 0.5);
+        int row_sh  = (int)(q1.x + 0.5);
+        int row_cam = (int)(q1.y + 0.5);
+
+        if (ix < 0 || ix >= out_w)
+            return float4(0.0, 0.0, 0.0, 0.0);
+
+        // -----------------------------------------------------------------
+        // Band 0: 48x48 Source Radiance (pre-thresholded in g_mip, tinted)
+        // -----------------------------------------------------------------
+        if (rad_h > 0 && iy >= 0 && iy < rad_h)
+        {
+            float fx = ((float)ix + 0.5) / max(q0.x, 1.0);
+            float fy = ((float)iy + 0.5) / max(q0.y, 1.0);
+            float u = lerp(q7.x, q7.y, fx);
+            float v = lerp(q7.z, q7.w, fy);
+
+            if (q1.w > 0.5)
+            {
+                return float4(saturate(q9.xyz), 1.0);
+            }
+            if (u <= 0.0 || u >= 1.0 || v <= 0.0 || v >= 1.0)
+                return float4(0.0, 0.0, 0.0, 0.0);
+
+            float4 s;
+            if (q5.w > 0.5)
+            {
+                s = g_mip.SampleLevel(g_smp, float2(u, v), 0.0);
+            }
+            else
+            {
+                s = lf_proc_rose(float2(u, v));
+            }
+            float cov = saturate(s.a);
+            float3 rgb = saturate(s.rgb * q9.xyz);
+            return float4(rgb, cov);
+        }
+
+        // -----------------------------------------------------------------
+        // Band 1: 48x48 Cast-Shadow Depth along Light Rays (3D shmap + 2D occ)
+        // -----------------------------------------------------------------
+        if (sh_h > 0 && iy >= row_sh && iy < row_sh + sh_h)
+        {
+            int ry = iy - row_sh;
+            float fx = ((float)ix + 0.5) / max(q0.x, 1.0);
+            float fy = ((float)ry + 0.5) / max(q0.z, 1.0);
+            float u = lerp(q8.x, q8.y, fx);
+            float v = lerp(q8.z, q8.w, fy);
+
+            float L_tot   = max(q4.w, 1.0);
+            float occ_str = saturate(q10.x);
+            float t_min   = L_tot * 2.0;
+            float best_cov = 0.0;
+
+            // 1) 3D mesh shadow map (g_shmap: prox = (r+g+b)/3, t_occ = (1 - prox) * L_tot)
+            if (q6.w > 0.5)
+            {
+                int sh_n = max((int)(q10.z + 0.5), 1);
+                int2 sh_lim = int2(sh_n, sh_n);
+                float2 fpos = float2(fx, fy) * (float)sh_n - 0.5;
+                int2 ic = int2(floor(fpos + 0.5));
+                for (int dy = -1; dy <= 1; ++dy)
+                {
+                    for (int dx = -1; dx <= 1; ++dx)
+                    {
+                        int2 ip = clamp(ic + int2(dx, dy), int2(0, 0), sh_lim - int2(1, 1));
+                        float4 sm = g_shmap.Load(int3(ip, 0));
+                        if (sm.a >= 0.5)
+                        {
+                            float prox = (sm.r + sm.g + sm.b) * (1.0 / 3.0);
+                            float t_3d = (1.0 - prox) * L_tot;
+                            if (t_3d < t_min) t_min = t_3d;
+                            best_cov = max(best_cov, occ_str);
+                        }
+                    }
+                }
+            }
+
+            // 2) 2D occluder ray-plane intersections along the exact light ray from (u, v)
+            int n_occ = (int)(q9.w + 0.5);
+            if (n_occ > 0)
+            {
+                float3 Pw = q2.xyz
+                          + q3.xyz * ((u - 0.5) * 2.0 * q2.w)
+                          + q4.xyz * ((v - 0.5) * 2.0 * q3.w);
+                float kind = q1.z;
+                float3 Rd;
+                if (kind < 0.5)
+                {
+                    Rd = normalize(q6.xyz);
+                }
+                else if (kind < 1.5)
+                {
+                    Rd = normalize(Pw - q6.xyz);
+                }
+                else
+                {
+                    Rd = normalize(q6.xyz - Pw);
+                }
+
+                float2 uv_span = q11.xy;
+                for (int oi = 0; oi < 8; ++oi)
+                {
+                    if (oi >= n_occ) break;
+                    int bi = oi * 4;
+                    float4 oc0 = occ[bi];
+                    float4 oc1 = occ[bi + 1];
+                    float4 oc2 = occ[bi + 2];
+                    float4 oc3 = occ[bi + 3];
+                    float den = dot(Rd, oc3.xyz);
+                    if (abs(den) > 1.0e-5)
+                    {
+                        float t_hit = dot(oc0.xyz - Pw, oc3.xyz) / den;
+                        if (t_hit > 0.5 && t_hit < L_tot)
+                        {
+                            float3 hp = Pw + Rd * t_hit - oc0.xyz;
+                            float2 uv_l = float2(
+                                0.5 + dot(hp, oc1.xyz) * oc0.w,
+                                0.5 + dot(hp, oc2.xyz) * oc1.w
+                            );
+                            if (uv_l.x > 0.0 && uv_l.x < 1.0 && uv_l.y > 0.0 && uv_l.y < 1.0)
+                            {
+                                float2 uv_a = float2(oc2.w, oc3.w) + uv_l * uv_span;
+                                float oa = g_occ.SampleLevel(g_smp, uv_a, 0.0).a;
+                                float c_i = saturate(oa * occ_str);
+                                if (c_i > 0.15)
+                                {
+                                    if (t_hit < t_min) t_min = t_hit;
+                                    best_cov = max(best_cov, c_i);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (best_cov <= 0.001 || t_min > L_tot * 1.5)
+            {
+                return float4(1.0, 1.0, 0.0, 0.0);
+            }
+            return pack_depth16(t_min / L_tot, best_cov);
+        }
+
+        // -----------------------------------------------------------------
+        // Band 2: 48x18 Unified Camera-Space Foreground Depth (3D camocc + 2D occ)
+        // -----------------------------------------------------------------
+        if (cam_h > 0 && iy >= row_cam && iy < row_cam + cam_h)
+        {
+            int ry = iy - row_cam;
+            float su = ((float)ix + 0.5) / max(q0.x, 1.0);
+            float sv = ((float)ry + 0.5) / max(q0.w, 1.0);
+            float max_z   = max(q10.y, 1.0);
+            float occ_str = saturate(q10.x);
+            float z_min   = max_z * 2.0;
+            float fg_cov  = 0.0;
+
+            // 1) 3D camera depth map (g_camocc)
+            if (q10.w > 0.5)
+            {
+                int2 cm_lim = max(int2(q11.zw + 0.5), int2(1, 1));
+                int2 ip = clamp(int2(su * (float)cm_lim.x, sv * (float)cm_lim.y), int2(0, 0), cm_lim - int2(1, 1));
+                float4 cm = g_camocc.Load(int3(ip, 0));
+                if (cm.a >= 0.5)
+                {
+                    float raw = (cm.r + cm.g + cm.b) * (1.0 / 3.0);
+                    float prox = (raw > 0.50)
+                        ? saturate((raw - 0.51) * (1.0 / 0.48))
+                        : saturate((raw - 0.01) * (1.0 / 0.48));
+                    float z_3d = (1.0 - prox) * max_z;
+                    if (z_3d < z_min) z_min = z_3d;
+                    fg_cov = max(fg_cov, occ_str);
+                }
+            }
+
+            // 2) 2D foreground silhouette planes along camera ray through (su, sv)
+            int n_occ = (int)(q9.w + 0.5);
+            if (q13.w > 0.5 && n_occ > 0 && q12.w < 0.5)
+            {
+                float3 org_c = q12.xyz;
+                float3 ray_c = q13.xyz
+                             + q14.xyz * ((su - 0.5) * q14.w)
+                             + q15.xyz * ((sv - 0.5) * q15.w);
+                float2 uv_span = q11.xy;
+                for (int oi = 0; oi < 8; ++oi)
+                {
+                    if (oi >= n_occ) break;
+                    int bi = oi * 4;
+                    float4 oc0 = occ[bi];
+                    float4 oc1 = occ[bi + 1];
+                    float4 oc2 = occ[bi + 2];
+                    float4 oc3 = occ[bi + 3];
+                    float den_c = dot(ray_c, oc3.xyz);
+                    if (abs(den_c) > 1.0e-5)
+                    {
+                        // Since dot(ray_c, cam_f) == 1.0, lam_c equals exact camera depth zc!
+                        float lam_c = dot(oc0.xyz - org_c, oc3.xyz) / den_c;
+                        if (lam_c > 1.0 && lam_c < max_z)
+                        {
+                            float3 hp_c = org_c + ray_c * lam_c - oc0.xyz;
+                            float2 uv_l = float2(
+                                0.5 + dot(hp_c, oc1.xyz) * oc0.w,
+                                0.5 + dot(hp_c, oc2.xyz) * oc1.w
+                            );
+                            if (uv_l.x > 0.0 && uv_l.x < 1.0 && uv_l.y > 0.0 && uv_l.y < 1.0)
+                            {
+                                float2 uv_a = float2(oc2.w, oc3.w) + uv_l * uv_span;
+                                float oa_fg = smoothstep(0.35, 0.85, g_occ.SampleLevel(g_smp, uv_a, 0.0).b);
+                                float c_fg = saturate(oa_fg * occ_str);
+                                if (c_fg > 0.15)
+                                {
+                                    if (lam_c < z_min) z_min = lam_c;
+                                    fg_cov = max(fg_cov, c_fg);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (fg_cov <= 0.001 || z_min > max_z * 1.5)
+            {
+                return float4(1.0, 1.0, 0.0, 0.0);
+            }
+            return pack_depth16(z_min / max_z, fg_cov);
+        }
+
+        return float4(0.0, 0.0, 0.0, 0.0);
     }
 ]]
 
@@ -2349,34 +2666,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.15] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.15] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.15] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.15] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.16] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.16] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.16] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.16] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.15 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.15 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.15 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.15 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.16 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.16 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.16 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.16 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.15 シェーダー失敗: ",
-        zh = "体积光（3D）v3.15 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.15 shader error: ",
-        de = "Volumenlicht (3D) v3.15 Shader-Fehler: ",
+        ja = "体積光（3D）v3.16 シェーダー失敗: ",
+        zh = "体积光（3D）v3.16 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.16 shader error: ",
+        de = "Volumenlicht (3D) v3.16 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.15：初期化中……",
-        zh = "体积光（3D）v3.15：初始化中……",
-        en = "Volumetric Light (3D) v3.15: Initializing...",
-        de = "Volumenlicht (3D) v3.15: Initialisierung läuft...",
+        ja = "体積光（3D）v3.16：初期化中……",
+        zh = "体积光（3D）v3.16：初始化中……",
+        en = "Volumetric Light (3D) v3.16: Initializing...",
+        de = "Volumenlicht (3D) v3.16: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.15：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.15：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.15: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.15: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.16：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.16：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.16: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.16: Initialisiert (%.2fs)",
     },
 }
 
@@ -2508,15 +2825,35 @@ local function parse_layer_list(spec, skip_a, skip_b)
     return out
 end
 
+local function is_volume_fx_name(lfnm)
+    if type(lfnm) ~= "string" or lfnm == "" then return false end
+    return lfnm == "雪（3D）"
+        or lfnm == "3D雪"
+        or lfnm == "Snow (3D)"
+        or lfnm == "Schnee (3D)"
+        or lfnm == "VolumetricLight3D"
+        or lfnm == "体積光（3D）"
+        or lfnm == "体积光（3D）"
+        or lfnm == "Volumetric Light (3D)"
+        or lfnm == "Volumenlicht (3D)"
+        or lfnm == "VolumetricFog3D"
+        or lfnm == "体積霧（3D）"
+        or lfnm == "体积雾（3D）"
+        or lfnm == "Volumetric Fog (3D)"
+        or lfnm == "Volumennebel (3D)"
+end
+
 local function is_volume_effect_layer(oln)
     local hit = false
     pcall(function()
         local lp = "layer" .. tostring(oln) .. "."
-        if obj.getvalue(oln, "体積光（3D）", "強さ") ~= nil
+        if obj.getvalue(oln, "VolumetricLight3D", "強さ") ~= nil
+            or obj.getvalue(oln, "体積光（3D）", "強さ") ~= nil
             or obj.getvalue(oln, "体积光（3D）", "发光强度") ~= nil
             or obj.getvalue(oln, "体积光（3D）", "强度") ~= nil
             or obj.getvalue(oln, "Volumetric Light (3D)", "Intensity") ~= nil
             or obj.getvalue(oln, "Volumenlicht (3D)", "Intensität") ~= nil
+            or obj.getvalue(lp .. "VolumetricLight3D.強さ") ~= nil
             or obj.getvalue(lp .. "体積光（3D）.強さ") ~= nil
             or obj.getvalue(lp .. "体积光（3D）.发光强度") ~= nil
             or obj.getvalue(oln, "VolumetricFog3D", "濃さ") ~= nil
@@ -7886,7 +8223,8 @@ local function vl_bf_occlusion()
                     local lfnm  = linfo and linfo.fx_name or ""
                     local skip_2d = (lstat == "EMPTY" or lstat == "HIDDEN" or lstat == "DISABLED"
                         or lstat == "OBJ" or lstat == "VRM" or lstat == "WATER"
-                        or lfnm == "カメラ制御" or lfnm == "音声ファイル")
+                        or lfnm == "カメラ制御" or lfnm == "音声ファイル"
+                        or is_volume_fx_name(lfnm))
                     if mesh3d ~= nil then
                         models_3d[#models_3d + 1] = {
                             layer = oln, kind = mkind, mesh = mesh3d,
@@ -8496,6 +8834,7 @@ function AB.run_foreground_blend()
                     local skip_2d = (lstat == "EMPTY" or lstat == "HIDDEN" or lstat == "DISABLED"
                         or lstat == "OBJ" or lstat == "VRM" or lstat == "WATER"
                         or lfnm == "カメラ制御" or lfnm == "音声ファイル"
+                        or is_volume_fx_name(lfnm)
                         or has_3d_or_water_signature(oln) ~= nil)
                     if not skip_2d then
                         local is_txt, afx, afy, pl, pr, pt, pb = resolve_text_align_for_layer(oln, cur_frame, linfo, aup2_hints)
@@ -9017,6 +9356,281 @@ function AB.run_foreground_blend()
     end
 end
 
+--------------------------------------------------------------------
+-- Shared 3D Light Field Publisher (v3.16, Protocol "VL3DLF\3\0")
+-- Publishes compact GPU-packed 3D radiance + cast-shadow + foreground
+-- depth fields into AviUtl2's inter-script `global` table so companion
+-- 3D particle/object scripts (e.g. Snow3D v1.23+) can illuminate
+-- particles inside beams and extinguish them inside 3D/2D shadows.
+--
+-- Zero extra cache-dot overhead: renders into `"object"` (max 48x114)
+-- immediately before `beamatlas` overwrites `"object"` with its 1x1 stub.
+--------------------------------------------------------------------
+
+local VL_LF_MAGIC = "VL3DLF\3\0"
+local lf_ffi_ok, lf_ffi = pcall(require, "ffi")
+
+local function vl_lf_scene_id()
+    if type(obj.scene_id) == "number" then
+        return math.floor(obj.scene_id + 0.5)
+    end
+    if type(obj.scene) == "number" then
+        return math.floor(obj.scene + 0.5)
+    end
+    if _VL_PERSIST and _VL_PERSIST.aup2_cache and type(_VL_PERSIST.aup2_cache.active_scene_id) == "number" then
+        return math.floor(_VL_PERSIST.aup2_cache.active_scene_id + 0.5)
+    end
+    return 0
+end
+
+local function vl_lf_parse_idx(raw)
+    local out = {}
+    if type(raw) ~= "string" or raw == "" then return out end
+    for tok in string.gmatch(raw, "%-?%d+") do
+        local n = tonumber(tok)
+        if n ~= nil then out[#out + 1] = math.floor(n) end
+    end
+    return out
+end
+
+local function vl_lf_format_idx(list)
+    if #list == 0 then return "" end
+    local s = {}
+    for i = 1, #list do s[i] = tostring(list[i]) end
+    return table.concat(s, ",")
+end
+
+local function vl_lf_withdraw()
+    if global == nil then return end
+    local scn = vl_lf_scene_id()
+    local lay = (type(obj.layer) == "number") and math.floor(obj.layer + 0.5) or -1
+    if lay < 0 then return end
+    local slot_key = string.format("VL3D_LF:%d:%d", scn, lay)
+    local idx_key  = string.format("VL3D_LF_IDX:%d", scn)
+    pcall(function()
+        global[slot_key] = ""
+        pcall(function() global[slot_key] = nil end)
+        local cur = vl_lf_parse_idx(global[idx_key])
+        local nxt = {}
+        for i = 1, #cur do
+            if cur[i] ~= lay then nxt[#nxt + 1] = cur[i] end
+        end
+        global[idx_key] = vl_lf_format_idx(nxt)
+    end)
+end
+
+local function vl_lf_publish(spot_ray_env_mode, cb_tgt_r, cb_tgt_g, cb_tgt_b, cb_cl_px, cb_cl_py, cb_cl_pz, cb_in_rad, cb_out_rad, cb_att_k)
+    if global == nil or not lf_ffi_ok or lf_ffi == nil then return end
+    if not VL_BF.ps_ok then
+        vl_lf_withdraw()
+        return
+    end
+    local scn = vl_lf_scene_id()
+    local lay = (type(obj.layer) == "number") and math.floor(obj.layer + 0.5) or -1
+    if lay < 0 then return end
+
+    local out_w = 48
+    local rad_h = 48
+    local n_occ_2d = math.min(MAX_OCC, math.max(0, math.floor((VL_BF.n_occ_active or 0) + 0.5)))
+    local sh3d_on  = (VL_BF.sh3d_active or 0) > 0.5
+    local cam3d_on = (VL_BF.camocc_active or 0) > 0.5
+    local occ_str  = VL_BF.occ_str_val or math.max(0.0, math.min(1.0, (P.occ_strength or 100.0) / 100.0))
+    local eff_m    = math.floor((VL_BF.eff_occ_mode or 0) + 0.5)
+    local do_sh    = (eff_m == 1 or eff_m == 3) and (occ_str > 0.001)
+    local do_fg    = (eff_m == 2 or eff_m == 3) and (occ_str > 0.001)
+
+    local has_sh  = do_sh and (sh3d_on or n_occ_2d > 0)
+    local has_cam = do_fg and (cam3d_on or n_occ_2d > 0)
+    local sh_h    = has_sh and 48 or 0
+    local cam_h   = has_cam and 18 or 0
+    local row_sh  = rad_h
+    local row_cam = rad_h + sh_h
+    local out_h   = rad_h + sh_h + cam_h
+
+    local u0_b = VL_BF.act_u0 or 0.0
+    local u1_b = VL_BF.act_u1 or 1.0
+    local v0_b = VL_BF.act_v0 or 0.0
+    local v1_b = VL_BF.act_v1 or 1.0
+    if u1_b <= u0_b + 1e-4 then u0_b, u1_b = 0.0, 1.0 end
+    if v1_b <= v0_b + 1e-4 then v0_b, v1_b = 0.0, 1.0 end
+
+    -- Matches beamatlas.hlsl line 784: uv_sh = (uv + 0.04) / 1.08 -> uv in [-0.04, 1.04]
+    local su0, su1 = -0.04, 1.04
+    local sv0, sv1 = -0.04, 1.04
+
+    local is_spot = (spot_ray_env_mode or 0.0) > 0.5
+    local lt_r = (VL_BF.lc_r or 1.0) * (cb_tgt_r or 1.0)
+    local lt_g = (VL_BF.lc_g or 1.0) * (cb_tgt_g or 1.0)
+    local lt_b = (VL_BF.lc_b or 1.0) * (cb_tgt_b or 1.0)
+    local pk_t = math.max(1.0, lt_r, lt_g, lt_b)
+    local tint_r, tint_g, tint_b = lt_r / pk_t, lt_g / pk_t, lt_b / pk_t
+    local gain_s = math.max(0.0, (P.intensity / 100.0) * (VL_BF.base_alpha or 1.0) * (VL_BF.cam_comp or 1.0) * pk_t)
+
+    local cam_zmax = 8192.0
+    if cam3d_on and type(VL_BF.camocc_max_z) == "number" and VL_BF.camocc_max_z > 1.0 then
+        cam_zmax = VL_BF.camocc_max_z
+    end
+    local focal_s = math.max(1.0, VL_BF.focal_d or 1024.0)
+    local inv_fsw = math.max(1.0, VL_BF.scr_w or 1920.0) / focal_s
+    local inv_fsh = math.max(1.0, VL_BF.scr_h or 1080.0) / focal_s
+
+    local lf_consts = {
+        out_w, rad_h, sh_h, cam_h,
+        row_sh, row_cam, VL_BF.mode_kind or 0.0, is_spot and 1.0 or 0.0,
+        VL_BF.wx or 0.0, VL_BF.wy or 0.0, VL_BF.wz or 0.0, VL_BF.Hx or 1.0,
+        VL_BF.Wrx or 1.0, VL_BF.Wry or 0.0, VL_BF.Wrz or 0.0, VL_BF.Hy or 1.0,
+        VL_BF.Wdx or 0.0, VL_BF.Wdy or 1.0, VL_BF.Wdz or 0.0, VL_BF.L_tot or 1.0,
+        VL_BF.Wnx or 0.0, VL_BF.Wny or 0.0, VL_BF.Wnz or -1.0, 1.0,
+        VL_BF.sx_p or 0.0, VL_BF.sy_p or 0.0, VL_BF.sz_p or -1.0, sh3d_on and 1.0 or 0.0,
+        u0_b, u1_b, v0_b, v1_b,
+        su0, su1, sv0, sv1,
+        tint_r, tint_g, tint_b, n_occ_2d,
+        occ_str, cam_zmax, VL_BF.sh_res_val or 4.0, cam3d_on and 1.0 or 0.0,
+        VL_BF.uv_span_x or 1.0, VL_BF.uv_span_y or 1.0, VL_BF.camocc_w or 4.0, VL_BF.camocc_h or 4.0,
+        VL_BF.cam_x or 0.0, VL_BF.cam_y or 0.0, VL_BF.cam_z or -1024.0, VL_BF.is_edit and 1.0 or 0.0,
+        VL_BF.f_x or 0.0, VL_BF.f_y or 0.0, VL_BF.f_z or 1.0, do_fg and 1.0 or 0.0,
+        VL_BF.r_x or 1.0, VL_BF.r_y or 0.0, VL_BF.r_z or 0.0, inv_fsw,
+        VL_BF.d_x or 0.0, VL_BF.d_y or 1.0, VL_BF.d_z or 0.0, inv_fsh,
+    }
+    local base_c = #lf_consts
+    for oi = 1, MAX_OCC * 16 do
+        lf_consts[base_c + oi] = (VL_BF.occ_flat and VL_BF.occ_flat[oi]) or 0.0
+    end
+
+    local pack_ok = false
+    local pix_ptr = nil
+    local pw, ph = 0, 0
+    pcall(function()
+        obj.clearbuffer("object", out_w, out_h)
+        local r = obj.pixelshader(
+            "ps_vl_lfpack", "object",
+            { "cache:vl3d/mip", VL_BF.occ_tex_name, VL_BF.shmap_tex_name, VL_BF.camocc_tex_name },
+            lf_consts, "copy", "clamp"
+        )
+        if r ~= false then
+            local d, w, h = obj.getpixeldata("object", "rgba")
+            if d ~= nil and w == out_w and h == out_h then
+                pix_ptr, pw, ph = d, w, h
+                pack_ok = true
+            end
+        end
+    end)
+
+    if not pack_ok or pix_ptr == nil then
+        vl_lf_withdraw()
+        return
+    end
+
+    local b_min_x, b_min_y, b_min_z =  1e9,  1e9,  1e9
+    local b_max_x, b_max_y, b_max_z = -1e9, -1e9, -1e9
+    if VL_BF.pts and (VL_BF.pi or 0) > 0 then
+        for i = 1, VL_BF.pi do
+            local pt = VL_BF.pts[i]
+            if pt[1] < b_min_x then b_min_x = pt[1] end
+            if pt[2] < b_min_y then b_min_y = pt[2] end
+            if pt[3] < b_min_z then b_min_z = pt[3] end
+            if pt[1] > b_max_x then b_max_x = pt[1] end
+            if pt[2] > b_max_y then b_max_y = pt[2] end
+            if pt[3] > b_max_z then b_max_z = pt[3] end
+        end
+        local pad_bb = 24.0
+        b_min_x, b_min_y, b_min_z = b_min_x - pad_bb, b_min_y - pad_bb, b_min_z - pad_bb
+        b_max_x, b_max_y, b_max_z = b_max_x + pad_bb, b_max_y + pad_bb, b_max_z + pad_bb
+    else
+        b_min_x, b_min_y, b_min_z = -1e6, -1e6, -1e6
+        b_max_x, b_max_y, b_max_z =  1e6,  1e6,  1e6
+    end
+
+    local flags = 1 -- bit0: rad band present
+    if has_sh  then flags = flags + 2 end
+    if has_cam then flags = flags + 4 end
+    if is_spot then flags = flags + 8 end
+    if (VL_BF.fog_amt or 0.0) > 0.005 then flags = flags + 16 end
+    if (VL_BF.occ3d_int or 0) == 1 then flags = flags + 32 end
+    if VL_BF.is_edit then flags = flags + 64 end
+
+    local z_win_cam = 1e9
+    if not VL_BF.is_edit then
+        z_win_cam = (VL_BF.wx - VL_BF.cam_x) * VL_BF.f_x
+                  + (VL_BF.wy - VL_BF.cam_y) * VL_BF.f_y
+                  + (VL_BF.wz - VL_BF.cam_z) * VL_BF.f_z
+    end
+
+    local cos_in_sp  = math.cos(math.max(0.0, math.min(math.pi * 0.99, cb_in_rad or 0.0)))
+    local cos_out_sp = math.cos(math.max(0.0, math.min(math.pi * 0.99, cb_out_rad or 0.0)))
+    local sh_soft_t  = math.max(8.0, (P.occ_soft or 8.0) * 1.8)
+
+    local hdr_bytes = 264
+    local pix_bytes = out_w * out_h * 4
+    local total_bytes = hdr_bytes + pix_bytes
+    local buf = lf_ffi.new("uint8_t[?]", total_bytes)
+    lf_ffi.copy(buf, VL_LF_MAGIC, 8)
+
+    local i32 = lf_ffi.cast("int32_t*", buf + 8)
+    local cur_sf = (type(obj.frame) == "number") and vl_scene_frame() or -1
+    local rnd_id = (_VL_PERSIST and _VL_PERSIST.rendering_id) or 0
+    i32[0] = scn
+    i32[1] = lay
+    i32[2] = math.floor(cur_sf + 0.5)
+    i32[3] = math.floor(rnd_id)
+    i32[4] = math.floor((VL_BF.mode_kind or 0.0) + 0.5)
+    i32[5] = flags
+    i32[6] = out_w
+    i32[7] = has_sh and out_w or 0
+
+    local f32 = lf_ffi.cast("float*", buf + 40)
+    f32[0],  f32[1],  f32[2]  = VL_BF.wx or 0.0,  VL_BF.wy or 0.0,  VL_BF.wz or 0.0
+    f32[3],  f32[4],  f32[5]  = VL_BF.Wrx or 1.0, VL_BF.Wry or 0.0, VL_BF.Wrz or 0.0
+    f32[6],  f32[7],  f32[8]  = VL_BF.Wdx or 0.0, VL_BF.Wdy or 1.0, VL_BF.Wdz or 0.0
+    f32[9],  f32[10], f32[11] = VL_BF.Wnx or 0.0, VL_BF.Wny or 0.0, VL_BF.Wnz or -1.0
+    f32[12], f32[13], f32[14] = VL_BF.sx_p or 0.0, VL_BF.sy_p or 0.0, VL_BF.sz_p or -1.0
+    f32[15] = 1.0 / math.max(1e-4, 2.0 * (VL_BF.Hx or 1.0))
+    f32[16] = 1.0 / math.max(1e-4, 2.0 * (VL_BF.Hy or 1.0))
+    f32[17] = VL_BF.dS_wn or 1.0
+    f32[18] = VL_BF.u_wn or -1.0
+    f32[19] = VL_BF.L_tot or 1.0
+    f32[20] = VL_BF.k_dec or 0.0
+    f32[21] = VL_BF.inv_end or 1.0
+    f32[22], f32[23], f32[24], f32[25] = u0_b, u1_b, v0_b, v1_b
+    f32[26], f32[27], f32[28], f32[29] = su0, su1, sv0, sv1
+    f32[30], f32[31], f32[32] = gain_s, gain_s, gain_s
+    f32[33], f32[34], f32[35] = b_min_x, b_min_y, b_min_z
+    f32[36], f32[37], f32[38] = b_max_x, b_max_y, b_max_z
+    f32[39], f32[40], f32[41] = cb_cl_px or 0.0, cb_cl_py or 0.0, cb_cl_pz or 0.0
+    f32[42], f32[43], f32[44] = VL_BF.cam_ray_dx or 0.0, VL_BF.cam_ray_dy or 0.0, VL_BF.cam_ray_dz or 1.0
+    f32[45] = cos_in_sp
+    f32[46] = cos_out_sp
+    f32[47] = cb_att_k or 0.0
+    f32[48] = cam_zmax
+    f32[49] = z_win_cam
+    f32[50] = sh_soft_t
+    f32[51] = VL_BF.fog_amt or 0.0
+    f32[52] = 1.0 / math.max(10.0, VL_BF.f_scale or 220.0)
+    f32[53], f32[54], f32[55] = VL_BF.wox or 0.0, VL_BF.woy or 0.0, VL_BF.woz or 0.0
+
+    -- Direct RGBA8 copy (obj.getpixeldata("object", "rgba") returns RGBA byte order)
+    lf_ffi.copy(buf + hdr_bytes, pix_ptr, pix_bytes)
+
+    -- Encode as pure 7-bit ASCII Base64 ("VL3DB64:...") so AviUtl2's C++ `global`
+    -- string bridge (`lua_tostring` / `lua_pushstring` / NUL-terminated c_str) can
+    -- never truncate embedded zero bytes on any host build.
+    local payload = "VL3DB64:" .. vl_encode_b64_ffi(lf_ffi, buf, total_bytes)
+    local slot_key = string.format("VL3D_LF:%d:%d", scn, lay)
+    local idx_key  = string.format("VL3D_LF_IDX:%d", scn)
+    pcall(function()
+        global[slot_key] = payload
+        local cur = vl_lf_parse_idx(global[idx_key])
+        local seen = false
+        for i = 1, #cur do
+            if cur[i] == lay then seen = true; break end
+        end
+        if not seen then
+            cur[#cur + 1] = lay
+            table.sort(cur)
+            global[idx_key] = vl_lf_format_idx(cur)
+        end
+    end)
+end
 local function vl_bf_render()
     -- 5) GPU マルチパス体積描画
     ------------------------------------------------------------
@@ -9207,6 +9821,21 @@ local function vl_bf_render()
         end
     end
     local KNOT_M = { -8.0, -2.6, -0.95, -0.32, 0.0, 0.32, 0.95, 2.6, 8.0 }
+
+    if (VL_BF.n_occ_active or 0) == 0 then pcall(function() obj.clearbuffer(VL_BF.occ_tex_name, 4, 4) end) end
+    if (VL_BF.sh3d_active or 0) < 0.5 then pcall(function() obj.clearbuffer(VL_BF.shmap_tex_name, 4, 4) end) end
+    if (VL_BF.camocc_active or 0) < 0.5 then pcall(function() obj.clearbuffer(VL_BF.camocc_tex_name, 4, 4) end) end
+
+    if VL_BF.ps_ok then
+        vl_lf_publish(
+            spot_ray_env_mode,
+            cb_tgt_r, cb_tgt_g, cb_tgt_b,
+            cb_cl_px, cb_cl_py, cb_cl_pz,
+            cb_in_rad, cb_out_rad, cb_att_k
+        )
+    else
+        vl_lf_withdraw()
+    end
 
     for ch = VL_BF.ch_first, VL_BF.ch_last, VL_BF.ch_step do
         if not VL_BF.ps_ok then break end
@@ -9427,6 +10056,9 @@ local function vl_bf_render()
             VL_BF.total_v = VL_BF.total_v + vi
         end
     end
+    if not VL_BF.ps_ok then
+        vl_lf_withdraw()
+    end
 
     -- 前景なじませ（AutoBlendLight 統合パス：ON 時のみ指定2D前景レイヤーへ逆光/縁取り/環境乗算を適用）
     -- 全作業キャッシュをフレーム終了時に即座に 1x1 へ解放（OpenGlow r3 / サブシーンと完全共存！）
@@ -9535,17 +10167,17 @@ end
 local function beam_frame()
     vl_bf_reset()
     vl_bf_prepare()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_capture()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_geometry()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_mip()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_occlusion()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
     vl_bf_render()
-    if VL_BF._abort then return end
+    if VL_BF._abort then vl_lf_withdraw(); return end
 end
 
 
@@ -9575,7 +10207,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.15 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.16 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -9586,25 +10218,26 @@ local function vl_run_frame()
     local ok, err = pcall(function()
         vl_bf_reset()
         vl_bf_prepare()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         vl_bf_capture()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         _VL_PERSIST.in_beam_stage = 2
         vl_bf_geometry()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         vl_bf_mip()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         vl_bf_occlusion()
-        if VL_BF._abort then return end
+        if VL_BF._abort then vl_lf_withdraw(); return end
         vl_bf_render()
     end)
     _VL_PERSIST.in_beam_layers[self_key] = nil
     _VL_PERSIST.in_beam_stage = 0
     _VL_PERSIST.in_beam = false
     if not ok then
+        vl_lf_withdraw()
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.15 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.16 error: " .. tostring(err)) end)
     end
     return ok
 end

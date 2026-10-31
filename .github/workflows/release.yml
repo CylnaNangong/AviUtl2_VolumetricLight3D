@@ -54,6 +54,9 @@ jobs:
           set -euo pipefail
           python3 src/VolumetricLight3D/build.py --check
           python3 packaging/build_au2pkg.py --out-dir dist
+          if [ -f integrations/snow3d/apply_to_snow3d.py ]; then
+            python3 integrations/snow3d/apply_to_snow3d.py --build-pkg --out-dir dist
+          fi
 
           FULL_ZIP="dist/VolumetricLight3D-${TAG}.au2pkg.zip"
           SCRIPT_ZIP="dist/VolumetricLight3D-${TAG}-ScriptOnly.au2pkg.zip"
@@ -70,14 +73,14 @@ jobs:
             echo ""
             echo "| File | Size (bytes) | SHA-256 |"
             echo "| :--- | ---: | :--- |"
-            for f in "${FULL_ZIP}" "${SCRIPT_ZIP}"; do
+            for f in dist/*.au2pkg.zip; do
               bn="$(basename "${f}")"
               sz="$(wc -c < "${f}" | tr -d ' ')"
               sha="$(sha256sum "${f}" | awk '{print $1}')"
               echo "| \`${bn}\` | ${sz} | \`${sha}\` |"
             done
           } >> "${GITHUB_STEP_SUMMARY}"
-          sha256sum "${FULL_ZIP}" "${SCRIPT_ZIP}"
+          sha256sum dist/*.au2pkg.zip
 
       - name: Upload .au2pkg.zip assets to GitHub Release
         env:
@@ -87,8 +90,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "${TAG}" \
-            "dist/VolumetricLight3D-${TAG}.au2pkg.zip" \
-            "dist/VolumetricLight3D-${TAG}-ScriptOnly.au2pkg.zip" \
+            dist/*.au2pkg.zip \
             --repo "${REPO}" \
             --clobber
 

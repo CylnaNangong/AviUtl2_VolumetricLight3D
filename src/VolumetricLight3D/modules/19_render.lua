@@ -189,6 +189,21 @@ local function vl_bf_render()
     end
     local KNOT_M = { -8.0, -2.6, -0.95, -0.32, 0.0, 0.32, 0.95, 2.6, 8.0 }
 
+    if (VL_BF.n_occ_active or 0) == 0 then pcall(function() obj.clearbuffer(VL_BF.occ_tex_name, 4, 4) end) end
+    if (VL_BF.sh3d_active or 0) < 0.5 then pcall(function() obj.clearbuffer(VL_BF.shmap_tex_name, 4, 4) end) end
+    if (VL_BF.camocc_active or 0) < 0.5 then pcall(function() obj.clearbuffer(VL_BF.camocc_tex_name, 4, 4) end) end
+
+    if VL_BF.ps_ok then
+        vl_lf_publish(
+            spot_ray_env_mode,
+            cb_tgt_r, cb_tgt_g, cb_tgt_b,
+            cb_cl_px, cb_cl_py, cb_cl_pz,
+            cb_in_rad, cb_out_rad, cb_att_k
+        )
+    else
+        vl_lf_withdraw()
+    end
+
     for ch = VL_BF.ch_first, VL_BF.ch_last, VL_BF.ch_step do
         if not VL_BF.ps_ok then break end
         local ch_start = ch * 64
@@ -407,6 +422,9 @@ local function vl_bf_render()
             obj.drawpoly(verts, 4, VL_BF.poly_alpha)
             VL_BF.total_v = VL_BF.total_v + vi
         end
+    end
+    if not VL_BF.ps_ok then
+        vl_lf_withdraw()
     end
 
     -- 前景なじませ（AutoBlendLight 統合パス：ON 時のみ指定2D前景レイヤーへ逆光/縁取り/環境乗算を適用）

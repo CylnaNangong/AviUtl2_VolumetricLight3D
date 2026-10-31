@@ -87,6 +87,7 @@ class HostConfig:
     camera_mode: int = 0                 # 0 = 2D, 1 = 3D camera, 2 = edit camera
     camera: Optional[Dict[str, float]] = None
     bridge: bool = True                  # emulate VL3DBridge.aux2 (C++ CPU rasterizer)
+    disable_figure: bool = False         # force obj.load("figure",...) -> False (tests CPU fallback)
     project_path: str = ""
     script_path: str = ""
     fake_clock: Optional[float] = None   # deterministic vl_wall_time_sec()
@@ -187,6 +188,52 @@ function __vl3d_dir_listing(dir, pattern)
     end
     return out
 end
+
+-- AviUtl2 inter-script `global` table (docs.aviutl2.jp/lua § 変数):
+-- shared across scripts in the host, values stored as binary-safe strings.
+do
+    local HEX = "0123456789abcdef"
+    local B2H = {}
+    local H2B = {}
+    for b = 0, 255 do
+        local hi = math.floor(b / 16) + 1
+        local lo = (b % 16) + 1
+        local hx = HEX:sub(hi, hi) .. HEX:sub(lo, lo)
+        B2H[b] = hx
+        H2B[hx] = string.char(b)
+    end
+    local function to_hex(s)
+        local n = #s
+        local t = {}
+        for i = 1, n do t[i] = B2H[s:byte(i)] end
+        return table.concat(t)
+    end
+    local function from_hex(h)
+        local n = #h
+        local t = {}
+        local o = 0
+        for i = 1, n - 1, 2 do
+            o = o + 1
+            t[o] = H2B[h:sub(i, i + 1):lower()] or "\0"
+        end
+        return table.concat(t)
+    end
+    global = setmetatable({}, {
+        __index = function(_, k)
+            local h = host_call("global_get", tostring(k))
+            if type(h) ~= "string" then return nil end
+            return from_hex(h)
+        end,
+        __newindex = function(_, k, v)
+            if v == nil then
+                host_call("global_del", tostring(k))
+            else
+                local s = tostring(v)
+                host_call("global_set", tostring(k), to_hex(s))
+            end
+        end,
+    })
+end
 """
 
 
@@ -196,10 +243,11 @@ end
 class Host:
     def __init__(self, script: Obj2Script, layers: Sequence[Layer], config: Optional[HostConfig] = None,
                  shader_lib: Optional[ShaderLibrary] = None, params: Optional[Dict[str, Any]] = None,
-                 native=None):
+                 native=None, shared_global: Optional[Dict[str, bytes]] = None):
         self.script = script
         self.layers: List[Layer] = list(layers)
         self.cfg = config or HostConfig()
+        self.shared_global: Dict[str, bytes] = shared_global if shared_global is not None else {}
         self.params = dict(script.defaults())
         if params:
             self.params.update(params)
@@ -301,6 +349,8 @@ class Host:
             "effect_layer": float(self.layer_index),
             "originframe": 0.0,
         }
+        if getattr(self, "obj_xform", None):
+            fields.update(self.obj_xform)
         self.lua.eval("__vl3d_sync")(self.lua.table_from(fields))
 
     # -- buffers -------------------------------------------------------------
@@ -637,6 +687,11 @@ class Host:
         if kind == "text":
             self._render_text(str(arg))
             return True
+        if kind == "figure":
+            if self.cfg.disable_figure:
+                return False
+            self._render_figure(str(arg or "円"), effect, size)
+            return True
         if kind != "layer":
             return False
         idx = int(arg)
@@ -656,6 +711,46 @@ class Host:
     def _fx_bug(self, layer: Layer) -> bool:
         """Simulate the documented obj.load(..., true) 'opaque rectangle' host bug."""
         return bool(layer.effects.get("__fx_opaque_bug__", {}).get("on", False))
+
+    def _api_global_get(self, key):
+        k = key.decode() if isinstance(key, bytes) else str(key)
+        val = self.shared_global.get(k)
+        return None if val is None else val.hex()
+
+    def _api_global_set(self, key, hex_val):
+        k = key.decode() if isinstance(key, bytes) else str(key)
+        h = hex_val.decode() if isinstance(hex_val, bytes) else str(hex_val)
+        self.shared_global[k] = bytes.fromhex(h)
+        return True
+
+    def _api_global_del(self, key):
+        k = key.decode() if isinstance(key, bytes) else str(key)
+        self.shared_global.pop(k, None)
+        return True
+
+    def _render_figure(self, fig_name: str, col=None, size=None):
+        sz = max(4, min(2048, int(size) if isinstance(size, (int, float)) else 128))
+        c = int(col) if isinstance(col, (int, float)) else 0xFFFFFF
+        cr = ((c >> 16) & 0xFF) / 255.0
+        cg = ((c >> 8) & 0xFF) / 255.0
+        cb = (c & 0xFF) / 255.0
+        yy, xx = np.mgrid[0:sz, 0:sz].astype(np.float32)
+        cx = (sz - 1) * 0.5
+        cy = (sz - 1) * 0.5
+        rad = max(1.0, sz * 0.5 - 1.0)
+        if fig_name in ("四角形", "Square", "Quadrat"):
+            dx = np.maximum(np.abs(xx - cx) - rad, 0.0)
+            dy = np.maximum(np.abs(yy - cy) - rad, 0.0)
+            a = np.clip(1.0 - np.hypot(dx, dy), 0.0, 1.0)
+        else:
+            dist = np.hypot(xx - cx, yy - cy)
+            a = np.clip(rad + 0.5 - dist, 0.0, 1.0)
+        buf = np.zeros((sz, sz, 4), dtype=np.uint8)
+        buf[..., 0] = np.clip(np.round(cr * a * 255.0), 0, 255).astype(np.uint8)
+        buf[..., 1] = np.clip(np.round(cg * a * 255.0), 0, 255).astype(np.uint8)
+        buf[..., 2] = np.clip(np.round(cb * a * 255.0), 0, 255).astype(np.uint8)
+        buf[..., 3] = np.clip(np.round(a * 255.0), 0, 255).astype(np.uint8)
+        self.buffers["object"] = buf
 
     def _render_text(self, text: str):
         from PIL import Image, ImageDraw, ImageFont
