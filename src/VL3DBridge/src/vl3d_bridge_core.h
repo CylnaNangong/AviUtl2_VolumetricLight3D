@@ -18,12 +18,13 @@ struct MemRegionInfo {
 };
 
 // Pluggable OS memory/host abstraction:
-// - Production Windows (.aux2): Win32 ReadProcessMemory + VirtualQuery + GetModuleHandleW(nullptr)
+// - Production Windows (.aux2): Win32 ReadProcessMemory + VirtualQuery + GetModuleHandleW(nullptr) + on-disk EXE SHA-256
 // - Sandbox Linux test build (.so): Guard-page mmap + process_vm_readv / safe kernel-checked copy
 struct HostMemoryOps {
     uint64_t (*get_exe_base)(void* user) = nullptr;
     bool (*read_mem)(void* user, uint64_t addr, void* dst, size_t size, size_t* out_read) = nullptr;
     bool (*query_mem)(void* user, uint64_t addr, MemRegionInfo* out_reg) = nullptr;
+    bool (*hash_exe_file)(void* user, std::string* out_sha256_hex) = nullptr;
     void* user = nullptr;
 };
 
@@ -160,6 +161,7 @@ public:
     void SetMemoryOps(const HostMemoryOps& ops);
     void SetEditHandle(EDIT_HANDLE* edit_handle);
     void ClearAllowlist();
+    void ResetDefaultAllowlist();
     void AddAllowlistEntry(const AllowlistEntry& entry);
     void SetStrictWhitelistOnly(bool strict_only);
     void SetForceCpuRasterizer(bool force_cpu);
@@ -233,6 +235,18 @@ private:
         LayerResolveResult result;
     };
     std::vector<CachedClip> sdk_clip_cache_;
+};
+
+// Streaming FIPS 180-4 SHA-256 helper (zero external library dependency)
+struct Sha256Stream {
+    uint32_t state[8];
+    uint64_t bitlen = 0;
+    uint8_t buf[64];
+    size_t buflen = 0;
+
+    Sha256Stream();
+    void Update(const uint8_t* data, size_t len);
+    std::string FinalHex();
 };
 
 // UTF-8 <-> UTF-16LE helpers (cross-platform, surrogate-pair safe)

@@ -2,8 +2,8 @@
 The documented AviUtl2 Lua host API (`obj.*`), transcribed from the official
 manual so the sandbox can *lint* its own emulation against it.
 
-Source: https://docs.aviutl2.jp/lua/  (AviUtl ExEdit2, checked 2026-10-29)
-        https://docs.aviutl2.jp/lua/ § 設定項目 (property comments)
+Source: https://docs.aviutl2.jp/lua/  (AviUtl ExEdit2 v2.1.16, checked 2026-10-31)
+        https://docs.aviutl2.jp/lua/ § 設定項目 (property comments, incl. v2.1.16 --group@/--separator@ hide targets)
         https://docs.aviutl2.jp/lua/ § 変数 (obj field table)
 
 Why a hand written table instead of scraping at test time:
@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
 DOC_URL = "https://docs.aviutl2.jp/lua/"
-DOC_CHECKED = "2026-10-29"
+DOC_CHECKED = "2026-10-31"
 
 
 @dataclass(frozen=True)

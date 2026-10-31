@@ -68,6 +68,34 @@ bool WinQueryMem(void*, uint64_t addr, vl3d::MemRegionInfo* out_reg) {
     return true;
 }
 
+// Compute ASLR-invariant SHA-256 directly from the on-disk host executable (matches `Get-FileHash aviutl2.exe`).
+bool WinHashExeFile(void*, std::string* out_sha256_hex) {
+    if (!out_sha256_hex) return false;
+    wchar_t exe_path[MAX_PATH * 4] = {};
+    DWORD n = ::GetModuleFileNameW(nullptr, exe_path, MAX_PATH * 4 - 4);
+    if (n == 0 || n >= MAX_PATH * 4 - 4) return false;
+    ScopedWinHandle fh(::CreateFileW(
+        exe_path, GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+    if (!fh.valid()) return false;
+    LARGE_INTEGER fsz{};
+    if (!::GetFileSizeEx(fh.h, &fsz) || fsz.QuadPart <= 0 || fsz.QuadPart > (256LL * 1024 * 1024)) return false;
+
+    vl3d::Sha256Stream sha;
+    std::vector<uint8_t> chunk(65536);
+    LONGLONG rem = fsz.QuadPart;
+    while (rem > 0) {
+        DWORD want = static_cast<DWORD>(rem > 65536 ? 65536 : rem);
+        DWORD rd = 0;
+        if (!::ReadFile(fh.h, chunk.data(), want, &rd, nullptr) || rd == 0) return false;
+        sha.Update(chunk.data(), rd);
+        rem -= rd;
+    }
+    *out_sha256_hex = sha.FinalHex();
+    return out_sha256_hex->size() == 64u;
+}
+
 void LoadSidecarConfigIni() {
     if (!g_self_hmod) return;
     wchar_t path_buf[MAX_PATH * 4] = {};
@@ -113,7 +141,7 @@ void OnProjectLoad(PROJECT_FILE*) {
 
 COMMON_PLUGIN_TABLE g_common_plugin_table = {
     L"VL3DBridge",
-    L"VL3DBridge v1.21 - Lock-Free Read-Only Bridge + D3D11 CS 3D Rasterizer for VolumetricLight3D (体積光（3D）)",
+    L"VL3DBridge v1.22 - Lock-Free Read-Only Bridge + D3D11 CS 3D Rasterizer for VolumetricLight3D (体積光（3D）)",
 };
 
 }  // namespace
@@ -137,10 +165,12 @@ __declspec(dllexport) DWORD RequiredVersion() {
 __declspec(dllexport) bool InitializePlugin(DWORD version) {
     g_host_version = version;
     auto& eng = vl3d::GetGlobalBridgeEngine();
+    eng.ResetDefaultAllowlist();
     vl3d::HostMemoryOps ops{};
     ops.get_exe_base = &WinGetExeBase;
     ops.read_mem = &WinReadMem;
     ops.query_mem = &WinQueryMem;
+    ops.hash_exe_file = &WinHashExeFile;
     ops.user = nullptr;
     eng.SetMemoryOps(ops);
     LoadSidecarConfigIni();
@@ -159,7 +189,7 @@ __declspec(dllexport) COMMON_PLUGIN_TABLE* GetCommonPluginTable() {
 __declspec(dllexport) void RegisterPlugin(HOST_APP_TABLE* host) {
     if (!host) return;
     if (host->set_plugin_information) {
-        host->set_plugin_information(L"VL3DBridge v1.21 (Lock-Free Read-Only Bridge + D3D11 CS 3D Shadow Rasterizer)");
+        host->set_plugin_information(L"VL3DBridge v1.22 (Lock-Free Read-Only Bridge + D3D11 CS 3D Shadow Rasterizer)");
     }
     if (host->create_edit_handle) {
         EDIT_HANDLE* eh = host->create_edit_handle();

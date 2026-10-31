@@ -41,7 +41,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.14 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.15 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -70,7 +70,7 @@ local function vl_run_frame()
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.14 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.15 error: " .. tostring(err)) end)
     end
     return ok
 end

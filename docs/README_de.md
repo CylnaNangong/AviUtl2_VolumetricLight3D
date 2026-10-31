@@ -6,7 +6,7 @@
 **DAS ECHTE 3D-Volumenlicht (God Rays / Krepuskulare Strahlen / Lichtstrahlen) für AviUtl ExEdit2**  
 **Mit eingebauter 3D-Vordergrund-Einblendung & optionalem D3D11-CS-Hardware-Schattenbeschleuniger**
 
-`VolumetricLight3D.obj2 v3.14` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.15` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.16+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Sprache:** &nbsp; **[简体中文 (Chinesisch)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanisch)](README_ja.md)** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **Deutsch**
 
@@ -85,7 +85,7 @@
 | Komponente | Anforderung / Hinweise |
 | :--- | :--- |
 | **OS** | Windows 10 / Windows 11 (64-Bit) |
-| **Host-Anwendung** | **AviUtl ExEdit2 `v2.1.15` (2026-10-24) oder neuer empfohlen**<br><sub>*Hinweis: `VL3DBridge.aux2 v1.21` nutzt die in `v2.1.15` hinzugefügte offizielle D3D11-Geräte-API für die `cs_5_0`-GPU-Schattenbeschleunigung. Frühere `v2.0.54+`-Builds fallen automatisch auf den C++ `-O3`-CPU- oder reines-LuaJIT-Pfad zurück.*</sub> |
+| **Host-Anwendung** | **AviUtl ExEdit2 `v2.1.15` (2026-10-24) – `v2.1.16` (2026-10-31) oder neuer empfohlen**<br><sub>*Hinweis: `VL3DBridge.aux2 v1.22` nutzt die offizielle D3D11-Geräte-API (`v2.1.15+`) für die `cs_5_0`-GPU-Schattenbeschleunigung und enthält eingebaute verifizierte Allowlists für `v2.1.15` und `v2.1.16`. Frühere `v2.0.54+`-Builds fallen automatisch auf den C++ `-O3`-CPU- oder reines-LuaJIT-Pfad zurück.*</sub> |
 | **GPU** | DirectX 11 (`Shader Model 5.0` / `cs_5_0`)-kompatible GPU (NVIDIA / AMD / Intel Arc oder iGPU) |
 | **Cache-Konfiguration** | Funktioniert out-of-the-box mit AviUtl2s Standard-`TemporaryImageCacheSize` (16 Mio. Pixel) |
 | **Optionaler Begleit-Plugin** | [`VRMToolkit`](https://github.com/nove-nove/aviutl2-vrm-toolkit) (`VRMToolkitBridge`) wird nur benötigt, wenn `.vrm`-Avatare als 3D-Abschattung genutzt werden |
@@ -97,8 +97,8 @@
 ### 🚀 Methode 1: `.au2pkg.zip`-Paket per Drag & Drop auf das Vorschaufenster (empfohlen — sofort einsatzbereit!)
 
 1. Laden Sie das aktuelle Paket von **GitHub Releases** herunter (**nicht entpacken**!):
-   - **`VolumetricLight3D-v3.14.au2pkg.zip`** (Komplett-Edition: Kernskript + `VL3DBridge.aux2`-GPU-Plugin + Sprachpakete)
-   - *Oder `VolumetricLight3D-v3.14-ScriptOnly.au2pkg.zip` (Nur-Skript-Edition: `.obj2` + Sprachpakete ohne natives `.aux2`)*
+   - **`VolumetricLight3D-v3.15.au2pkg.zip`** (Komplett-Edition: Kernskript + `VL3DBridge.aux2`-GPU-Plugin + Sprachpakete)
+   - *Oder `VolumetricLight3D-v3.15-ScriptOnly.au2pkg.zip` (Nur-Skript-Edition: `.obj2` + Sprachpakete ohne natives `.aux2`)*
 2. Öffnen Sie AviUtl ExEdit2 und **ziehen Sie die `.au2pkg.zip`-Datei direkt per Drag & Drop in das AviUtl2-Vorschaufenster**; bestätigen Sie den Installationsdialog.
 3. Wenn die Komplett-Edition mit `VL3DBridge.aux2` installiert wurde, **starten Sie AviUtl2 einmal neu**, um das native Plugin zu laden (die Verwaltung/Entfernung des Pakets ist jederzeit im AviUtl2-Menü „Paketinformationen“ möglich).
 
@@ -109,9 +109,9 @@ Kopieren Sie die **`Script`**-, **`Plugin`**- (empfohlen) und **`Language`**-Ord
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── VolumetricLight3D.obj2                  # [Erforderlich] Kern-Objekt-Skript (v3.14)
+│   └── VolumetricLight3D.obj2                  # [Erforderlich] Kern-Objekt-Skript (v3.15)
 ├── Plugin\
-│   ├── VL3DBridge.aux2                    # [Empfohlen] Lock-Free-Lesung & D3D11-CS-GPU-Schatten-Plugin (v1.21)
+│   ├── VL3DBridge.aux2                    # [Empfohlen] Lock-Free-Lesung & D3D11-CS-GPU-Schatten-Plugin (v1.22)
 │   └── VL3DBridge.ini                     # [Optional] Probe-Whitelist & GPU-Konfiguration (neben .aux2)
 └── Language\                              # [Optional] UI-Lokalisierungspakete (Japanisch ist eingebaut)
     ├── 简体中文.VolumetricLight3D.aul2
@@ -251,14 +251,14 @@ Alle **47 Parameter in 6 UI-Gruppen** (Deutsche UI-Labels aus `Deutsch.Volumetri
 
 ## 6. Kompatibilitätsrisiken durch Memory-Probes
 
-AviUtl ExEdit2 entwickelt sich aktiv weiter, und **die offizielle Plugin-SDK bietet noch keine API für bestimmte interne Host-Zustände** — insbesondere die verzögerte G-Buffer-3D-Licht-Array in der Kamerasteuerung (`カメラ制御`) und die Viewmatrix der interaktiven Editor-Freikanmera („grünes Kamera-Icon“). Um diese Lücken heute zu schließen, nutzen optionale Unterfunktionen **Schreib-gesperrte Binary-Memory-Probes**, kalibriert auf `aviutl2.exe` (`v2.1.15`).
+AviUtl ExEdit2 entwickelt sich aktiv weiter, und **die offizielle Plugin-SDK bietet noch keine API für bestimmte interne Host-Zustände** — insbesondere die verzögerte G-Buffer-3D-Licht-Array in der Kamerasteuerung (`カメラ制御`) und die Viewmatrix der interaktiven Editor-Freikanmera („grünes Kamera-Icon“; `get_camera_control_object()` in `v2.1.16` ist nur für `.auf2`-Filter). Um diese Lücken heute zu schließen, nutzen optionale Unterfunktionen **Schreib-gesperrte Binary-Memory-Probes**, verifiziert auf `aviutl2.exe` (`v2.1.15` und `v2.1.16`).
 
 Wir offenlegen transparent, welche Funktionen versionssensible sind:
 
 | Funktionsmodul | Implementierung | Risiko bei zukünftigen `aviutl2.exe`-Updates |
 | :--- | :--- | :--- |
 | **Kern-3D-Volumenlichtstrahlen, Mips & 3D-Nebel-Rauschen**<br>**2D-Kontur-Abschattung & Vordergrund-Einblendung (`AutoBlendLight`)** | 100 % offizielle Skript-APIs + HLSL-Pixelshader | **Minimal / stabil** |
-| **`VL3DBridge.aux2` Lock-Free-Lesung von Ebenen / Text / Wasser / Kamera**<br>**`D3D11 ComputeShader (cs_5_0)` Hardware-3D-Schatten-Rasterizer** | 100 % offizielles Plugin-SDK (`plugin2.h` / `module2.h` `2026-10-24`) | **Minimal / stabil** (offizielle SDK-ABI) |
+| **`VL3DBridge.aux2` Lock-Free-Lesung von Ebenen / Text / Wasser / Kamera**<br>**`D3D11 ComputeShader (cs_5_0)` Hardware-3D-Schatten-Rasterizer** | 100 % offizielles Plugin-SDK (`plugin2.h` / `module2.h` `2026-10-24`–`2026-10-31`) | **Minimal / stabil** (offizielle SDK-ABI) |
 | **Automatische Erkennung von 3D-Lichtquellen in der Kamerasteuerung (`Kamera-3D-Lichtkopplung`)** | Schreib-gesperrte Memory-Probe des Host-G-Buffer-Licht-Arrays | **Kann vorübergehend keine In-Camera-3D-Lichtquellen erfassen**, wenn sich interne Strukturoffsets ändern |
 | **Tracking der Editor-Freikamera („grünes Kamera-Icon“) & Probe für ungespeicherte Szenen ohne `.aux2`** | Schreib-gesperrte Memory-Probe + `.aup2`-Analyse-Fallback | **Kann auf Render-Kamera-Ausrichtung / gespeicherten `.aup2`-Fallback zurückgreifen**, wenn sich Offsets verschieben |
 
@@ -266,7 +266,7 @@ Wir offenlegen transparent, welche Funktionen versionssensible sind:
 
 1. **Null Memory-Writes**: Weder `VolumetricLight3D.obj2` noch `VL3DBridge.aux2` schreiben je in das `aviutl2.exe`-Host-Memory. Alle Probes nutzen kernel-validierte `ReadProcessMemory`-Aufrufe, die sicher Fehlercodes zurückgeben, ohne Access-Violation-Crashs zu verursachen.
 2. **PE-Fingerabdruck & Maschinencode-Signatur-Prüfung**: Wenn AviUtl2 aktualisiert wird und eine Binary-Signatur die Prüfung nicht besteht, **schaltet `VL3DBridge.aux2` alle Memory-Probes automatisch ab und geht sauber in den reinen offiziellen SDK-Modus** — Ihre `.aup2`-Projekte  crashen oder korruptieren nicht, und Kern-Volumenlicht, 2D/3D-Abschattung, `cs_5_0`-GPU-Beschleunigung und Vordergrund-Einblendung funktionieren weiterhin.
-3. **Strenge Whitelist-Option**: Stellen Sie in `Plugin\VL3DBridge.ini` `strict_whitelist_only = 1` ein, um Probes ausschließlich auf SHA-256-verifizierte `aviutl2.exe`-Builds zu beschränken.
+3. **Strenge Whitelist-Option**: Stellen Sie in `Plugin\VL3DBridge.ini` `strict_whitelist_only = 1` ein, um Probes ausschließlich auf PE-verifizierte (`v2.1.15` / `v2.1.16` integriert) oder auf der Festplatte SHA-256-verifizierte (`Get-FileHash aviutl2.exe`) Host-Builds zu beschränken.
 
 ---
 
@@ -283,7 +283,7 @@ Wir offenlegen transparent, welche Funktionen versionssensible sind:
 ## 8. Fehlerberichte
 
 - **[GitHub Issues](../../issues) ist der beste Kanal!** Bitte include:
-  - die Skriptversion (Aktivieren Sie 「画面に状態表示 / Status-HUD」, um sie oben links im HUD zu sehen, z. B. `v3.14`) und Ihre AviUtl ExEdit2-Version;
+  - die Skriptversion (Aktivieren Sie 「画面に状態表示 / Status-HUD」, um sie oben links im HUD zu sehen, z. B. `v3.15`) und Ihre AviUtl ExEdit2-Version;
   - Schritte zur Reproduktion, einen Screenshot Ihrer Zeitleisten-Ebenen-Ansicht und des visuellen Fehlers (**den HUD sichtbar lassen** — Felder wie `遮蔽=…` / `光源=…` sind wichtige Hinweise!);
   - wenn die HUD-Abschattungsanzeige `,opq` (Maske fast vollständig undurchsichtig — prüfen Sie, ob das Abschattungs-Asset einen Alphakanal hat) oder `L4*` (diese Ebene ist auf Rohbild-Load zurückgefallen) zeigt, mentionieren Sie das bitte auch ^_^
 - **Discord-Community**: Treten Sie auch dem japanischen AviUtl2-Infoserver **「AviUtl2の情報が知りたいだろって‼」** bei ([Einladungslink](https://discord.gg/8qzmGY5NgQ)) und ping direkt **南宫若馨Cylna** (`@nangongerregtcylna`, der Autor)!
@@ -325,7 +325,7 @@ python3 packaging/build_au2pkg.py
 - **KEN-kun (ＫＥＮくん)** ([Offizielle Website](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)) — Schöpfer von AviUtl ExEdit2 und des offiziellen AviUtl2-Plugin-SDK.
 
 #### KI-Entwicklungspartner
-- **Arena.ai Agent** — Mitentworfen und implementiert die `v2.90`–`v3.14`-Architektur, den `VL3DBridge.aux2`-Lock-Free-Bridge & D3D11-ComputeShader-Rasterizer, die AutoBlendLight-3D-Integration und die Extrem-Auflösungs-Cache-Härtung.
+- **Arena.ai Agent** — Mitentworfen und implementiert die `v2.90`–`v3.15`-Architektur, den `VL3DBridge.aux2`-Lock-Free-Bridge & D3D11-ComputeShader-Rasterizer, die AutoBlendLight-3D-Integration und die Extrem-Auflösungs-Cache-Härtung.
 - **ChatGPT** — Code-Review & Fehlerjagd (hat den trilinearen Gitter-Eckpunkt-Koordinaten-Bug im 3D-Nebelrauschen-Shader gefunden!).
 - **Gemini** — Verfasse den frühesten HLSL-Volumennebel-Prototyp (in gewisser Weise ist das Begleit-Projekt *Volumetric Fog (3D)* ein glückliches Nebenprodukt dieser Entwicklung XD).
 - **Microsoft Copilot** — Hat geduldig Cache-Überlauf-Probleme untersucht und Dokumentation organisiert, als hochauflösende Bilder `OpenGlow` erstmals zum Platzen brachten.

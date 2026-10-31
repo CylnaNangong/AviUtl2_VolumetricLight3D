@@ -1,6 +1,6 @@
 #pragma once
 //----------------------------------------------------------------------------------
-//  VL3DBridge v1.21 — Embedded Direct3D 11 Compute Shader (cs_5_0) Pipeline
+//  VL3DBridge v1.22 — Embedded Direct3D 11 Compute Shader (cs_5_0) Pipeline
 //  3D Shadow Map & Camera Occlusion Depth Hardware Rasterizer
 //  Zero local register arrays (100% FXC D3DCompile X3550-proof + Vulkan SPIR-V clean)
 //----------------------------------------------------------------------------------

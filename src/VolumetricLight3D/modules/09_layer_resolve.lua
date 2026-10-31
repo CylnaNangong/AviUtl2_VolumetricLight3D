@@ -237,7 +237,8 @@ local function resolve_live_scene_layer_object(oln, cur_frame)
                         local lim = tonumber(st.nrd[0]) - 14
                         for p = 0, lim do
                             if tbuf[p] == 0x48 and tbuf[p + 1] == 0x8B and tbuf[p + 2] == 0x05
-                                and tbuf[p + 7] == 0x48 and tbuf[p + 8] == 0x8B and tbuf[p + 9] == 0x90
+                                and (tbuf[p + 7] == 0x48 or tbuf[p + 7] == 0x4C) and tbuf[p + 8] == 0x8B
+                                and math.floor(tbuf[p + 9] / 64) == 2 and (tbuf[p + 9] % 8) == 0
                                 and tbuf[p + 10] == 0x88 and tbuf[p + 11] == 0x00 and tbuf[p + 12] == 0x00 and tbuf[p + 13] == 0x00 then
                                 local disp = ffi.cast("const int32_t*", tbuf + p + 3)[0]
                                 add_cand(exe_base + rva + p + 7 + tonumber(disp))
@@ -246,8 +247,9 @@ local function resolve_live_scene_layer_object(oln, cur_frame)
                     end
                 end
             end
-            -- .text 走査が 0 件だった場合のみ既知 RVA フォールバック（v2.1.15: 0x5901A8 / v2.1.14: 0x58AAB8）
+            -- .text 走査が 0 件だった場合のみ既知 RVA フォールバック（v2.1.16: 0x5914D0 / v2.1.15: 0x5901A8 / v2.1.14: 0x58AAB8）
             if #st.cands == 0 then
+                add_cand(exe_base + 0x5914D0)
                 add_cand(exe_base + 0x5901A8)
                 add_cand(exe_base + 0x58AAB8)
             end

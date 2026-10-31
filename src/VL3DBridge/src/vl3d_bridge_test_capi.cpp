@@ -124,9 +124,7 @@ SCRIPT_MODULE_TABLE* vl3d_test_get_module_table() {
 }
 
 void vl3d_test_add_default_allowlist() {
-    auto& eng = vl3d::GetGlobalBridgeEngine();
-    // Load VL3DBridge.ini text or trigger InitializeHost default populate by resetting without ClearAllowlist
-    eng.LoadConfigIniText("allow_sha256=ea321cfb5c5c171b0fb5496c6aab715171e4d240f999ea2a9b79b074fc9bd688:0x005F5000:0x6ADC1302\n");
+    vl3d::GetGlobalBridgeEngine().ResetDefaultAllowlist();
 }
 
 int vl3d_test_get_status_sha256(char* out_buf, int out_cap, int* out_allowlisted, uint32_t* out_size, uint32_t* out_ts) {

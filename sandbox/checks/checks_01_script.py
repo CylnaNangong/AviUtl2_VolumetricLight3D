@@ -540,7 +540,8 @@ def _structure_issues(text):
     """Cross-item violations of the documented setting-item structure."""
     issues = []
     labels = {}                      # label -> [line, ...] for value items
-    kinds = {}                       # ident -> kind
+    kinds = {}                       # ident -> kind (value items)
+    nonvalue_hide_targets = {}       # ident -> "group" | "separator" (v2.1.16+)
     id_line = {}
     open_group = None
     group_closed = {}
@@ -566,7 +567,7 @@ def _structure_issues(text):
             rest = m.group(3)
 
         if kind == "group":
-            # `--group:名前[,true|false]` opens, a bare `--group` closes
+            # `--group[@変数名]:名前[,true|false]` opens (v2.1.16 added `@変数名` for `--hide`), bare `--group` closes
             name = rest.split(",")[0].strip()
             if name:
                 if open_group is not None and not group_closed.get(open_group):
@@ -576,6 +577,11 @@ def _structure_issues(text):
                 group_names.add(name)
                 if name in group_names and group_closed.get(name):
                     issues.append(f"L{i}: group {name!r} reopened after it was closed")
+                if ident:
+                    if ident in kinds or ident in nonvalue_hide_targets:
+                        issues.append(f"L{i}: variable {ident!r} declared twice (also L{id_line[ident]})")
+                    nonvalue_hide_targets[ident] = "group"
+                    id_line[ident] = i
             else:
                 if open_group is None:
                     issues.append(f"L{i}: bare --group without an open group")
@@ -583,10 +589,17 @@ def _structure_issues(text):
                     group_closed[open_group] = True
                     open_group = None
             continue
+        if kind == "separator":
+            if ident:
+                if ident in kinds or ident in nonvalue_hide_targets:
+                    issues.append(f"L{i}: variable {ident!r} declared twice (also L{id_line[ident]})")
+                nonvalue_hide_targets[ident] = "separator"
+                id_line[ident] = i
+            continue
         if kind == "hide":
             hides.append((i, ident, rest.strip()))
             continue
-        if kind in ("information", "separator", "label", "require", "script",
+        if kind in ("information", "label", "require", "script",
                     "filter", "hidemenu", "trackgroup", "data"):
             continue
         if kind not in _STRUCT_VALUE_KINDS:
@@ -600,7 +613,7 @@ def _structure_issues(text):
             label = rest.split("=")[0].split(",")[0].strip()
         if label:
             labels.setdefault(label, []).append(i)
-        if ident in kinds:
+        if ident in kinds or ident in nonvalue_hide_targets:
             issues.append(f"L{i}: variable {ident!r} declared twice (also L{id_line[ident]})")
         kinds[ident] = kind
         id_line[ident] = i
@@ -612,9 +625,11 @@ def _structure_issues(text):
             issues.append(f"setting-item label {label!r} is used {len(lns)}x "
                           f"(L{', L'.join(str(x) for x in lns)}) -- the manual requires unique names")
     for line_no, target, expr in hides:
+        if target in kinds or target in nonvalue_hide_targets:
+            continue
         if target in group_names:
             issues.append(f"L{line_no}: --hide@ targets the group {target!r}, not a setting item")
-        elif target not in kinds:
+        else:
             issues.append(f"L{line_no}: --hide@ targets undeclared item {target!r}")
     return issues, {"labels": len(labels), "items": len(kinds), "groups": len(group_names),
                     "hide_rules": len(hides),
@@ -664,4 +679,19 @@ def structure_bites():
         ok = any(needle in x for x in found)
         require(ok, f"seed {name!r} not caught (got {found})")
         caught.append(name)
-    return {"seeds": caught}
+
+    # AviUtl2 v2.1.16 (2026-10-31) added explicit @var names on --group and --separator as valid --hide targets
+    v2116_good = """--information:demo v2.1.16
+--group:基本,true
+--check@b:詳細表示,false
+--separator@sep_adv:詳細設定
+--hide@sep_adv:b==0
+--group
+--group@grp_adv:詳細グループ,true
+--track@x:強度,0,100,50,1
+--hide@grp_adv:b==0
+--group
+"""
+    issues_2116, _ = _structure_issues(v2116_good)
+    require(not issues_2116, f"valid v2.1.16 --group@/--separator@ hide syntax rejected: {issues_2116}")
+    return {"seeds": caught, "v2116_group_separator_hide": True}

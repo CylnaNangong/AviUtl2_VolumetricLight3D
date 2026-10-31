@@ -1,5 +1,18 @@
 # 更新履歴 — 体積光（3D） / VL3DBridge
 
+## v3.15（2026-10-31）・AviUtl ExEdit2 v2.1.16 完全対応 ＆ VL3DBridge v1.22「テキスト」揃え/装飾 SDK 上書き不具合修正 ＆ ASLR 不変 SHA-256 化
+
+- **AviUtl ExEdit2 `v2.1.16`（2026-10-31 公開）および公式 Plugin SDK `[2026/10/31]` への完全対応**：
+  - **ホワイトリスト＆厳格モード対応**：`VL3DBridge.aux2`（`v1.22`）組込デフォルトおよび `Plugin/VL3DBridge.ini` に `v2.1.16` 公式 PE フィンガープリント（`0x6AE538B8, 0x005F6000`）を追加（`v2.1.15` の `0x6ADC1302, 0x005F5000` も併用維持）。`strict_whitelist_only = 1` 環境でも両バージョンで即座に検証通過し、さらに `VL3DBridge` ロード時は `13_camera.lua` 側でも `rpm_allowed` ポリシーを厳格に尊重するよう統一。
+  - **純 Lua フォールバック経路の強化**：`09_layer_resolve.lua` の既知 `lctx` RVA フォールバック表に `v2.1.16`（`0x5914D0`）を追加し、C++/Lua 両側の Signature 1 判定を任意の出力先レジスタ（REX.R 含む）へ拡張。また `.aux2` 未導入時の編集カメラ取得もカーネル `ReadProcessMemory` 経由に統一。
+- **VL3DBridge `v1.21` 以降の標準「テキスト」オブジェクトにおける文字揃え・文字装飾の既定値フォールバック不具合を根治（実機ハーネス検証にて検出）**：
+  - **原因特定**：公式 `plugin2.h` の仕様により、`EDIT_SECTION::get_object_item_value()` が返す `LPCSTR` は同一スレッド内の次回文字列返却呼び出しで上書きされる一時バッファを指していた。`v1.21` では `"文字揃え"`・`"文字装飾"`・`"サイズ"` を連続取得した後に一括解析していたため、先頭 2 項目のポインタが `"サイズ"` の文字列に上書きされ、常に既定値（`左寄せ[上]` `(-0.5, -0.5)`・パディング `0`）となっていた。
+  - **解決策**：各 `get_object_item_value()` 呼び出し直後に `std::string` へディープコピーし、`get_object_track_value()` による現在フレーム補間済みサイズ取得および空文字列時の `get_object_alias()` INI フォールバックを実装。単体テストのモックも共有 `thread_local` バッファを毎回破壊上書きする実機準拠契約へ強化。
+- **ASLR 環境下で `status.sha256` が起動ごとに変化していた問題の修正 ＆ `get_status()` 診断戻り値の拡張**：
+  - **ASLR 不変 SHA-256**：Windows 実行時はディスク上の `aviutl2.exe` 本体ファイルを 64KB チャンクで直接 SHA-256 計算（`Get-FileHash aviutl2.exe -Algorithm SHA256` と完全一致）するよう刷新し、メモリヘッダ計算フォールバックでも `OptionalHeader.ImageBase` を `0x140000000ULL` へ正規化。
+  - **`get_status()` 後方互換拡張**：従来の第 `1〜10` 戻り値の順序・型を 100% 維持したまま、末尾の第 `11〜13` 戻り値に `sig_scene_ok`・`sig_editcam_ok`・`strict_whitelist_only` を追加。
+- **テストサンドボックス拡張（98 PASS / 0 FAIL）**：`sandbox/vl3dsb/apidoc.py`（`2026-10-31`）および `obj2.py` / `checks_01_script.py` を `v2.1.16` の `--group@変数名:` / `--separator@変数名:` 非表示対象構文に対応させ、`VL3DBridge.aux2 v1.22` PE32+ バイナリ検証テストを追加。
+
 ## v3.14（2026-10-29）・v3.08 以降の非スポット体積光における減光リグレッション修正 ＆ 3D サンドボックス拡張
 
 - **非スポット経路（2D レイヤー光源・平行光・点光源）で `v3.08` 以降に発生していた光束の輝度低下を根治**：
