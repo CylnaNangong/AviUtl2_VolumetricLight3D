@@ -40,7 +40,7 @@ sandbox/
 │   ├── assets.py          # 测试素材：彩窗、剪影、渐变、单位立方体 .obj
 │   ├── session.py         # 高层 API：build scene → run_frame → PNG/统计
 │   └── harness.py         # 极简测试框架（@check / require / skip）
-├── checks/                # 11 组、97 个用例
+├── checks/                # 11 组、98 个用例
 │   ├── checks_01_script.py     # .obj2 静态分析（参数语法/分组/默认值/hide 语义/i18n/安全）
 │   ├── checks_02_language.py   # 4 个 .aul2 语言包完整性
 │   ├── checks_03_hlsl.py       # 14 段 HLSL 编译、数值行为、静态 uniform 布局
@@ -95,7 +95,7 @@ g++ --version                                          # 需要支持 C++17（�
 ```bash
 cd sandbox
 
-python3 run_checks.py                  # 跑全部 97 个用例，输出 PASS/FAIL/WARN + out/results.json
+python3 run_checks.py                  # 跑全部 98 个用例，输出 PASS/FAIL/WARN + out/results.json
 python3 run_checks.py --repo /path/to/other-checkout  # 用本沙箱检验另一个仓库快照
 python3 run_checks.py --list           # 列出全部用例
 python3 run_checks.py --only hlsl      # 名字含 "hlsl" 的用例

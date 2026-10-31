@@ -7,8 +7,12 @@ local function try_read_live_edit_camera()
     local br_c = vl3d_bridge()
     if br_c ~= nil and type(br_c.get_edit_camera) == "function" then
         local ok_c, okcam, x, y, z, tx, ty, tz, ux, uy, uz, rz, d = pcall(br_c.get_edit_camera)
-        if ok_c and okcam == true then
-            return { x = x, y = y, z = z, tx = tx, ty = ty, tz = tz, ux = ux, uy = uy, uz = uz, rz = rz, d = d }
+        if ok_c then
+            if okcam == true then
+                return { x = x, y = y, z = z, tx = tx, ty = ty, tz = tz, ux = ux, uy = uy, uz = uz, rz = rz, d = d }
+            end
+            -- VL3DBridge がロード済みの場合は strict_whitelist_only ポリシーを尊重し Lua 生ポインタへ迂回しない
+            return nil
         end
     end
     local ok_ffi, ffi = pcall(require, "ffi")
@@ -85,21 +89,49 @@ local function try_read_live_edit_camera()
             end
         end
 
-        if _edit_cam_probe.ok and is_readable_ptr(_edit_cam_probe.g_addr, 8) then
-            local app_ptr = tonumber(ffi.cast("const uint64_t*", _edit_cam_probe.g_addr)[0]) or 0
-            if is_readable_ptr(app_ptr + _edit_cam_probe.off_w, 8) then
-                local win_ptr = tonumber(ffi.cast("const uint64_t*", app_ptr + _edit_cam_probe.off_w)[0]) or 0
-                local cam_ptr = win_ptr + _edit_cam_probe.off_c
-                if is_readable_ptr(cam_ptr, 56) then
-                    local fp = ffi.cast("const float*", cam_ptr)
-                    local fd = fp[13]
-                    if fd == fd and fd > 1.0 and fd < 1.0e7 then
-                        cam_out = {
-                            x = fp[0], y = fp[1], z = fp[2],
-                            tx = fp[4], ty = fp[5], tz = fp[6],
-                            ux = -fp[8], uy = -fp[9], uz = -fp[10],
-                            rz = fp[12], d = fd,
-                        }
+        if _edit_cam_probe.ok then
+            if wapi.ReadProcessMemory ~= nil then
+                local hproc = (wapi.GetCurrentProcess ~= nil) and wapi.GetCurrentProcess() or ffi.cast("intptr_t", -1)
+                if _VL_PERSIST.edit_cam_u64 == nil then
+                    _VL_PERSIST.edit_cam_u64 = ffi.new("uint64_t[1]")
+                    _VL_PERSIST.edit_cam_f14 = ffi.new("float[14]")
+                    _VL_PERSIST.edit_cam_nrd = ffi.new("size_t[1]")
+                end
+                local u64, f14, nrd = _VL_PERSIST.edit_cam_u64, _VL_PERSIST.edit_cam_f14, _VL_PERSIST.edit_cam_nrd
+                if wapi.ReadProcessMemory(hproc, ffi.cast("const void*", _edit_cam_probe.g_addr), u64, 8, nrd) ~= 0 and nrd[0] >= 8 then
+                    local app_ptr = tonumber(u64[0]) or 0
+                    if app_ptr >= 0x10000 and wapi.ReadProcessMemory(hproc, ffi.cast("const void*", app_ptr + _edit_cam_probe.off_w), u64, 8, nrd) ~= 0 and nrd[0] >= 8 then
+                        local win_ptr = tonumber(u64[0]) or 0
+                        local cam_ptr = win_ptr + _edit_cam_probe.off_c
+                        if win_ptr >= 0x10000 and wapi.ReadProcessMemory(hproc, ffi.cast("const void*", cam_ptr), f14, 56, nrd) ~= 0 and nrd[0] >= 56 then
+                            local fd = f14[13]
+                            if fd == fd and fd > 1.0 and fd < 1.0e7 then
+                                cam_out = {
+                                    x = f14[0], y = f14[1], z = f14[2],
+                                    tx = f14[4], ty = f14[5], tz = f14[6],
+                                    ux = -f14[8], uy = -f14[9], uz = -f14[10],
+                                    rz = f14[12], d = fd,
+                                }
+                            end
+                        end
+                    end
+                end
+            elseif is_readable_ptr(_edit_cam_probe.g_addr, 8) then
+                local app_ptr = tonumber(ffi.cast("const uint64_t*", _edit_cam_probe.g_addr)[0]) or 0
+                if is_readable_ptr(app_ptr + _edit_cam_probe.off_w, 8) then
+                    local win_ptr = tonumber(ffi.cast("const uint64_t*", app_ptr + _edit_cam_probe.off_w)[0]) or 0
+                    local cam_ptr = win_ptr + _edit_cam_probe.off_c
+                    if is_readable_ptr(cam_ptr, 56) then
+                        local fp = ffi.cast("const float*", cam_ptr)
+                        local fd = fp[13]
+                        if fd == fd and fd > 1.0 and fd < 1.0e7 then
+                            cam_out = {
+                                x = fp[0], y = fp[1], z = fp[2],
+                                tx = fp[4], ty = fp[5], tz = fp[6],
+                                ux = -fp[8], uy = -fp[9], uz = -fp[10],
+                                rz = fp[12], d = fd,
+                            }
+                        end
                     end
                 end
             end

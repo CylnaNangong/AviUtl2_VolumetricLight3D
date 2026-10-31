@@ -123,8 +123,9 @@ def parse_obj2(path: str | Path) -> Obj2Script:
             continue
         if line.startswith("--group"):
             rest = line[len("--group"):]
-            if rest.startswith(":"):
-                body = rest[1:]
+            gm = re.match(r"^(?:@[^:]*)?:(.*)$", rest)
+            if gm is not None:
+                body = gm.group(1)
                 if "," in body:
                     name, flag = body.rsplit(",", 1)
                     g = Group(name=name.strip(), open=flag.strip().lower() == "true")

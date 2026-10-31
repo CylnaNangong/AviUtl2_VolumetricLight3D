@@ -6,7 +6,7 @@
 **THE REAL 3D Volumetric Light (God Rays / Crepuscular Rays / Light Shafts) Custom Object for AviUtl ExEdit2**  
 **With Built-in 3D-Linked Foreground Light Blending & Optional D3D11 CS GPU Acceleration**
 
-`VolumetricLight3D.obj2 v3.14` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.15` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.16+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanese)](README_ja.md)** &nbsp;|&nbsp; **English** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
@@ -85,7 +85,7 @@
 | Component | Requirement / Notes |
 | :--- | :--- |
 | **OS** | Windows 10 / Windows 11 (64-bit) |
-| **Host Application** | **AviUtl ExEdit2 `v2.1.15` (2026-10-24) or newer recommended**<br><sub>*Note: `VL3DBridge.aux2 v1.21` uses the official D3D11 device API added in `v2.1.15` for `cs_5_0` GPU shadow acceleration. Earlier `v2.0.54+` builds automatically fall back to the C++ `-O3` CPU or pure LuaJIT path.*</sub> |
+| **Host Application** | **AviUtl ExEdit2 `v2.1.15` (2026-10-24) – `v2.1.16` (2026-10-31) or newer recommended**<br><sub>*Note: `VL3DBridge.aux2 v1.22` uses the official D3D11 device API (`v2.1.15+`) for `cs_5_0` GPU shadow acceleration and includes built-in verified allowlists for both `v2.1.15` and `v2.1.16`. Earlier `v2.0.54+` builds automatically fall back to the C++ `-O3` CPU or pure LuaJIT path.*</sub> |
 | **GPU** | DirectX 11 (`Shader Model 5.0` / `cs_5_0`) compatible GPU (NVIDIA / AMD / Intel Arc or iGPU) |
 | **Cache Config** | Works out-of-the-box with AviUtl2's default `TemporaryImageCacheSize` (16M pixels) |
 | **Optional Companion** | [`VRMToolkit`](https://github.com/nove-nove/aviutl2-vrm-toolkit) (`VRMToolkitBridge`) is only needed if you use `.vrm` avatars as 3D occluders |
@@ -97,8 +97,8 @@
 ### 🚀 Method 1: Drag & Drop `.au2pkg.zip` onto the Preview Window (Recommended — Ready to Use!)
 
 1. Download the latest package from **GitHub Releases** (**do NOT unzip it**):
-   - **`VolumetricLight3D-v3.14.au2pkg.zip`** (Full Recommended Edition: core script + `VL3DBridge.aux2` GPU plugin + language packs)
-   - *Or `VolumetricLight3D-v3.14-ScriptOnly.au2pkg.zip` (Script-Only Edition: `.obj2` + language packs without native `.aux2`)*
+   - **`VolumetricLight3D-v3.15.au2pkg.zip`** (Full Recommended Edition: core script + `VL3DBridge.aux2` GPU plugin + language packs)
+   - *Or `VolumetricLight3D-v3.15-ScriptOnly.au2pkg.zip` (Script-Only Edition: `.obj2` + language packs without native `.aux2`)*
 2. Open AviUtl ExEdit2 and **drag & drop the `.au2pkg.zip` file directly onto the AviUtl2 preview window**, then confirm the installation dialog.
 3. If you installed the Full Edition with `VL3DBridge.aux2`, **restart AviUtl2 once** to load the native plugin & language packs (you can manage or uninstall the package anytime from AviUtl2's **Package Information** menu).
 
@@ -109,9 +109,9 @@ Copy **`Script`**, **`Plugin`** (recommended), and **`Language`** into your AviU
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── VolumetricLight3D.obj2                  # [Required] Core custom object script (v3.14)
+│   └── VolumetricLight3D.obj2                  # [Required] Core custom object script (v3.15)
 ├── Plugin\
-│   ├── VL3DBridge.aux2                    # [Recommended] Lock-free read & D3D11 CS GPU shadow plugin (v1.21)
+│   ├── VL3DBridge.aux2                    # [Recommended] Lock-free read & D3D11 CS GPU shadow plugin (v1.22)
 │   └── VL3DBridge.ini                     # [Optional] Probe whitelist & GPU config (next to .aux2)
 └── Language\                              # [Optional] UI localization packs (Japanese is built-in)
     ├── 简体中文.VolumetricLight3D.aul2
@@ -251,14 +251,14 @@ All **47 parameters across 6 UI groups** (showing English UI labels from `Englis
 
 ## 6. Reverse-Engineering / Memory-Probe Compatibility Risks
 
-AviUtl ExEdit2 is actively evolving, and **the official Plugin SDK does not yet expose APIs for certain internal host states** — specifically the deferred G-Buffer 3D light array inside Camera Control (`カメラ制御`) and the interactive Editor Free-Camera ("green camera icon") view matrix. To bridge these gaps today, optional sub-features use **read-only binary memory probes** calibrated on `aviutl2.exe` (`v2.1.15`).
+AviUtl ExEdit2 is actively evolving, and **the official Plugin SDK does not yet expose APIs for certain internal host states** — specifically the deferred G-Buffer 3D light array inside Camera Control (`カメラ制御`) and the interactive Editor Free-Camera ("green camera icon") view matrix (`get_camera_control_object()` added in `v2.1.16` is `.auf2`-filter-only). To bridge these gaps today, optional sub-features use **read-only binary memory probes** verified on `aviutl2.exe` (`v2.1.15` and `v2.1.16`).
 
 We disclose the exact scope of version-sensitivity transparently below:
 
 | Feature Module | Implementation | Risk on Future `aviutl2.exe` Updates |
 | :--- | :--- | :--- |
 | **Core 3D Volumetric Rays, Mips & 3D Fog Noise**<br>**2D Silhouette Occlusion & Foreground Blend (`AutoBlendLight`)** | 100% Official Script APIs + HLSL Pixel Shaders | **Minimal / Stable** |
-| **`VL3DBridge.aux2` Lock-Free Layer / Text / Water / Camera Read**<br>**`D3D11 ComputeShader (cs_5_0)` Hardware 3D Shadow Rasterizer** | 100% Official Plugin SDK (`plugin2.h` / `module2.h` `2026-10-24`) | **Minimal / Stable** (Official SDK ABI) |
+| **`VL3DBridge.aux2` Lock-Free Layer / Text / Water / Camera Read**<br>**`D3D11 ComputeShader (cs_5_0)` Hardware 3D Shadow Rasterizer** | 100% Official Plugin SDK (`plugin2.h` / `module2.h` `2026-10-24`–`2026-10-31`) | **Minimal / Stable** (Official SDK ABI) |
 | **Auto-Detecting 3D Lights Inside Camera Control (`Camera 3D Light Sync`)** | Read-only memory probe of host G-Buffer light array | **May temporarily stop detecting in-camera 3D lights** if internal struct offsets change |
 | **Editor Free-Camera ("Green Camera") Tracking & Standalone Unsaved Scene Probe** | Read-only memory probe + `.aup2` fallback | **May degrade to render-camera alignment / saved `.aup2` fallback** if offsets shift |
 
@@ -266,7 +266,7 @@ We disclose the exact scope of version-sensitivity transparently below:
 
 1. **Zero Memory Writes**: Neither `VolumetricLight3D.obj2` nor `VL3DBridge.aux2` ever writes to or hooks `aviutl2.exe` memory. All probes use kernel-validated `ReadProcessMemory` calls that safely return failure codes without raising access-violation crashes.
 2. **PE Fingerprint & Machine-Code Signature Gating**: Whenever AviUtl2 updates and any binary signature fails validation, `VL3DBridge.aux2` **automatically disables all memory probes and falls back cleanly to Pure Official SDK Mode** — your `.aup2` projects will not crash or corrupt, and core volumetric rays, 2D/3D shadows, `cs_5_0` GPU acceleration, and Foreground Blend continue working normally.
-3. **Strict Whitelist Option**: Set `strict_whitelist_only = 1` in `Plugin\VL3DBridge.ini` to restrict probes exclusively to SHA-256-verified `aviutl2.exe` builds.
+3. **Strict Whitelist Option**: Set `strict_whitelist_only = 1` in `Plugin\VL3DBridge.ini` to restrict probes exclusively to PE-verified (`v2.1.15` / `v2.1.16` built-in) or on-disk SHA-256-verified (`Get-FileHash aviutl2.exe`) host builds.
 
 ---
 
@@ -283,7 +283,7 @@ We disclose the exact scope of version-sensitivity transparently below:
 ## 8. Reporting Bugs
 
 - **[GitHub Issues](../../issues) is the best channel!** Please include:
-  - the script version (turn on 「画面に状態表示 / status overlay」 to show it in the top-left HUD, e.g. `v3.14`) and your AviUtl ExEdit2 version;
+  - the script version (turn on 「画面に状態表示 / status overlay」 to show it in the top-left HUD, e.g. `v3.15`) and your AviUtl ExEdit2 version;
   - steps to reproduce, a screenshot of your timeline layer layout, and of the visual glitch (**keep the HUD visible** — fields like `遮蔽=…` / `光源=…` are key clues!);
   - if the HUD occlusion tag shows `,opq` (mask nearly fully opaque — check that the occluder image has an alpha channel) or `L4*` (that layer fell back to raw image load), mention it too ^_^
 - **Discord community**: you can also join the Japanese AviUtl2 community server **「AviUtl2の情報が知りたいだろって‼」** ([invite link](https://discord.gg/8qzmGY5NgQ)) and ping **南宫若馨Cylna** (`@nangongerregtcylna`, the author) directly!
@@ -325,7 +325,7 @@ python3 packaging/build_au2pkg.py
 - **KEN-kun (ＫＥＮくん)** ([Official Website](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)) — Creator of AviUtl ExEdit2 and the official AviUtl2 Plugin SDK.
 
 #### AI Collaboration Credits
-- **Arena.ai Agent** — Co-designed and implemented the `v2.90`–`v3.14` architecture, `VL3DBridge.aux2` lock-free bridge & D3D11 ComputeShader rasterizer, `AutoBlendLight` 3D integration, and extreme-resolution cache hardening.
+- **Arena.ai Agent** — Co-designed and implemented the `v2.90`–`v3.15` architecture, `VL3DBridge.aux2` lock-free bridge & D3D11 ComputeShader rasterizer, `AutoBlendLight` 3D integration, and extreme-resolution cache hardening.
 - **ChatGPT** — Code review & bug hunting (spotted the trilinear grid-vertex coordinate bug in the 3D fog noise shader!).
 - **Gemini** — Authored the initial HLSL volumetric fog prototype (making the companion *Volumetric Fog (3D)* script a happy byproduct of this project XD).
 - **Microsoft Copilot** — Patiently helped investigate cache-overflow issues and organize notes when high-resolution images first broke `OpenGlow`.

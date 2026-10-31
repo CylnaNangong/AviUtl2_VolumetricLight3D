@@ -235,3 +235,49 @@ def lua_surface():
                if not re.search(r"\.\s*" + re.escape(fn) + r"\b", s.text)]
     require(not missing, f"script never calls: {missing}")
     return {"bridge_functions": len(expected)}
+
+
+@check("bridge: shipped Windows x64 VL3DBridge.aux2 & ini match v1.22 / v2.1.16", tags=["bridge", "static"])
+def shipped_aux2_and_ini():
+    from vl3dsb.config import REPO_ROOT
+    aux2_path = REPO_ROOT / "Plugin" / "VL3DBridge.aux2"
+    ini_path = REPO_ROOT / "Plugin" / "VL3DBridge.ini"
+    require(aux2_path.is_file(), f"missing {aux2_path}")
+    require(ini_path.is_file(), f"missing {ini_path}")
+
+    b = aux2_path.read_bytes()
+    require(b[:2] == b"MZ", "VL3DBridge.aux2 is not a DOS/PE image")
+    e_lfanew = struct.unpack_from("<I", b, 0x3C)[0]
+    sig, machine, nsec, _ts, _st, _ns, opt_sz, _ch = struct.unpack_from("<4sHHIIIHH", b, e_lfanew)
+    require(sig == b"PE\x00\x00" and machine == 0x8664, f"expected x64 PE32+, got sig={sig!r} machine={machine:#x}")
+    opt_off = e_lfanew + 24
+    magic = struct.unpack_from("<H", b, opt_off)[0]
+    require(magic == 0x020B, f"expected PE32+ magic 0x020B, got {magic:#x}")
+
+    exp_rva, _exp_sz = struct.unpack_from("<II", b, opt_off + 112)
+    require(exp_rva > 0, "VL3DBridge.aux2 has no export table")
+    secs = [struct.unpack_from("<8sIIII", b, opt_off + opt_sz + i * 40) for i in range(nsec)]
+
+    def rva2off(r: int) -> int:
+        for _nm, vsz, srva, rsz, roff in secs:
+            if srva <= r < srva + max(vsz, rsz):
+                return roff + (r - srva)
+        raise AssertionError(f"unmapped RVA {r:#x}")
+
+    eo = rva2off(exp_rva)
+    _nf, n_names, _af, addr_names, _ao = struct.unpack_from("<IIIII", b, eo + 20)
+    exports = []
+    for i in range(n_names):
+        nrva = struct.unpack_from("<I", b, rva2off(addr_names) + i * 4)[0]
+        o = rva2off(nrva)
+        exports.append(b[o:b.index(b"\x00", o)].decode("ascii"))
+    need_exports = {"GetCommonPluginTable", "GetScriptModuleTable", "InitializePlugin",
+                    "RegisterPlugin", "RequiredVersion", "UninitializePlugin"}
+    require(need_exports.issubset(set(exports)), f"missing exports: {sorted(need_exports - set(exports))}")
+    require("VL3DBridge v1.22".encode("utf-16-le") in b,
+            "VL3DBridge.aux2 binary does not contain the 'VL3DBridge v1.22' UTF-16LE banner")
+
+    ini_txt = ini_path.read_text(encoding="utf-8")
+    require("0x6AE538B8,0x005F6000" in ini_txt, "VL3DBridge.ini missing AviUtl2 v2.1.16 allow_pe")
+    require("0x6ADC1302,0x005F5000" in ini_txt, "VL3DBridge.ini missing AviUtl2 v2.1.15 allow_pe")
+    return {"size": len(b), "exports": exports}

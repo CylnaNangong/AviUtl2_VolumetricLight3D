@@ -1,5 +1,18 @@
 # 更新历史 — 体积光（3D） / VL3DBridge
 
+## v3.15（2026-10-31）· AviUtl ExEdit2 v2.1.16 完整适配 & VL3DBridge v1.22 修复内置文本对齐/描边 SDK 覆盖缺陷 & ASLR 不变 SHA-256
+
+- **AviUtl ExEdit2 `v2.1.16`（2026-10-31 发布）与官方 Plugin SDK `[2026/10/31]` 完整适配**：
+  - **白名单与严格模式支持**：在 `VL3DBridge.aux2`（`v1.22`）内置默认白名单与 `Plugin/VL3DBridge.ini` 中同步登记 `v2.1.16` 官方 PE 指纹（`0x6AE538B8, 0x005F6000`），保留 `v2.1.15`（`0x6ADC1302, 0x005F5000`）兼容；即使开启 `strict_whitelist_only = 1` 严格白名单模式，两代宿主版本均可无缝放行只读探针。同时在 `13_camera.lua` 中当 `VL3DBridge` 已加载时严格遵循其 `rpm_allowed` 门控策略，不再在严格拦截时绕回 Lua 兜底。
+  - **纯 Lua 兜底路径加固**：在 `09_layer_resolve.lua` 的硬编码 `lctx` RVA 兜底表中补入 `v2.1.16` 地址 `0x5914D0`；将 C++/Lua 双端 Signature 1（`lua_getvalue` 渲染上下文特征）升级为 REX.R 通用目标寄存器掩码匹配；并将 `13_camera.lua` 的无插件自由相机兜底统一改为经由内核 `ReadProcessMemory` 安全拷贝。
+- **修复 `VL3DBridge` 自 `v1.21` 起的内置 `[テキスト]` 对齐与描边元数据回退默认值缺陷（感谢本地 DeepSeek Harness 真机实测检出）**：
+  - **根因定位**：官方 `plugin2.h` 规定 `EDIT_SECTION::get_object_item_value()` 返回的 `LPCSTR` 指向宿主同一线程复用的临时字符串缓冲区，下一次调用返回字符串的 SDK 接口时即被覆写。`v1.21` 在连续查询 `"文字揃え"`、`"文字装飾"`、`"サイズ"` 时未在每次调用后立即深拷贝，导致进入 `ParseTextAlignAndDeco` 时前两个指针已被 `"サイズ"` 的字号字符串覆盖，恒定回退为默认左上对齐（`-0.5, -0.5`）与零描边补偿（`0,0,0,0`），并短路了 Lua 侧的 `obj.getvalue()` 兜底。
+  - **修复方案**：每次调用 `get_object_item_value()` 后立即深拷贝至独立 `std::string`；优先调用 `get_object_track_value()` 获取当前帧插值后的精确字号；当对齐项返回空串时自动落入 `get_object_alias()` INI 兜底解析；并在 `vl3d_bridge_selftest.cpp` 的模拟宿主中强制每次擦写同一 `thread_local` 缓冲区以杜绝回归。
+- **修复 ASLR 下 `status.sha256` 每次启动变化的既有缺陷 & 扩展 `get_status()` 诊断返回值**：
+  - **ASLR 不变哈希**：Windows 运行时改为直接以 64KB 流式分块计算磁盘上 `aviutl2.exe` 文件本体的 SHA-256（与 PowerShell `Get-FileHash aviutl2.exe -Algorithm SHA256` 完全一致，彻底不受 Windows 加载器改写内存 `OptionalHeader.ImageBase` 及重定位影响）；内存映射回退路径亦同步将 `OptionalHeader.ImageBase` 归一化为标准 `0x140000000ULL`。
+  - **`get_status()` 向后兼容扩展**：完整保留第 `1～10` 个返回值的原有顺序与类型不变，在第 `11～13` 位末尾追加 `sig_scene_ok`、`sig_editcam_ok`、`strict_whitelist_only` 三个布尔诊断项。
+- **沙箱与规范基线更新（98 PASS / 0 FAIL）**：同步 `sandbox/vl3dsb/apidoc.py`（`2026-10-31`）与 `obj2.py` / `checks_01_script.py` 支持 `v2.1.16` 新增的 `--group@変数名:` / `--separator@変数名:` 隐藏目标语法，新增 `VL3DBridge.aux2 v1.22` PE32+ 导出表与配置静态门禁，并附上供本地真机 Harness 复核的交接说明 `sandbox/docs/DSH_HANDOFF_v3.15_v1.22.zh.md`。
+
 ## v3.14（2026-10-29）· 修复 v3.08 引入的非聚光源光束变暗回归 & 扩充 3D 沙箱
 
 - **根治非聚光源路径（2D 图层光源 / 平行光 / 点光源）自 `v3.08` 起的亮度下降回归**：

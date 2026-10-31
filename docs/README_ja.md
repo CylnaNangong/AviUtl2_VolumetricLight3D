@@ -6,7 +6,7 @@
 **AviUtl ExEdit2 用 真・3D ボリューメトリックライト（ボリュームライト／ゴッドレイ／薄明光線）カスタムオブジェクト**  
 **3D 連動「前景なじませ」内蔵 · D3D11 CS 高速化プラグイン同梱**
 
-`VolumetricLight3D.obj2 v3.14` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.21` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.15` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.16+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 言語切替 / Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **日本語** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
@@ -87,7 +87,7 @@
 | 項目 | 要件・備考 |
 | :--- | :--- |
 | **OS** | Windows 10 / Windows 11（64-bit） |
-| **本体バージョン** | **AviUtl ExEdit2 `v2.1.15`（2026-10-24）以降推奨**<br><sub>※ `VL3DBridge.aux2 v1.21` の D3D11 `cs_5_0` GPU 高速化は `v2.1.15` で追加された公式 SDK API を使用します。それ以前の `v2.0.54+` 環境では自動的に C++ `-O3` CPU または純 LuaJIT 経路へフォールバックします。</sub> |
+| **本体バージョン** | **AviUtl ExEdit2 `v2.1.15`（2026-10-24）〜`v2.1.16`（2026-10-31）以降推奨**<br><sub>※ `VL3DBridge.aux2 v1.22` の D3D11 `cs_5_0` GPU 高速化は `v2.1.15+` 公式 SDK API を使用し、`v2.1.15` / `v2.1.16` 両バージョンの認証ホワイトリストを内蔵しています。それ以前の `v2.0.54+` 環境では自動的に C++ `-O3` CPU または純 LuaJIT 経路へフォールバックします。</sub> |
 | **GPU** | DirectX 11（`Shader Model 5.0` / `cs_5_0`）対応 GPU（NVIDIA / AMD / Intel Arc・内蔵 GPU） |
 | **キャッシュ設定** | AviUtl2 既定の `TemporaryImageCacheSize`（1,600 万ドット）のまま変更不要で動作します |
 | **任意連携プラグイン** | `.vrm` モデルの 3D 遮蔽を使用する場合は [`VRMToolkit`](https://github.com/nove-nove/aviutl2-vrm-toolkit)（`VRMToolkitBridge`）が必要です |
@@ -99,8 +99,8 @@
 ### 🚀 方法 1：`.au2pkg.zip` パッケージをプレビュー画面へドラッグ＆ドロップ（推奨・一番簡単！）
 
 1. **GitHub Releases** から最新版パッケージをダウンロードします（**解凍せずそのまま**使用します）：
-   - **`VolumetricLight3D-v3.14.au2pkg.zip`**（フル推奨版：本体スクリプト ＋ `VL3DBridge.aux2` GPU 高速化プラグイン ＋ 多言語パック）
-   - *または `VolumetricLight3D-v3.14-ScriptOnly.au2pkg.zip`（スクリプト単体版：`.obj2` ＋ 多言語パックのみ）*
+   - **`VolumetricLight3D-v3.15.au2pkg.zip`**（フル推奨版：本体スクリプト ＋ `VL3DBridge.aux2` GPU 高速化プラグイン ＋ 多言語パック）
+   - *または `VolumetricLight3D-v3.15-ScriptOnly.au2pkg.zip`（スクリプト単体版：`.obj2` ＋ 多言語パックのみ）*
 2. AviUtl ExEdit2 を起動し、ダウンロードした `.au2pkg.zip` を **プレビュー画面へ直接ドラッグ＆ドロップ** すると確認ダイアログが表示され、一括で自動インストールされます。
 3. `VL3DBridge.aux2` を含む場合は、インストール後に **AviUtl2 を一度再起動** してください（導入後は AviUtl2 の「パッケージ情報」から確認・ワンクリック削除も可能です）。
 
@@ -111,9 +111,9 @@
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── VolumetricLight3D.obj2                  # [必須] カスタムオブジェクト本体（v3.14）
+│   └── VolumetricLight3D.obj2                  # [必須] カスタムオブジェクト本体（v3.15）
 ├── Plugin\
-│   ├── VL3DBridge.aux2                    # [推奨/任意] 無ロック読取＋D3D11 CS 3D影高速化プラグイン（v1.21）
+│   ├── VL3DBridge.aux2                    # [推奨/任意] 無ロック読取＋D3D11 CS 3D影高速化プラグイン（v1.22）
 │   └── VL3DBridge.ini                     # [任意] 安全ホワイトリスト・GPU設定ファイル（.aux2 と同フォルダ）
 └── Language\                              # [任意] 多言語パック（日本語環境では不要・標準内蔵）
     ├── 简体中文.VolumetricLight3D.aul2
@@ -253,14 +253,14 @@ Layer 5  [字幕・UI レイヤー]    体積光より下段に置くことで�
 
 ## 6. 内部構造依存機能（逆アセンブル／メモリ読取）の将来非互換リスクについて
 
-AviUtl ExEdit2 は現在も活発に更新が続けられており、一部のホスト内部情報（「カメラ制御」内の遅延シェーディング 3D 光源配列や、編集用自由視点［緑カメラ］のリアルタイム姿勢など）については、**現時点の公式 Plugin SDK に取得用 API がまだ用意されていません**。そのため、本プロジェクトの一部の補助機能では `aviutl2.exe`（`v2.1.15` にて検証）のバイナリ解析に基づく **読み取り専用メモリプローブ** を併用しています。
+AviUtl ExEdit2 は現在も活発に更新が続けられており、一部のホスト内部情報（「カメラ制御」内の遅延シェーディング 3D 光源配列や、編集用自由視点［緑カメラ］のリアルタイム姿勢など）については、**現時点の公式 Plugin SDK に取得用 API がまだ用意されていません**（`v2.1.16` SDK で追加された `get_camera_control_object()` は `.auf2` フィルタプラグイン専用）。そのため、本プロジェクトの一部の補助機能では `aviutl2.exe`（**`v2.1.15` および `v2.1.16` にて実機検証済み**）のバイナリ解析に基づく **読み取り専用メモリプローブ** を併用しています。
 
 将来の本体アップデートに伴う影響範囲を以下の通り明確に公開します：
 
 | 機能モジュール | 実装方式 | 将来の `aviutl2.exe` 更新時のリスク評価 |
 | :--- | :--- | :--- |
 | **基本 3D 体積光描画・ミップ処理・3D 霧ノイズ**<br>**2D 前景シルエット遮蔽・「前景なじませ（AutoBlendLight）」** | 100% 公式スクリプト API ＋ HLSL ピクセルシェーダ | **極めて低い（安定動作）** |
-| **`VL3DBridge.aux2` 無ロックレイヤー／テキスト／水面／カメラ読取**<br>**`D3D11 ComputeShader (cs_5_0)` ハードウェア 3D 影ラスタライズ** | 100% 公式 Plugin SDK（`plugin2.h` / `module2.h` `2026-10-24`） | **極めて低い（公式 SDK ABI 準拠）** |
+| **`VL3DBridge.aux2` 無ロックレイヤー／テキスト／水面／カメラ読取**<br>**`D3D11 ComputeShader (cs_5_0)` ハードウェア 3D 影ラスタライズ** | 100% 公式 Plugin SDK（`plugin2.h` / `module2.h` `2026-10-24`〜`2026-10-31`） | **極めて低い（公式 SDK ABI 準拠）** |
 | **「カメラ光源連携」によるカメラ制御内 3D 光源（点光源等）の自動検出** | 読み取り専用メモリプローブ（G-Buffer 光源配列の参照） | **一部機能停止の可能性あり**：内部構造変更時、カメラ内 3D 光源の自動追従・検出が一時的に無効化される場合があります |
 | **編集用視点（緑カメラアイコン）追従 ＆ `.aux2` 未導入時の未保存シーン補完** | 読み取り専用メモリプローブ ＋ `.aup2` 解析フォールバック | **一部機能停止の可能性あり**：オフセット変更時、緑カメラ視点追従や `.aux2` なしでの未保存 `.obj` 検出がフォールバック動作になります |
 
@@ -268,7 +268,7 @@ AviUtl ExEdit2 は現在も活発に更新が続けられており、一部の�
 
 1. **ホストメモリへの書き込みは一切行いません**：`VolumetricLight3D.obj2` および `VL3DBridge.aux2` は **100% 読み取り専用** であり、OS カーネル経由の `ReadProcessMemory` のみを使用します。未マップ領域等によるアクセス違反クラッシュは発生しません。
 2. **PE フィンガープリント＆機械語シグネチャ検証による安全な自動縮退**：将来の AviUtl2 更新で内部レイアウトが変化しシグネチャが一致しなくなった場合、`VL3DBridge.aux2` は**自動的にメモリプローブを遮断して「純公式 SDK モード」へ移行**します。プロジェクト（`.aup2`）の破損やクラッシュを起こすことなく、体積光描画・2D/3D 遮蔽・GPU `cs_5_0` 高速化・前景なじませはそのまま継続して利用可能です。
-3. **厳格ホワイトリストモード**：`Plugin\VL3DBridge.ini` にて `strict_whitelist_only = 1` を設定することで、SHA-256 が明示的に許可された本体ビルド以外でのプローブを完全に無効化することも可能です。
+3. **厳格ホワイトリストモード**：`Plugin\VL3DBridge.ini` にて `strict_whitelist_only = 1` を設定することで、PE ヘッダ（`v2.1.15` / `v2.1.16` 内蔵対応）またはディスクファイル SHA-256（`Get-FileHash aviutl2.exe`）が明示的に許可された本体ビルド以外でのプローブを完全に無効化することも可能です。
 
 ---
 
@@ -285,7 +285,7 @@ AviUtl ExEdit2 は現在も活発に更新が続けられており、一部の�
 ## 8. バグ報告・フィードバック
 
 - **一番確実なのは [GitHub Issues](../../issues) です！** 報告の際は以下を添えていただけると大変助かります：
-  - スクリプトのバージョン（「画面に状態表示」を ON にすると画面左上の HUD に表示されます。例: `v3.14`）と `AviUtl ExEdit2` 本体のバージョン；
+  - スクリプトのバージョン（「画面に状態表示」を ON にすると画面左上の HUD に表示されます。例: `v3.15`）と `AviUtl ExEdit2` 本体のバージョン；
   - 再現手順・タイムラインのレイヤー構成スクリーンショット・異常時の描画スクリーンショット（**HUD を写したまま撮ってください**。`遮蔽=…` `光源=…` などの表示が原因特定の重要な手がかりになります！）；
   - HUD の遮蔽表示に `,opq`（マスクがほぼ全面不透明＝遮蔽レイヤー素材に Alpha 透過チャンネルがあるかご確認を）や `L4*`（そのレイヤーは生画像ロードへ自動フォールバック済み）が出ている場合も併記ください ^_^
 - **Discord コミュニティ**：日本語 AviUtl2 情報共有サーバー **「AviUtl2の情報が知りたいだろって‼」**（[参加リンク](https://discord.gg/8qzmGY5NgQ)）でも OK！サーバー内で **南宫若馨Cylna**（`@nangongerregtcylna`／作者本人）を見つけて直接報告できます～
@@ -327,7 +327,7 @@ python3 packaging/build_au2pkg.py
 - **ＫＥＮくん** 氏（[AviUtlのお部屋](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)） — AviUtl ExEdit2 本体および公式 Plugin SDK の開発・公開に深く感謝いたします。
 
 #### AI 開発パートナー
-- **Arena.ai Agent** — `v2.90`〜`v3.14` の設計刷新、`VL3DBridge.aux2` 無ロック読取ブリッジ＆D3D11 ComputeShader 実装、`AutoBlendLight` 3D 統合、および超高解像度耐性の強化を担当。
+- **Arena.ai Agent** — `v2.90`〜`v3.15` の設計刷新、`VL3DBridge.aux2` 無ロック読取ブリッジ＆D3D11 ComputeShader 実装、`AutoBlendLight` 3D 統合、および超高解像度耐性の強化を担当。
 - **ChatGPT** — コードレビューおよびバグ発見（3D 霧ノイズの三線形補間格子点座標のバグを特定してくれました！）。
 - **Gemini** — 初期の「体積霧」HLSL シェーダプロトタイプを作成（ある意味で同シリーズの『体積霧（3D）』は本体積光開発の副産物でもあります XD）。
 - **Microsoft Copilot** — 初期に超高解像度画像で `OpenGlow` のキャッシュ溢れに遭遇した際、原因調査とドキュメント整理を粘り強くサポートしてくれました。

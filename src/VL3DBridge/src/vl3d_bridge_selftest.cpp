@@ -146,14 +146,33 @@ struct FakeObj {
     int layer0;
     int start;
     int end;
-    const char* kind;  // "OBJ", "WATER", "TEXT", "CAM_SELF"
+    const char* kind;  // "OBJ", "WATER", "TEXT", "TEXT_ALIAS_FALLBACK", "CAM_SELF"
     const char* sub1 = nullptr;
     const char* sub2 = nullptr;
+    const char* sub3 = nullptr;
 };
 
 FakeObj g_objs[8];
 int g_nobj = 0;
 SdkWorld g_world;
+
+// Simulate AviUtl2's real `plugin2.h` contract:
+// `※次に同一スレッドで文字列返却の関数を使うかコールバック処理の終了まで有効`
+// Every call wipes and overwrites the SAME shared thread-local buffer, immediately exposing
+// any caller that retains an uncopied LPCSTR across two SDK string calls!
+const char* WriteSdkSharedTlsString(const char* s) {
+    thread_local char s_tls_buf[512];
+    std::memset(s_tls_buf, 'X', sizeof(s_tls_buf));
+    if (!s) {
+        s_tls_buf[0] = '\0';
+        return s_tls_buf;
+    }
+    size_t n = std::strlen(s);
+    if (n >= sizeof(s_tls_buf)) n = sizeof(s_tls_buf) - 1;
+    std::memcpy(s_tls_buf, s, n);
+    s_tls_buf[n] = '\0';
+    return s_tls_buf;
+}
 
 OBJECT_HANDLE SdkFind(int layer, int frame) {
     for (int i = 0; i < g_nobj; ++i) {
@@ -175,30 +194,37 @@ const char* SdkItem(OBJECT_HANDLE o, const wchar_t* effect, const wchar_t* item)
     auto* f = static_cast<FakeObj*>(o);
     if (!f || !effect || !item) return nullptr;
     if (std::strcmp(f->kind, "OBJ") == 0 && WEq(effect, "モデルファイル")) {
-        if (WEq(item, "ファイル")) return "C:/models/sample_stage.obj";
-        if (WEq(item, "座標系を調整")) return "1";
+        if (WEq(item, "ファイル")) return WriteSdkSharedTlsString("C:/models/sample_stage.obj");
+        if (WEq(item, "座標系を調整")) return WriteSdkSharedTlsString("1");
     }
     if (std::strcmp(f->kind, "WATER") == 0 && WEq(effect, "水面") && WEq(item, "色")) {
-        return "0x66C8FF";
+        return WriteSdkSharedTlsString("0x66C8FF");
     }
-    if (std::strcmp(f->kind, "TEXT") == 0 && WEq(effect, "テキスト")) {
-        if (WEq(item, "文字揃え")) return f->sub1 ? f->sub1 : "左寄せ[上]";
-        if (WEq(item, "文字装飾")) return f->sub2 ? f->sub2 : "標準文字";
-        if (WEq(item, "サイズ")) return "218.75";
+    if ((std::strcmp(f->kind, "TEXT") == 0 || std::strcmp(f->kind, "TEXT_ALIAS_FALLBACK") == 0) &&
+        WEq(effect, "テキスト")) {
+        if (WEq(item, "文字揃え")) return WriteSdkSharedTlsString(f->sub1 ? f->sub1 : "左寄せ[上]");
+        if (WEq(item, "文字装飾")) return WriteSdkSharedTlsString(f->sub2 ? f->sub2 : "標準文字");
+        if (WEq(item, "サイズ")) return WriteSdkSharedTlsString(f->sub3 ? f->sub3 : "218.75");
     }
     if (std::strcmp(f->kind, "CAM_SELF") == 0 && WEq(effect, "カメラ制御")) {
-        if (WEq(item, "X")) return "0.00";
-        if (WEq(item, "Y")) return "0.00";
-        if (WEq(item, "Z")) return "-1024.00";
-        if (WEq(item, "目標X")) return "0.00";
-        if (WEq(item, "目標Y")) return "0.00";
-        if (WEq(item, "目標Z")) return "0.00";
-        if (WEq(item, "目標レイヤー")) return f->sub1 ? f->sub1 : "1";
+        if (WEq(item, "X")) return WriteSdkSharedTlsString("0.00");
+        if (WEq(item, "Y")) return WriteSdkSharedTlsString("0.00");
+        if (WEq(item, "Z")) return WriteSdkSharedTlsString("-1024.00");
+        if (WEq(item, "目標X")) return WriteSdkSharedTlsString("0.00");
+        if (WEq(item, "目標Y")) return WriteSdkSharedTlsString("0.00");
+        if (WEq(item, "目標Z")) return WriteSdkSharedTlsString("0.00");
+        if (WEq(item, "目標レイヤー")) return WriteSdkSharedTlsString(f->sub1 ? f->sub1 : "1");
     }
     return nullptr;
 }
 
-const char* SdkAlias(OBJECT_HANDLE) { return ""; }
+const char* SdkAlias(OBJECT_HANDLE o) {
+    auto* f = static_cast<FakeObj*>(o);
+    if (f && std::strcmp(f->kind, "TEXT_ALIAS_FALLBACK") == 0) {
+        return WriteSdkSharedTlsString("[Object.0]\neffect.name=テキスト\n文字揃え=右寄せ[下]\n文字装飾=縁取り文字\nサイズ=64\n");
+    }
+    return WriteSdkSharedTlsString("");
+}
 
 void SdkGetInfo(EDIT_INFO* info, int n) {
     if (!info || n < static_cast<int>(sizeof(int))) return;
@@ -509,40 +535,134 @@ extern "C" int vl3d_test_selftest(char* buf, int buflen) {
         check(cm_rgba[c_off + 3] == 255 && (cm_rgba[c_off + 2] & 1u) == 1u, "rast_camdepth_vrm_bit_preserved");
     }
 
-    // 8. v1.21 Built-in [テキスト] 18-alignment + decoration padding & [カメラ制御] self-target layer
+    // 8. v1.21/v1.22 Built-in [テキスト] 18-alignment + decoration padding (TLS buffer overwrite safe!)
+    //    & [カメラ制御] self-target layer
     {
-        g_nobj = 4;
-        g_objs[0] = {0, 0, 100, "CAM_SELF", "1", nullptr};
-        g_objs[1] = {4, 0, 100, "TEXT", "左寄せ[上]", "標準文字"};
-        g_objs[2] = {5, 0, 100, "TEXT", "右寄せ[下]", "影付き文字"};
-        g_objs[3] = {6, 0, 100, "TEXT", "縦書 上寄[右]", "標準文字"};
+        g_nobj = 6;
+        g_objs[0] = {0, 0, 200, "CAM_SELF", "1", nullptr, nullptr};
+        g_objs[1] = {4, 0, 200, "TEXT", "左寄せ[上]", "標準文字", "218.75"};
+        g_objs[2] = {5, 0, 200, "TEXT", "右寄せ[下]", "影付き文字", "218.75"};
+        g_objs[3] = {6, 0, 200, "TEXT", "縦書 上寄[右]", "標準文字", "218.75"};
+        // Exact DSH §10.3 reproduction: 右寄せ[下] + 縁取り文字 + サイズ=64 -> pad = floor(64 * 0.15) = 9
+        g_objs[4] = {7, 0, 200, "TEXT", "右寄せ[下]", "縁取り文字", "64"};
+        // Empty item-value fallback to get_object_alias INI
+        g_objs[5] = {8, 0, 200, "TEXT_ALIAS_FALLBACK", "", "縁取り文字", "64"};
         g_world.scene_id = 3;
-        g_world.frame = 10;
+        g_world.frame = 120;
         EDIT_HANDLE eh{};
         eh.get_edit_info = &SdkGetInfo;
         eh.call_read_section_param = &SdkReadParam;
         vl3d_test_reset(0);
-        vl3d_test_init_host(2011500);
+        vl3d_test_init_host(2011600);
         vl3d::GetGlobalBridgeEngine().SetEditHandle(&eh);
 
-        auto t_tl = vl3d::GetGlobalBridgeEngine().ResolveLayer(5, 10);
+        auto t_tl = vl3d::GetGlobalBridgeEngine().ResolveLayer(5, 120);
         check(t_tl.status == "OTHER" && t_tl.fx_name == "テキスト" && t_tl.is_text &&
               t_tl.align_fx == -0.5 && t_tl.align_fy == -0.5 && t_tl.pad_r == 0.0,
               "sdk_text_align_top_left_default");
 
-        auto t_br = vl3d::GetGlobalBridgeEngine().ResolveLayer(6, 10);
+        auto t_br = vl3d::GetGlobalBridgeEngine().ResolveLayer(6, 120);
         check(t_br.is_text && t_br.align_fx == 0.5 && t_br.align_fy == 0.5 &&
               t_br.pad_l == 0.0 && t_br.pad_r == 13.0,
               "sdk_text_align_bottom_right_shadow_pad");
 
-        auto t_vr = vl3d::GetGlobalBridgeEngine().ResolveLayer(7, 10);
+        auto t_vr = vl3d::GetGlobalBridgeEngine().ResolveLayer(7, 120);
         check(t_vr.is_text && t_vr.align_fx == 0.5 && t_vr.align_fy == -0.5,
               "sdk_text_align_vertical_top_right");
 
-        auto sc_cam = vl3d::GetGlobalBridgeEngine().ReadSceneCameraViaSdk(8, 10);
+        auto t_dsh = vl3d::GetGlobalBridgeEngine().ResolveLayer(8, 120);
+        check(t_dsh.is_text && t_dsh.align_fx == 0.5 && t_dsh.align_fy == 0.5 &&
+              t_dsh.pad_l == 9.0 && t_dsh.pad_r == 9.0 && t_dsh.pad_t == 9.0 && t_dsh.pad_b == 9.0,
+              "sdk_text_align_tls_overwrite_dsh_repro");
+
+        auto t_alias = vl3d::GetGlobalBridgeEngine().ResolveLayer(9, 120);
+        check(t_alias.is_text && t_alias.align_fx == 0.5 && t_alias.align_fy == 0.5 &&
+              t_alias.pad_l == 9.0 && t_alias.pad_r == 9.0,
+              "sdk_text_empty_align_alias_fallback");
+
+        auto sc_cam = vl3d::GetGlobalBridgeEngine().ReadSceneCameraViaSdk(8, 120);
         check(sc_cam.ok && sc_cam.x == 0.0 && sc_cam.y == 0.0 && sc_cam.z == -1024.0 &&
               sc_cam.tx == 0.0 && sc_cam.ty == 0.0 && sc_cam.tz == -1024.0,
               "sdk_scene_camera_self_target_layer");
+    }
+
+    // 9. v1.22 ASLR ImageBase SHA-256 invariance, v2.1.16 strict allowlist, alt-reg Sig1 & 13-slot get_status
+    {
+        const size_t img = 8192;
+        uint8_t* img_p = static_cast<uint8_t*>(MapPage(img, PROT_READ | PROT_WRITE));
+        check(img_p != nullptr, "mmap_v122");
+        if (img_p) {
+            std::memset(img_p, 0, img);
+            img_p[0] = 'M'; img_p[1] = 'Z';
+            WriteI32(img_p + 0x3C, 0x80);
+            img_p[0x80] = 'P'; img_p[0x81] = 'E';
+            WriteU16(img_p + 0x80 + 4, 0x8664);
+            WriteU16(img_p + 0x80 + 6, 1);
+            WriteU32(img_p + 0x80 + 8, 0x6AE538B8u);  // v2.1.16 TimeDateStamp
+            WriteU16(img_p + 0x80 + 20, 0xF0);
+            WriteU16(img_p + 0x80 + 24, 0x020B);
+            // Set randomized ASLR ImageBase #1 in OptionalHeader (offset +0x18 from OptionalHeader)
+            WriteU32(img_p + 0x80 + 24 + 0x18, 0xD6190000u);
+            WriteU32(img_p + 0x80 + 24 + 0x1C, 0x00007FF6u);
+            WriteU32(img_p + 0x80 + 24 + 0x38, static_cast<uint32_t>(img));
+            uint8_t* sh = img_p + 0x80 + 24 + 0xF0;
+            std::memcpy(sh, ".text\0\0\0", 8);
+            WriteU32(sh + 8, 0x1000);
+            WriteU32(sh + 12, 0x1000);
+            WriteU32(sh + 36, 0x60000020);
+            // Plant Signature 1 with alternate REX.R register r8 (`4C 8B 80 88 00 00 00`)
+            uint8_t* c = img_p + 0x1000 + 0x20;
+            c[0] = 0x48; c[1] = 0x8B; c[2] = 0x05;
+            WriteI32(c + 3, 0x40);
+            c[7] = 0x4C; c[8] = 0x8B; c[9] = 0x80;
+            c[10] = 0x88; c[11] = 0x00; c[12] = 0x00; c[13] = 0x00;
+
+            vl3d_test_reset(reinterpret_cast<uint64_t>(img_p));
+            vl3d_test_add_region(reinterpret_cast<uint64_t>(img_p), img, 0x1000, 0x20, 0x1000000);
+            vl3d_test_init_host(2011600);
+            auto st_a = vl3d::GetGlobalBridgeEngine().GetStatus();
+            check(st_a.sig_scene_ok, "sig_scene_alt_reg_r8");
+
+            // Mutate OptionalHeader.ImageBase to a different ASLR address #2 and verify SHA-256 stays identical!
+            WriteU32(img_p + 0x80 + 24 + 0x18, 0xCA9E0000u);
+            WriteU32(img_p + 0x80 + 24 + 0x1C, 0x00007FF7u);
+            vl3d_test_reset(reinterpret_cast<uint64_t>(img_p));
+            vl3d_test_add_region(reinterpret_cast<uint64_t>(img_p), img, 0x1000, 0x20, 0x1000000);
+            vl3d_test_init_host(2011600);
+            auto st_b = vl3d::GetGlobalBridgeEngine().GetStatus();
+            check(!st_a.sha256_hex.empty() && st_a.sha256_hex == st_b.sha256_hex,
+                  "aslr_imagebase_sha256_invariant");
+
+            // Verify v2.1.16 default allowlist entry (0x6AE538B8, 0x005F6000) passes strict_whitelist_only=1
+            WriteU32(img_p + 0x80 + 24 + 0x38, 0x005F6000u);
+            vl3d_test_reset(reinterpret_cast<uint64_t>(img_p));
+            vl3d::GetGlobalBridgeEngine().ResetDefaultAllowlist();
+            vl3d_test_load_ini("strict_whitelist_only=1\n");
+            vl3d_test_add_region(reinterpret_cast<uint64_t>(img_p), img, 0x1000, 0x20, 0x1000000);
+            vl3d_test_init_host(2011600);
+            auto st_2116 = vl3d::GetGlobalBridgeEngine().GetStatus();
+            check(st_2116.whitelist_hit && st_2116.rpm_allowed && st_2116.strict_whitelist_only,
+                  "v2116_default_allowlist_strict_hit");
+
+            // Verify ModGetStatus pushes exact 13 values (7 bools = 4 legacy + 3 trailing, 4 ints, 2 strings)
+            Rec rec;
+            g_rec = &rec;
+            SCRIPT_MODULE_PARAM param = MakeParam();
+            auto* table = vl3d::GetGlobalBridgeScriptModuleTable();
+            for (int i = 0; table->functions[i].name; ++i) {
+                if (std::wstring(table->functions[i].name) == L"get_status") {
+                    table->functions[i].func(&param);
+                    break;
+                }
+            }
+            check(rec.bools.size() == 7 && rec.ints.size() == 4 && rec.strings.size() == 2 &&
+                  rec.ints[0] == 2011600 && rec.ints[1] == static_cast<int>(0x6AE538B8u) &&
+                  rec.ints[2] == 0x005F6000 && rec.bools[6] == 1,
+                  "mod_get_status_13_slots");
+            g_rec = nullptr;
+
+            ::munmap(img_p, ((img + 4095) / 4096) * 4096);
+        }
     }
 
     char head[64];

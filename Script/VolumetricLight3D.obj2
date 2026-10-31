@@ -1,8 +1,8 @@
---information:VolumetricLight3D v3.14
+--information:VolumetricLight3D v3.15
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
--- 対応環境：AviUtl ExEdit2 v2.1.15 以降推奨（VL3DBridge.aux2 v1.21 同梱・任意併用）
+-- 対応環境：AviUtl ExEdit2 v2.1.15〜v2.1.16+ 推奨（VL3DBridge.aux2 v1.22 同梱・任意併用）
 -- =============================================================================
 -- 【概要】
 -- 任意のレイヤー（画像・動画・テキスト・図形・カスタムオブジェクト等）の明部、
@@ -30,6 +30,24 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
+-- v3.15 更新点（2026-10-31・AviUtl ExEdit2 v2.1.16 完全対応 ＆ VL3DBridge v1.22 テキスト揃え/ASLR 不変ハッシュ修正）：
+--   1. 【AviUtl ExEdit2 v2.1.16（2026-10-31 公開）および Plugin SDK [2026/10/31] への完全対応】
+--      ・`VL3DBridge.aux2`（v1.22）および `VL3DBridge.ini` の公式ホワイトリストに `v2.1.16`（`0x6AE538B8, 0x005F6000`）を
+--        追加（`strict_whitelist_only = 1` 厳格モードでも `v2.1.15` / `v2.1.16` の両方で即時認識）。
+--      ・純 Lua フォールバック経路の既知 `lctx` RVA テーブルに `v2.1.16`（`0x5914D0`）を追加し、`.text` 命令パターンの
+--        レジスタマスク判定（REX.R 対応）および `ReadProcessMemory` 経由の安全な編集カメラ読取へ強化。
+--   2. 【VL3DBridge v1.22：標準「テキスト」オブジェクトの「文字揃え・文字装飾」が SDK 経由で既定値に戻っていた不具合を根治】
+--      ・原因特定：`plugin2.h` の `EDIT_SECTION::get_object_item_value()` が返す `LPCSTR` はホストのスレッドローカル一時バッファを
+--        指しており、同一スレッドで次の項目（`文字装飾`・`サイズ`）を取得した瞬間に上書きされる仕様だったため、`ParseTextAlignAndDeco`
+--        呼び出し時点で `文字揃え`・`文字装飾` が `サイズ` 文字列に化けて既定値（`左寄せ[上]`・パディング 0）へフォールバックしていた。
+--      ・解決策：各 `get_object_item_value()` 呼び出し直後に `std::string` へ即時ディープコピーし、`get_object_track_value()` による
+--        フレーム補間済みフォントサイズ取得と空文字時のエイリアス INI フォールバックを統合。
+--   3. 【VL3DBridge v1.22：ASLR 環境下で `status.sha256` が起動ごとに変化していた問題の根治 ＆ `get_status()` 診断値拡張】
+--      ・Windows 実行時はディスク上の `aviutl2.exe` 本体ファイルを直接ストリーム SHA-256 計算（`Get-FileHash` と完全一致）、
+--        メモリフォールバック時も `OptionalHeader.ImageBase` を正規化することで ASLR 下でも 100% 不変化。
+--      ・`ModGetStatus` の既存 1〜10 番目戻り値を完全維持したまま、末尾 11〜13 番目に `sig_scene_ok`, `sig_editcam_ok`,
+--        `strict_whitelist_only` を追加。
+--
 -- v3.14 更新点（2026-10-29・v3.08 以降の非スポット体積光における輝度低下リグレッションの根治）：
 --   1. 【2D レイヤー光源・平行光・点光源（非スポット経路）で v3.08〜v3.13 に発生していた光束の減光不具合を修正】
 --      ・原因特定：`v3.08` でカメラ制御スポット光源のスライス段差対策として全経路へ一律導入された (a) 比例アルファ符号化
@@ -2331,34 +2349,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.14] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.14] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.14] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.14] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.15] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.15] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.15] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.15] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.14 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.14 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.14 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.14 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.15 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.15 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.15 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.15 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.14 シェーダー失敗: ",
-        zh = "体积光（3D）v3.14 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.14 shader error: ",
-        de = "Volumenlicht (3D) v3.14 Shader-Fehler: ",
+        ja = "体積光（3D）v3.15 シェーダー失敗: ",
+        zh = "体积光（3D）v3.15 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.15 shader error: ",
+        de = "Volumenlicht (3D) v3.15 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.14：初期化中……",
-        zh = "体积光（3D）v3.14：初始化中……",
-        en = "Volumetric Light (3D) v3.14: Initializing...",
-        de = "Volumenlicht (3D) v3.14: Initialisierung läuft...",
+        ja = "体積光（3D）v3.15：初期化中……",
+        zh = "体积光（3D）v3.15：初始化中……",
+        en = "Volumetric Light (3D) v3.15: Initializing...",
+        de = "Volumenlicht (3D) v3.15: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.14：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.14：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.14: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.14: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.15：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.15：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.15: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.15: Initialisiert (%.2fs)",
     },
 }
 
@@ -4936,7 +4954,8 @@ local function resolve_live_scene_layer_object(oln, cur_frame)
                         local lim = tonumber(st.nrd[0]) - 14
                         for p = 0, lim do
                             if tbuf[p] == 0x48 and tbuf[p + 1] == 0x8B and tbuf[p + 2] == 0x05
-                                and tbuf[p + 7] == 0x48 and tbuf[p + 8] == 0x8B and tbuf[p + 9] == 0x90
+                                and (tbuf[p + 7] == 0x48 or tbuf[p + 7] == 0x4C) and tbuf[p + 8] == 0x8B
+                                and math.floor(tbuf[p + 9] / 64) == 2 and (tbuf[p + 9] % 8) == 0
                                 and tbuf[p + 10] == 0x88 and tbuf[p + 11] == 0x00 and tbuf[p + 12] == 0x00 and tbuf[p + 13] == 0x00 then
                                 local disp = ffi.cast("const int32_t*", tbuf + p + 3)[0]
                                 add_cand(exe_base + rva + p + 7 + tonumber(disp))
@@ -4945,8 +4964,9 @@ local function resolve_live_scene_layer_object(oln, cur_frame)
                     end
                 end
             end
-            -- .text 走査が 0 件だった場合のみ既知 RVA フォールバック（v2.1.15: 0x5901A8 / v2.1.14: 0x58AAB8）
+            -- .text 走査が 0 件だった場合のみ既知 RVA フォールバック（v2.1.16: 0x5914D0 / v2.1.15: 0x5901A8 / v2.1.14: 0x58AAB8）
             if #st.cands == 0 then
+                add_cand(exe_base + 0x5914D0)
                 add_cand(exe_base + 0x5901A8)
                 add_cand(exe_base + 0x58AAB8)
             end
@@ -6631,8 +6651,12 @@ local function try_read_live_edit_camera()
     local br_c = vl3d_bridge()
     if br_c ~= nil and type(br_c.get_edit_camera) == "function" then
         local ok_c, okcam, x, y, z, tx, ty, tz, ux, uy, uz, rz, d = pcall(br_c.get_edit_camera)
-        if ok_c and okcam == true then
-            return { x = x, y = y, z = z, tx = tx, ty = ty, tz = tz, ux = ux, uy = uy, uz = uz, rz = rz, d = d }
+        if ok_c then
+            if okcam == true then
+                return { x = x, y = y, z = z, tx = tx, ty = ty, tz = tz, ux = ux, uy = uy, uz = uz, rz = rz, d = d }
+            end
+            -- VL3DBridge がロード済みの場合は strict_whitelist_only ポリシーを尊重し Lua 生ポインタへ迂回しない
+            return nil
         end
     end
     local ok_ffi, ffi = pcall(require, "ffi")
@@ -6709,21 +6733,49 @@ local function try_read_live_edit_camera()
             end
         end
 
-        if _edit_cam_probe.ok and is_readable_ptr(_edit_cam_probe.g_addr, 8) then
-            local app_ptr = tonumber(ffi.cast("const uint64_t*", _edit_cam_probe.g_addr)[0]) or 0
-            if is_readable_ptr(app_ptr + _edit_cam_probe.off_w, 8) then
-                local win_ptr = tonumber(ffi.cast("const uint64_t*", app_ptr + _edit_cam_probe.off_w)[0]) or 0
-                local cam_ptr = win_ptr + _edit_cam_probe.off_c
-                if is_readable_ptr(cam_ptr, 56) then
-                    local fp = ffi.cast("const float*", cam_ptr)
-                    local fd = fp[13]
-                    if fd == fd and fd > 1.0 and fd < 1.0e7 then
-                        cam_out = {
-                            x = fp[0], y = fp[1], z = fp[2],
-                            tx = fp[4], ty = fp[5], tz = fp[6],
-                            ux = -fp[8], uy = -fp[9], uz = -fp[10],
-                            rz = fp[12], d = fd,
-                        }
+        if _edit_cam_probe.ok then
+            if wapi.ReadProcessMemory ~= nil then
+                local hproc = (wapi.GetCurrentProcess ~= nil) and wapi.GetCurrentProcess() or ffi.cast("intptr_t", -1)
+                if _VL_PERSIST.edit_cam_u64 == nil then
+                    _VL_PERSIST.edit_cam_u64 = ffi.new("uint64_t[1]")
+                    _VL_PERSIST.edit_cam_f14 = ffi.new("float[14]")
+                    _VL_PERSIST.edit_cam_nrd = ffi.new("size_t[1]")
+                end
+                local u64, f14, nrd = _VL_PERSIST.edit_cam_u64, _VL_PERSIST.edit_cam_f14, _VL_PERSIST.edit_cam_nrd
+                if wapi.ReadProcessMemory(hproc, ffi.cast("const void*", _edit_cam_probe.g_addr), u64, 8, nrd) ~= 0 and nrd[0] >= 8 then
+                    local app_ptr = tonumber(u64[0]) or 0
+                    if app_ptr >= 0x10000 and wapi.ReadProcessMemory(hproc, ffi.cast("const void*", app_ptr + _edit_cam_probe.off_w), u64, 8, nrd) ~= 0 and nrd[0] >= 8 then
+                        local win_ptr = tonumber(u64[0]) or 0
+                        local cam_ptr = win_ptr + _edit_cam_probe.off_c
+                        if win_ptr >= 0x10000 and wapi.ReadProcessMemory(hproc, ffi.cast("const void*", cam_ptr), f14, 56, nrd) ~= 0 and nrd[0] >= 56 then
+                            local fd = f14[13]
+                            if fd == fd and fd > 1.0 and fd < 1.0e7 then
+                                cam_out = {
+                                    x = f14[0], y = f14[1], z = f14[2],
+                                    tx = f14[4], ty = f14[5], tz = f14[6],
+                                    ux = -f14[8], uy = -f14[9], uz = -f14[10],
+                                    rz = f14[12], d = fd,
+                                }
+                            end
+                        end
+                    end
+                end
+            elseif is_readable_ptr(_edit_cam_probe.g_addr, 8) then
+                local app_ptr = tonumber(ffi.cast("const uint64_t*", _edit_cam_probe.g_addr)[0]) or 0
+                if is_readable_ptr(app_ptr + _edit_cam_probe.off_w, 8) then
+                    local win_ptr = tonumber(ffi.cast("const uint64_t*", app_ptr + _edit_cam_probe.off_w)[0]) or 0
+                    local cam_ptr = win_ptr + _edit_cam_probe.off_c
+                    if is_readable_ptr(cam_ptr, 56) then
+                        local fp = ffi.cast("const float*", cam_ptr)
+                        local fd = fp[13]
+                        if fd == fd and fd > 1.0 and fd < 1.0e7 then
+                            cam_out = {
+                                x = fp[0], y = fp[1], z = fp[2],
+                                tx = fp[4], ty = fp[5], tz = fp[6],
+                                ux = -fp[8], uy = -fp[9], uz = -fp[10],
+                                rz = fp[12], d = fd,
+                            }
+                        end
                     end
                 end
             end
@@ -9523,7 +9575,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.14 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.15 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -9552,7 +9604,7 @@ local function vl_run_frame()
     if not ok then
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.14 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.15 error: " .. tostring(err)) end)
     end
     return ok
 end

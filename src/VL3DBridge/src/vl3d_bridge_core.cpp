@@ -168,6 +168,35 @@ struct Sha256Ctx {
 
 }  // namespace
 
+Sha256Stream::Sha256Stream() {
+    state[0] = 0x6a09e667u; state[1] = 0xbb67ae85u;
+    state[2] = 0x3c6ef372u; state[3] = 0xa54ff53au;
+    state[4] = 0x510e527fu; state[5] = 0x9b05688cu;
+    state[6] = 0x1f83d9abu; state[7] = 0x5be0cd19u;
+}
+
+void Sha256Stream::Update(const uint8_t* data, size_t len) {
+    Sha256Ctx ctx;
+    std::memcpy(ctx.state, state, sizeof(state));
+    ctx.bitlen = bitlen;
+    std::memcpy(ctx.buf, buf, sizeof(buf));
+    ctx.buflen = buflen;
+    if (data && len > 0) ctx.Update(data, len);
+    std::memcpy(state, ctx.state, sizeof(state));
+    bitlen = ctx.bitlen;
+    std::memcpy(buf, ctx.buf, sizeof(buf));
+    buflen = ctx.buflen;
+}
+
+std::string Sha256Stream::FinalHex() {
+    Sha256Ctx ctx;
+    std::memcpy(ctx.state, state, sizeof(state));
+    ctx.bitlen = bitlen;
+    std::memcpy(ctx.buf, buf, sizeof(buf));
+    ctx.buflen = buflen;
+    return ctx.FinalHex();
+}
+
 std::string ComputeSha256Hex(const uint8_t* data, size_t len) {
     Sha256Ctx ctx;
     if (data && len > 0) ctx.Update(data, len);
@@ -246,13 +275,26 @@ std::u16string Utf8ToUtf16Le(const std::string& utf8) {
 }
 
 BridgeEngine::BridgeEngine() {
-    // Official AviUtl ExEdit2 v2.1.15 (2026-10-24) verified PE32+ + .text SHA-256 fingerprint
+    ResetDefaultAllowlist();
+}
+
+void BridgeEngine::ResetDefaultAllowlist() {
+    std::lock_guard<std::mutex> lk(g_bridge_mutex);
+    allowlist_.clear();
+    // Official AviUtl ExEdit2 v2.1.15 (2026-10-24) verified PE32+ fingerprint
     AllowlistEntry v2115{};
     v2115.pe_timestamp = 0x6ADC1302u;
     v2115.image_size = 0x005F5000u;
     v2115.sha256_hex = "ea321cfb5c5c171b0fb5496c6aab715171e4d240f999ea2a9b79b074fc9bd688";
     v2115.label = "AviUtl2_v2.1.15_20261024";
     allowlist_.push_back(v2115);
+
+    // Official AviUtl ExEdit2 v2.1.16 (2026-10-31) verified PE32+ fingerprint
+    AllowlistEntry v2116{};
+    v2116.pe_timestamp = 0x6AE538B8u;
+    v2116.image_size = 0x005F6000u;
+    v2116.label = "AviUtl2_v2.1.16_20261031";
+    allowlist_.push_back(v2116);
 }
 
 void BridgeEngine::SetMemoryOps(const HostMemoryOps& ops) {
@@ -470,7 +512,17 @@ bool BridgeEngine::InitializeHost(uint32_t host_version) {
     status_.image_size = img_sz;
 
     Sha256Ctx sha;
-    sha.Update(hdr, hdr_read);
+    // Normalize OptionalHeader.ImageBase (nt + 24 + 0x18) to canonical PE32+ 0x140000000ULL before
+    // hashing mapped header bytes, because Windows ASLR overwrites ImageBase in memory on every boot!
+    std::vector<uint8_t> hdr_norm(hdr, hdr + hdr_read);
+    const size_t img_base_off = static_cast<size_t>(lfanew) + 24u + 0x18u;
+    if (img_base_off + 8u <= hdr_norm.size()) {
+        constexpr uint64_t kCanonicalPe64Base = 0x0000000140000000ULL;
+        for (size_t bi = 0; bi < 8u; ++bi) {
+            hdr_norm[img_base_off + bi] = static_cast<uint8_t>((kCanonicalPe64Base >> (bi * 8u)) & 0xFFu);
+        }
+    }
+    sha.Update(hdr_norm.data(), hdr_norm.size());
 
     // Scan .text via kernel-safe ReadProcessMemory chunks to compute SHA-256 + verify code signatures
     const uint8_t* sec_p = nt + 24 + opt_sz;
@@ -487,10 +539,11 @@ bool BridgeEngine::InitializeHost(uint32_t host_version) {
         if (!ops_.read_mem(ops_.user, exe_base + rva, code.data(), vsz, &got) || got < 64) continue;
         sha.Update(code.data(), got);
 
-        // Signature 1: lua_getvalue scene-context pointer (48 8B 05 disp32 48 8B 90 88 00 00 00)
+        // Signature 1: lua_getvalue scene-context pointer (48 8B 05 disp32 [48|4C] 8B [r??+0x88])
         for (size_t p = 0; p + 14 <= got; ++p) {
             if (code[p] == 0x48 && code[p + 1] == 0x8B && code[p + 2] == 0x05 &&
-                code[p + 7] == 0x48 && code[p + 8] == 0x8B && code[p + 9] == 0x90 &&
+                (code[p + 7] == 0x48 || code[p + 7] == 0x4C) && code[p + 8] == 0x8B &&
+                (code[p + 9] & 0xC7u) == 0x80u &&
                 code[p + 10] == 0x88 && code[p + 11] == 0x00 && code[p + 12] == 0x00 && code[p + 13] == 0x00) {
                 int32_t disp = LoadI32LE(code.data() + p + 3);
                 uint64_t cand = static_cast<uint64_t>(static_cast<int64_t>(exe_base + rva + p + 7) + disp);
@@ -523,11 +576,18 @@ bool BridgeEngine::InitializeHost(uint32_t host_version) {
         }
     }
 
-    status_.sha256_hex = sha.FinalHex();
+    const std::string inmem_sha_hex = sha.FinalHex();
+    std::string disk_sha_hex;
+    if (ops_.hash_exe_file && ops_.hash_exe_file(ops_.user, &disk_sha_hex) && disk_sha_hex.size() == 64u) {
+        status_.sha256_hex = ToLowerAscii(disk_sha_hex);
+    } else {
+        status_.sha256_hex = inmem_sha_hex;
+    }
 
-    // Check explicit allowlist (SHA-256 or TimeDateStamp + SizeOfImage)
+    // Check explicit allowlist (on-disk file SHA-256, normalized section SHA-256, or TimeDateStamp + SizeOfImage)
     for (const auto& e : allowlist_) {
-        bool sha_ok = !e.sha256_hex.empty() && (e.sha256_hex == status_.sha256_hex);
+        bool sha_ok = !e.sha256_hex.empty() &&
+                      (e.sha256_hex == status_.sha256_hex || e.sha256_hex == inmem_sha_hex);
         bool ts_ok = (e.pe_timestamp != 0 && e.pe_timestamp == status_.pe_timestamp) &&
                      (e.image_size == 0 || e.image_size == status_.image_size);
         if (sha_ok || ts_ok) {
@@ -917,20 +977,41 @@ void ProcReadLayerSdk(void* param, EDIT_SECTION* edit) {
             return;
         }
 
-        // 4. Check built-in 2D/3D Text [テキスト] alignment & decoration padding (Bug 1 root-cause fix)
+        // 4. Check built-in 2D/3D Text [テキスト] alignment & decoration padding
+        //    IMPORTANT (plugin2.h § EDIT_SECTION::get_object_item_value):
+        //    The returned LPCSTR points to a host thread-local buffer overwritten by the NEXT
+        //    string-returning SDK call on the same thread! Copy each value into std::string
+        //    immediately before making any subsequent get_object_item_value() call.
         static const std::wstring kTextFx    = Utf8ToSdkWide("テキスト");
         static const std::wstring kTextAlign = Utf8ToSdkWide("文字揃え");
         static const std::wstring kTextDeco  = Utf8ToSdkWide("文字装飾");
         static const std::wstring kTextSize  = Utf8ToSdkWide("サイズ");
-        LPCSTR talign = edit->get_object_item_value(hit_obj, kTextFx.c_str(), kTextAlign.c_str());
-        if (talign != nullptr) {
-            LPCSTR tdeco = edit->get_object_item_value(hit_obj, kTextFx.c_str(), kTextDeco.c_str());
-            LPCSTR tsize = edit->get_object_item_value(hit_obj, kTextFx.c_str(), kTextSize.c_str());
-            double sz = (tsize && *tsize) ? std::atof(tsize) : 32.0;
-            ctx->out.status = "OTHER";
-            ctx->out.fx_name = "テキスト";
-            ParseTextAlignAndDeco(talign, tdeco ? tdeco : "", sz, &ctx->out);
-            return;
+        LPCSTR talign_p = edit->get_object_item_value(hit_obj, kTextFx.c_str(), kTextAlign.c_str());
+        if (talign_p != nullptr) {
+            std::string align_s(talign_p);
+            LPCSTR tdeco_p = edit->get_object_item_value(hit_obj, kTextFx.c_str(), kTextDeco.c_str());
+            std::string deco_s(tdeco_p ? tdeco_p : "");
+            double sz = 32.0;
+            bool got_track_sz = false;
+            if (edit->get_object_track_value) {
+                double track_sz = 0.0;
+                if (edit->get_object_track_value(hit_obj, kTextFx.c_str(), kTextSize.c_str(),
+                                                 static_cast<double>(ctx->frame0), &track_sz) &&
+                    std::isfinite(track_sz) && track_sz > 1.0) {
+                    sz = track_sz;
+                    got_track_sz = true;
+                }
+            }
+            if (!got_track_sz) {
+                LPCSTR tsize_p = edit->get_object_item_value(hit_obj, kTextFx.c_str(), kTextSize.c_str());
+                if (tsize_p && *tsize_p) sz = std::atof(tsize_p);
+            }
+            if (!align_s.empty()) {
+                ctx->out.status = "OTHER";
+                ctx->out.fx_name = "テキスト";
+                ParseTextAlignAndDeco(align_s, deco_s, sz, &ctx->out);
+                return;
+            }
         }
     }
 
@@ -1356,9 +1437,9 @@ EditCameraResult BridgeEngine::ReadSceneCameraViaSdk(int32_t max_layer_1based, i
                 OBJECT_LAYER_FRAME olf = edit->get_object_layer_frame(o);
                 if (olf.start > c->frame0) break;
                 if (c->frame0 >= olf.start && c->frame0 <= olf.end) {
-                    LPCSTR sx = edit->get_object_item_value(o, kCamFx.c_str(), kX.c_str());
-                    LPCSTR sz = edit->get_object_item_value(o, kCamFx.c_str(), kZ.c_str());
-                    if (sx && sz) {
+                    const bool has_x = (edit->get_object_item_value(o, kCamFx.c_str(), kX.c_str()) != nullptr);
+                    const bool has_z = has_x && (edit->get_object_item_value(o, kCamFx.c_str(), kZ.c_str()) != nullptr);
+                    if (has_x && has_z) {
                         auto rd = [&](const std::wstring& k, double def) {
                             LPCSTR v = edit->get_object_item_value(o, kCamFx.c_str(), k.c_str());
                             return (v && *v) ? std::atof(v) : def;
@@ -1439,6 +1520,7 @@ namespace {
 void ModGetStatus(SCRIPT_MODULE_PARAM* p) {
     if (!p) return;
     HostStatus st = GetGlobalBridgeEngine().GetStatus();
+    // Slots #1..#10: strict backward compatibility with VL3DBridge v1.20/v1.21
     if (p->push_result_boolean) p->push_result_boolean(st.initialized);
     if (p->push_result_boolean) p->push_result_boolean(st.sdk_ready);
     if (p->push_result_boolean) p->push_result_boolean(st.rpm_allowed);
@@ -1449,6 +1531,10 @@ void ModGetStatus(SCRIPT_MODULE_PARAM* p) {
     if (p->push_result_int) p->push_result_int(st.active_scene_id);
     if (p->push_result_string) p->push_result_string(st.mode.c_str());
     if (p->push_result_string) p->push_result_string(st.sha256_hex.c_str());
+    // Slots #11..#13 (v1.22+ trailing signature & policy diagnostics):
+    if (p->push_result_boolean) p->push_result_boolean(st.sig_scene_ok);
+    if (p->push_result_boolean) p->push_result_boolean(st.sig_editcam_ok);
+    if (p->push_result_boolean) p->push_result_boolean(st.strict_whitelist_only);
 }
 
 void ModResolveLayer(SCRIPT_MODULE_PARAM* p) {
@@ -1717,7 +1803,7 @@ SCRIPT_MODULE_FUNCTION g_functions[] = {
 };
 
 SCRIPT_MODULE_TABLE g_module_table = {
-    L"VL3DBridge v1.21 (Lock-Free Read-Only Bridge + D3D11 CS 3D Shadow Rasterizer for Volumetric Light 3D)",
+    L"VL3DBridge v1.22 (Lock-Free Read-Only Bridge + D3D11 CS 3D Shadow Rasterizer for Volumetric Light 3D)",
     g_functions,
 };
 
