@@ -277,7 +277,11 @@ def shipped_aux2_and_ini():
     require("VL3DBridge v1.22".encode("utf-16-le") in b,
             "VL3DBridge.aux2 binary does not contain the 'VL3DBridge v1.22' UTF-16LE banner")
 
-    ini_txt = ini_path.read_text(encoding="utf-8")
+    ini_raw = ini_path.read_bytes()
+    require(b"\r\n" in ini_raw and b"\n" not in ini_raw.replace(b"\r\n", b""),
+            "VL3DBridge.ini must use Windows CRLF line endings")
+    ini_txt = ini_raw.decode("utf-8")
     require("0x6AE538B8,0x005F6000" in ini_txt, "VL3DBridge.ini missing AviUtl2 v2.1.16 allow_pe")
     require("0x6ADC1302,0x005F5000" in ini_txt, "VL3DBridge.ini missing AviUtl2 v2.1.15 allow_pe")
+    require("ea321cfb" not in ini_txt, "VL3DBridge.ini still contains obsolete v1.21 header allow_sha256")
     return {"size": len(b), "exports": exports}
