@@ -44,6 +44,11 @@
 --      ・`is_volume_effect_layer` および `is_volume_fx_name` に `VolumetricLight3D`／`雪（3D）`／`VolumetricFog3D` の
 --        内部エフェクト名判定を追加し、非日本語 UI や `VL3DBridge` 併用時でも粒子・霧・別インスタンス体積光レイヤーが
 --        2D 前景遮蔽や前景なじませ対象へ誤混入しないよう保護。
+--   3. 【3D カメラライト環境下での粒子 WBOIT 黒縁ハロー根治＆逆光法線補正（実機 v2.1.16 検証反映）】
+--      ・`VL3DLF v3` の `flags` に `has_cam_3d_light`（bit 7）および `cam_light_is_pos`（bit 8）を公開し、ホスト `H_host` の
+--        HDR 輝度ピーク重複乗算と 2D 光源 `light_color` 二重乗算を補正。「雪（3D）v1.23」側で 3D 光源連動時の基底パスを
+--        ハードウェア加算（`blend = "add"`）＋受光/遮蔽符号付き 8 要素光源法線へ切り替え、前景雪粒子のソフトエッジが
+--        体積光の `Shader #118` WBOIT `Accum_w` を乗っ取って黒縁化する現象および逆光時の消灯を完全解消。
 --
 -- v3.15 更新点（2026-10-31・AviUtl ExEdit2 v2.1.16 完全対応 ＆ VL3DBridge v1.22 テキスト揃え/ASLR 不変ハッシュ修正）：
 --   1. 【AviUtl ExEdit2 v2.1.16（2026-10-31 公開）および Plugin SDK [2026/10/31] への完全対応】

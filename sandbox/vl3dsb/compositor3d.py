@@ -228,7 +228,7 @@ extern "C" void vl3dsb_composite3d(
             const TriCam& T = tris[ti];
             const QuadSpec& q = quads[T.quad_idx];
             // Only scene cards (shader118 == 0) or potentially opaque shader118 quads (alpha >= 0.999) can hit Pass 1
-            if (q.shader118 && q.alpha < 0.999f) continue;
+            if (q.shader118 == 2 || (q.shader118 == 1 && q.alpha < 0.999f)) continue;
 
             float x0 = T.sx[0], y0 = T.sy[0];
             float x1 = T.sx[1], y1 = T.sy[1];
@@ -294,11 +294,14 @@ extern "C" void vl3dsb_composite3d(
             }
         }
 
-        // Pass 2: Transparent Shader #118 OIT pass (z-tested against z_op, no depth write)
+        // Pass 2: Transparent Shader #118 OIT pass + hardware additive (shader118 == 2) pass
         float acc_r[TILE * TILE] = {0};
         float acc_g[TILE * TILE] = {0};
         float acc_b[TILE * TILE] = {0};
         float acc_w[TILE * TILE] = {0};
+        float add_r[TILE * TILE] = {0};
+        float add_g[TILE * TILE] = {0};
+        float add_b[TILE * TILE] = {0};
         float reveal[TILE * TILE];
         for (int i = 0; i < tw_tile * th_tile; ++i) reveal[i] = 1.0f;
 
@@ -342,6 +345,13 @@ extern "C" void vl3dsb_composite3d(
                     float v_px = (w0 * T.v_oz[0] + w1 * T.v_oz[1] + w2 * T.v_oz[2]) * zc;
                     float tr, tg, tb, ta;
                     sample_tex(tex, tex_w, tex_h, u_px, v_px, q.sampler_dot, tr, tg, tb, ta);
+
+                    if (q.shader118 == 2) {
+                        add_r[lp] += tr * q.alpha * q.gain_r;
+                        add_g[lp] += tg * q.alpha * q.gain_g;
+                        add_b[lp] += tb * q.alpha * q.gain_b;
+                        continue;
+                    }
 
                     float a118 = ta * q.alpha;
                     if (a118 <= 0.001f || a118 >= 0.999f) continue; // Shader #118 alpha discard / opaque handled in Pass 1
@@ -398,6 +408,9 @@ extern "C" void vl3dsb_composite3d(
                     fb = fb * rev + acc_b[lp] * inv_w;
                     fa = 1.0f - (1.0f - fa) * rev;
                 }
+                fr += add_r[lp];
+                fg += add_g[lp];
+                fb += add_b[lp];
                 size_t dst = ((size_t)py * W + px) * 4;
                 out_rgba[dst + 0] = fr;
                 out_rgba[dst + 1] = fg;
@@ -532,6 +545,62 @@ OIT_MODES = {
 }
 
 
+def _eval_host_light_quad(
+    pw: np.ndarray,
+    verts: Sequence[Sequence[float]],
+    tf: Dict[str, Any],
+    cl: Dict[str, float],
+) -> Tuple[float, float, float]:
+    unlit = float(cl.get("unlit", 0.0))
+    amb = np.array([
+        float(cl.get("amb_r", 0.0)),
+        float(cl.get("amb_g", 0.0)),
+        float(cl.get("amb_b", 0.0)),
+    ], dtype=np.float64)
+    lum = float(cl.get("lum", 1.0))
+    cl_rgb = np.array([
+        float(cl.get("r", 1.0)) * lum,
+        float(cl.get("g", 1.0)) * lum,
+        float(cl.get("b", 1.0)) * lum,
+    ], dtype=np.float64)
+    pc = pw.mean(axis=0)
+    if len(verts[0]) >= 8:
+        vn_loc = np.array([[float(v[5]), float(v[6]), float(v[7])] for v in verts[:4]], dtype=np.float64).mean(axis=0)
+        nw = rot_xyz(vn_loc, float(tf.get("rx", 0.0)), float(tf.get("ry", 0.0)), float(tf.get("rz", 0.0)))
+    else:
+        nw = -np.cross(pw[1] - pw[0], pw[2] - pw[0])
+    nl = float(np.linalg.norm(nw))
+    nw = (nw / nl) if nl > 1e-8 else np.array([0.0, 0.0, -1.0], dtype=np.float64)
+
+    ltype = int(round(float(cl.get("ltype", 5))))
+    cone = 1.0
+    if ltype >= 3:
+        lp = np.array([float(cl.get("px", 0.0)), float(cl.get("py", 0.0)), float(cl.get("pz", 0.0))], dtype=np.float64)
+        lv = lp - pc
+        dist = float(np.linalg.norm(lv))
+        lw = (lv / dist) if dist > 1e-6 else np.array([0.0, 0.0, 1.0], dtype=np.float64)
+        if ltype >= 4:
+            ray_d = -np.array([float(cl.get("dx", 0.0)), float(cl.get("dy", 0.0)), float(cl.get("dz", 1.0))], dtype=np.float64)
+            rn = float(np.linalg.norm(ray_d))
+            ray_d = (ray_d / rn) if rn > 1e-6 else np.array([0.0, 0.0, -1.0], dtype=np.float64)
+            cos_sp = float(np.dot(-lw, ray_d))
+            cos_out = float(cl.get("cos_ang", math.cos(math.radians(30.0))))
+            cos_in = float(cl.get("cos_in", min(0.9999, cos_out + (1.0 - cos_out) * 0.35)))
+            if cos_sp <= cos_out:
+                cone = 0.0
+            elif cos_sp < cos_in:
+                t = (cos_sp - cos_out) / max(1e-6, cos_in - cos_out)
+                cone = t * t * (3.0 - 2.0 * t)
+    else:
+        lw = np.array([float(cl.get("dx", 0.0)), float(cl.get("dy", 0.0)), float(cl.get("dz", 1.0))], dtype=np.float64)
+        ln = float(np.linalg.norm(lw))
+        lw = (lw / ln) if ln > 1e-6 else np.array([0.0, 0.0, 1.0], dtype=np.float64)
+
+    ndotl = max(0.0, float(np.dot(nw, lw)))
+    h = unlit + amb + cl_rgb * (cone * ndotl)
+    return float(h[0]), float(h[1]), float(h[2])
+
+
 def composite_scene_3d(
     width: int,
     height: int,
@@ -542,6 +611,7 @@ def composite_scene_3d(
     oit_mode: str = "wboit_exp",
     z_scale: float = 1024.0,
     host_light: Tuple[float, float, float] = (1.0, 1.0, 1.0),
+    camera_light: Optional[Dict[str, float]] = None,
     include_autoblend: bool = True,
 ) -> np.ndarray:
     """Composite 3D scene card layers + ``VolumetricLight3D`` quads to float32 RGBA ``(H, W, 4)``."""
@@ -661,11 +731,18 @@ def composite_scene_3d(
             qs.v[k][3] = us[k]
             qs.v[k][4] = vs[k]
         qs.alpha = float(q.get("alpha", 1.0))
-        if blend == "none":
-            qs.gain_r, qs.gain_g, qs.gain_b = float(host_light[0]), float(host_light[1]), float(host_light[2])
-            qs.shader118 = 1
+        if camera_light is not None:
+            hr, hg, hb = _eval_host_light_quad(pw, verts, tf, camera_light)
+        elif blend == "none":
+            hr, hg, hb = float(host_light[0]), float(host_light[1]), float(host_light[2])
         else:
-            qs.gain_r, qs.gain_g, qs.gain_b = 1.0, 1.0, 1.0
+            hr, hg, hb = 1.0, 1.0, 1.0
+        qs.gain_r, qs.gain_g, qs.gain_b = hr, hg, hb
+        if blend == "none":
+            qs.shader118 = 1
+        elif blend == "add":
+            qs.shader118 = 2
+        else:
             qs.shader118 = 0
         qs.sampler_dot = 1 if q.get("sampler") == "dot" else 0
         qs.tex_id = tid

@@ -61,7 +61,14 @@ local function vl_lf_withdraw()
     end)
 end
 
-local function vl_lf_publish(spot_ray_env_mode, cb_tgt_r, cb_tgt_g, cb_tgt_b, cb_cl_px, cb_cl_py, cb_cl_pz, cb_in_rad, cb_out_rad, cb_att_k)
+local function vl_lf_publish(
+    spot_ray_env_mode,
+    cb_tgt_r, cb_tgt_g, cb_tgt_b,
+    cb_cl_px, cb_cl_py, cb_cl_pz,
+    cl_rdx, cl_rdy, cl_rdz,
+    cb_in_rad, cb_out_rad, cb_att_k,
+    has_cam_3d_light, cam_light_is_pos, h_core_peak
+)
     if global == nil or not lf_ffi_ok or lf_ffi == nil then return end
     if not VL_BF.ps_ok then
         vl_lf_withdraw()
@@ -101,12 +108,15 @@ local function vl_lf_publish(spot_ray_env_mode, cb_tgt_r, cb_tgt_g, cb_tgt_b, cb
     local sv0, sv1 = -0.04, 1.04
 
     local is_spot = (spot_ray_env_mode or 0.0) > 0.5
-    local lt_r = (VL_BF.lc_r or 1.0) * (cb_tgt_r or 1.0)
-    local lt_g = (VL_BF.lc_g or 1.0) * (cb_tgt_g or 1.0)
-    local lt_b = (VL_BF.lc_b or 1.0) * (cb_tgt_b or 1.0)
+    -- Note: `lc_rgb` is already baked into `cache:vl3d/mip` for 2D sources (`16_geometry_mip.lua`)
+    -- and into `cb_tgt_rgb` for virtual 3D camera sources (`19_render.lua`); do not multiply again.
+    local lt_r = cb_tgt_r or 1.0
+    local lt_g = cb_tgt_g or 1.0
+    local lt_b = cb_tgt_b or 1.0
     local pk_t = math.max(1.0, lt_r, lt_g, lt_b)
     local tint_r, tint_g, tint_b = lt_r / pk_t, lt_g / pk_t, lt_b / pk_t
-    local gain_s = math.max(0.0, (P.intensity / 100.0) * (VL_BF.base_alpha or 1.0) * (VL_BF.cam_comp or 1.0) * pk_t)
+    local host_pk = math.max(1.0, h_core_peak or 1.0)
+    local gain_s = math.max(0.0, (P.intensity / 100.0) * (VL_BF.base_alpha or 1.0) * (VL_BF.cam_comp or 1.0) * (pk_t / host_pk))
 
     local cam_zmax = 8192.0
     if cam3d_on and type(VL_BF.camocc_max_z) == "number" and VL_BF.camocc_max_z > 1.0 then
@@ -190,6 +200,8 @@ local function vl_lf_publish(spot_ray_env_mode, cb_tgt_r, cb_tgt_g, cb_tgt_b, cb
     if (VL_BF.fog_amt or 0.0) > 0.005 then flags = flags + 16 end
     if (VL_BF.occ3d_int or 0) == 1 then flags = flags + 32 end
     if VL_BF.is_edit then flags = flags + 64 end
+    if has_cam_3d_light then flags = flags + 128 end
+    if cam_light_is_pos then flags = flags + 256 end
 
     local z_win_cam = 1e9
     if not VL_BF.is_edit then
@@ -239,7 +251,7 @@ local function vl_lf_publish(spot_ray_env_mode, cb_tgt_r, cb_tgt_g, cb_tgt_b, cb
     f32[33], f32[34], f32[35] = b_min_x, b_min_y, b_min_z
     f32[36], f32[37], f32[38] = b_max_x, b_max_y, b_max_z
     f32[39], f32[40], f32[41] = cb_cl_px or 0.0, cb_cl_py or 0.0, cb_cl_pz or 0.0
-    f32[42], f32[43], f32[44] = VL_BF.cam_ray_dx or 0.0, VL_BF.cam_ray_dy or 0.0, VL_BF.cam_ray_dz or 1.0
+    f32[42], f32[43], f32[44] = cl_rdx or VL_BF.cam_ray_dx or 0.0, cl_rdy or VL_BF.cam_ray_dy or 0.0, cl_rdz or VL_BF.cam_ray_dz or 1.0
     f32[45] = cos_in_sp
     f32[46] = cos_out_sp
     f32[47] = cb_att_k or 0.0

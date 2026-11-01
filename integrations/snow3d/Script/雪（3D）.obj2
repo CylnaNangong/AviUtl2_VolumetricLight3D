@@ -9,6 +9,8 @@
 --     および前景遮蔽マスク背後の粒子では自動的に受光を遮断（「光が当たれば輝き、遮られれば光らない」真の 3D 光学連動）。
 --   ・オブジェクト自身の回転（rx/ry/rz）・中心ずれ（cx/cy/cz）・個別拡大率を含む完全なローカル→ワールド変換に対応し、
 --     GPU 図形テクスチャ描画パスと CPU 頂点色フォールバック円描画パスの双方で一貫した受光表現を実現。
+--   ・カメラ制御 3D 光源＋体積光連動時、標準合成（Shader #118 WBOIT）による前景粒子ガウス裾の黒縁ハローおよび
+--     逆光法線消灯を根治するため、基底パスをハードウェア加算（"add"）＋受光/遮蔽符号付き 8 要素光源法線へ自動切替。
 --
 -- v1.22 更新点 (カメラ制御「目標レイヤー＝自身」設定時の発生領域基準補正):
 --   ・カメラ制御オブジェクトの「目標レイヤー」にカメラ制御自身のレイヤー番号を指定した際、
@@ -609,6 +611,13 @@ local SNOW_LF = (function()
                x * xf.m20 + y * xf.m21 + z * xf.m22 + xf.tz
     end
 
+    function M.world_vec_to_local(xf, wx, wy, wz)
+        if xf.fast then return wx, wy, wz end
+        return wx * xf.m00 + wy * xf.m10 + wz * xf.m20,
+               wx * xf.m01 + wy * xf.m11 + wz * xf.m21,
+               wx * xf.m02 + wy * xf.m12 + wz * xf.m22
+    end
+
     local B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     local B64_DEC_LUA = {}
     for i = 1, #B64_CHARS do B64_DEC_LUA[B64_CHARS:byte(i)] = i - 1 end
@@ -733,6 +742,8 @@ local SNOW_LF = (function()
             fog_on  = has_bit(16),
             occ3d_front_only = has_bit(32),
             is_ortho_cam     = has_bit(64),
+            has_cam_3d_light = has_bit(128),
+            cam_light_is_pos = has_bit(256),
             off_rad = off_rad,
             off_sh  = off_sh,
             off_cam = off_cam,
@@ -1032,7 +1043,42 @@ local SNOW_LF = (function()
         return acc_r, acc_g, acc_b
     end
 
-    function M.draw_lit_figure(parts, r_x, r_y, r_z, u_x, u_y, u_z, shape_scale_x, shape_scale_y, ow_fig, oh_fig, col_r, col_g, col_b, tint01, glow_mul)
+    function M.find_cam_light_emitter(emitters)
+        if emitters == nil then return nil end
+        for i = 1, #emitters do
+            local em = emitters[i]
+            if em.has_cam_3d_light or em.is_spot then
+                return em
+            end
+        end
+        return nil
+    end
+
+    function M.light_normal_local(xf, cam_em, wx, wy, wz, sign_mul)
+        local sm = sign_mul or 1.0
+        local lx, ly, lz
+        if cam_em.cam_light_is_pos or cam_em.is_spot then
+            lx = cam_em.cl_px - wx
+            ly = cam_em.cl_py - wy
+            lz = cam_em.cl_pz - wz
+            local l2 = lx * lx + ly * ly + lz * lz
+            if l2 > 1e-6 then
+                local inv_l = sm / math.sqrt(l2)
+                lx, ly, lz = lx * inv_l, ly * inv_l, lz * inv_l
+            else
+                local d2 = cam_em.cl_dx * cam_em.cl_dx + cam_em.cl_dy * cam_em.cl_dy + cam_em.cl_dz * cam_em.cl_dz
+                local inv_d = -sm / math.sqrt(math.max(1e-8, d2))
+                lx, ly, lz = cam_em.cl_dx * inv_d, cam_em.cl_dy * inv_d, cam_em.cl_dz * inv_d
+            end
+        else
+            local d2 = cam_em.cl_dx * cam_em.cl_dx + cam_em.cl_dy * cam_em.cl_dy + cam_em.cl_dz * cam_em.cl_dz
+            local inv_d = -sm / math.sqrt(math.max(1e-8, d2))
+            lx, ly, lz = cam_em.cl_dx * inv_d, cam_em.cl_dy * inv_d, cam_em.cl_dz * inv_d
+        end
+        return M.world_vec_to_local(xf, lx, ly, lz)
+    end
+
+    function M.draw_lit_figure(parts, r_x, r_y, r_z, u_x, u_y, u_z, shape_scale_x, shape_scale_y, ow_fig, oh_fig, col_r, col_g, col_b, tint01, glow_mul, xf, cam_lit_em)
         -- 1) Build up to 6 RGB color clusters over illuminated particles (p[12] ~= nil)
         local cells = {}
         local lit_indices = {}
@@ -1123,10 +1169,18 @@ local SNOW_LF = (function()
             local g_y = (-r_y * sa + u_y * ca) * shape_scale_y
             local g_z = (-r_z * sa + u_z * ca) * shape_scale_y
 
-            list[li + 1] = { p_x - e_x * rs + g_x * rs, p_y - e_y * rs + g_y * rs, p_z - e_z * rs + g_z * rs, 0, 0 }
-            list[li + 2] = { p_x + e_x * rs + g_x * rs, p_y + e_y * rs + g_y * rs, p_z + e_z * rs + g_z * rs, 1, 0 }
-            list[li + 3] = { p_x + e_x * rs - g_x * rs, p_y + e_y * rs - g_y * rs, p_z + e_z * rs - g_z * rs, 1, 1 }
-            list[li + 4] = { p_x - e_x * rs - g_x * rs, p_y - e_y * rs - g_y * rs, p_z - e_z * rs - g_z * rs, 0, 1 }
+            if cam_lit_em ~= nil then
+                local vnx, vny, vnz = M.light_normal_local(xf, cam_lit_em, p[15] or 0.0, p[16] or 0.0, p[17] or 0.0, 1.0)
+                list[li + 1] = { p_x - e_x * rs + g_x * rs, p_y - e_y * rs + g_y * rs, p_z - e_z * rs + g_z * rs, 0, 0, vnx, vny, vnz }
+                list[li + 2] = { p_x + e_x * rs + g_x * rs, p_y + e_y * rs + g_y * rs, p_z + e_z * rs + g_z * rs, 1, 0, vnx, vny, vnz }
+                list[li + 3] = { p_x + e_x * rs - g_x * rs, p_y + e_y * rs - g_y * rs, p_z + e_z * rs - g_z * rs, 1, 1, vnx, vny, vnz }
+                list[li + 4] = { p_x - e_x * rs - g_x * rs, p_y - e_y * rs - g_y * rs, p_z - e_z * rs - g_z * rs, 0, 1, vnx, vny, vnz }
+            else
+                list[li + 1] = { p_x - e_x * rs + g_x * rs, p_y - e_y * rs + g_y * rs, p_z - e_z * rs + g_z * rs, 0, 0 }
+                list[li + 2] = { p_x + e_x * rs + g_x * rs, p_y + e_y * rs + g_y * rs, p_z + e_z * rs + g_z * rs, 1, 0 }
+                list[li + 3] = { p_x + e_x * rs - g_x * rs, p_y + e_y * rs - g_y * rs, p_z + e_z * rs - g_z * rs, 1, 1 }
+                list[li + 4] = { p_x - e_x * rs - g_x * rs, p_y - e_y * rs - g_y * rs, p_z - e_z * rs - g_z * rs, 0, 1 }
+            end
         end
 
         local added_v = 0
@@ -1407,6 +1461,7 @@ local function snow3d_frame()
         has_lit  = false,
         n_lit    = 0,
     }
+    vl_ctx.cam_lit_em = (cam ~= nil) and SNOW_LF.find_cam_light_emitter(vl_ctx.emitters) or nil
 
     -- 奥行き減衰の基準（ローカル c をワールド座標へ戻してからカメラ距離を算出）
     local c_d = ((c_x * ozm + ox0) - cam_x) * f_x
@@ -1778,7 +1833,8 @@ local function snow3d_frame()
                     a_sh,                     -- 透明度（CPU頂点色用）
                     depth,                    -- 奥行き
                     a_fig,                    -- 図形テクスチャ有効α（bright・減光反映済み）
-                    lr, lg, lb                -- 体積光受光RGB（未受光時は nil）
+                    lr, lg, lb,               -- 体積光受光RGB（未受光時は nil）
+                    wx_p, wy_p, wz_p          -- ワールド座標（3Dカメラライト法線補正用）
                 }
             end
         end
@@ -1870,6 +1926,16 @@ local function snow3d_frame()
     obj.setoption("drawtarget", "framebuffer")
     obj.setoption("culling", 0)
 
+    vl_ctx.saved_blend = "none"
+    pcall(function()
+        local b = obj.getoption("blend")
+        if type(b) == "string" and b ~= "" then vl_ctx.saved_blend = b end
+    end)
+    -- 3D カメラライト＋体積光連動時、標準合成 ("none" = Shader #118 WBOIT) のまま粒子ソフトエッジを描くと
+    -- ガウス裾の微小 α (0.002..0.08) が HDR 体積光の Accum_w を乗っ取り、粒子周囲に黒い輪が生じるため
+    -- 実機検証済みのハードウェア加算 ("add") ＋ 3D 光源向き法線へ切り替える。
+    vl_ctx.use_3d_add_base = (vl_ctx.cam_lit_em ~= nil) and (vl_ctx.saved_blend == "none")
+
     local draw_verts = 0
 
     if fig_ok then
@@ -1895,6 +1961,10 @@ local function snow3d_frame()
             local rs = p[4] * 0.5
             local rot = p[5]
             local a_eff = p[11] or p[9]
+            if vl_ctx.use_3d_add_base and p[12] ~= nil then
+                local pk_l = math.min(1.0, math.max(p[12], p[13], p[14]))
+                a_eff = a_eff * (1.0 - 0.55 * vl_ctx.tint01 * pk_l)
+            end
             local ca = math.cos(rot)
             local sa = math.sin(rot)
             local e_x = (r_x * ca + u_x * sa) * shape_scale_x
@@ -1913,20 +1983,44 @@ local function snow3d_frame()
             local li = #bk.list
 
             -- 左上 → 右上 → 右下 → 左下（カメラから見て時計回り）
-            bk.list[li + 1] = { p_x - e_x * rs + g_x * rs,
-                                p_y - e_y * rs + g_y * rs,
-                                p_z - e_z * rs + g_z * rs, 0, 0 }
-            bk.list[li + 2] = { p_x + e_x * rs + g_x * rs,
-                                p_y + e_y * rs + g_y * rs,
-                                p_z + e_z * rs + g_z * rs, 1, 0 }
-            bk.list[li + 3] = { p_x + e_x * rs - g_x * rs,
-                                p_y + e_y * rs - g_y * rs,
-                                p_z + e_z * rs - g_z * rs, 1, 1 }
-            bk.list[li + 4] = { p_x - e_x * rs - g_x * rs,
-                                p_y - e_y * rs - g_y * rs,
-                                p_z - e_z * rs - g_z * rs, 0, 1 }
+            if vl_ctx.cam_lit_em ~= nil then
+                local vnx, vny, vnz = SNOW_LF.light_normal_local(
+                    vl_ctx.xf, vl_ctx.cam_lit_em,
+                    p[15] or 0.0, p[16] or 0.0, p[17] or 0.0,
+                    (p[12] ~= nil) and 1.0 or -1.0
+                )
+                bk.list[li + 1] = { p_x - e_x * rs + g_x * rs,
+                                    p_y - e_y * rs + g_y * rs,
+                                    p_z - e_z * rs + g_z * rs, 0, 0, vnx, vny, vnz }
+                bk.list[li + 2] = { p_x + e_x * rs + g_x * rs,
+                                    p_y + e_y * rs + g_y * rs,
+                                    p_z + e_z * rs + g_z * rs, 1, 0, vnx, vny, vnz }
+                bk.list[li + 3] = { p_x + e_x * rs - g_x * rs,
+                                    p_y + e_y * rs - g_y * rs,
+                                    p_z + e_z * rs - g_z * rs, 1, 1, vnx, vny, vnz }
+                bk.list[li + 4] = { p_x - e_x * rs - g_x * rs,
+                                    p_y - e_y * rs - g_y * rs,
+                                    p_z - e_z * rs - g_z * rs, 0, 1, vnx, vny, vnz }
+            else
+                bk.list[li + 1] = { p_x - e_x * rs + g_x * rs,
+                                    p_y - e_y * rs + g_y * rs,
+                                    p_z - e_z * rs + g_z * rs, 0, 0 }
+                bk.list[li + 2] = { p_x + e_x * rs + g_x * rs,
+                                    p_y + e_y * rs + g_y * rs,
+                                    p_z + e_z * rs + g_z * rs, 1, 0 }
+                bk.list[li + 3] = { p_x + e_x * rs - g_x * rs,
+                                    p_y + e_y * rs - g_y * rs,
+                                    p_z + e_z * rs - g_z * rs, 1, 1 }
+                bk.list[li + 4] = { p_x - e_x * rs - g_x * rs,
+                                    p_y - e_y * rs - g_y * rs,
+                                    p_z - e_z * rs - g_z * rs, 0, 1 }
+            end
             bk.n = bk.n + 1
             bk.dsum = bk.dsum + p[10]
+        end
+
+        if vl_ctx.use_3d_add_base then
+            pcall(function() obj.setoption("blend", "add") end)
         end
 
         -- 深度層 0（最奥）→ n_strata-1（最手前）の順に、各層内でも平均深度の深い順で描画
@@ -1956,20 +2050,18 @@ local function snow3d_frame()
         end
 
         if vl_ctx.fig_lit_ok then
-            local saved_blend = "none"
-            pcall(function()
-                local b = obj.getoption("blend")
-                if type(b) == "string" and b ~= "" then saved_blend = b end
-            end)
             local n_l, v_l = SNOW_LF.draw_lit_figure(
                 parts, r_x, r_y, r_z, u_x, u_y, u_z,
                 shape_scale_x, shape_scale_y,
                 vl_ctx.ow_fig, vl_ctx.oh_fig,
-                col_r, col_g, col_b, vl_ctx.tint01, vl_ctx.glow_mul
+                col_r, col_g, col_b, vl_ctx.tint01, vl_ctx.glow_mul,
+                vl_ctx.xf, vl_ctx.cam_lit_em
             )
             vl_ctx.n_lit = n_l
             draw_verts = draw_verts + v_l
-            pcall(function() obj.setoption("blend", saved_blend) end)
+        end
+        if vl_ctx.use_3d_add_base or vl_ctx.fig_lit_ok then
+            pcall(function() obj.setoption("blend", vl_ctx.saved_blend) end)
         end
     else
         ----------------------------------------------------------
@@ -1977,6 +2069,9 @@ local function snow3d_frame()
         --   頂点色（乗算済みα）で描くので透明度は粒子ごとに正確
         --   ※ 最大 144,000 頂点を 5,400 頂点（1,800 三角形）単位で分割送信
         ----------------------------------------------------------
+        if vl_ctx.use_3d_add_base then
+            pcall(function() obj.setoption("blend", "add") end)
+        end
         local SEG = 12
         local verts = {}
         local vi = 0
@@ -2006,6 +2101,14 @@ local function snow3d_frame()
                     rs = rs * (1.0 + (vl_ctx.glow_mul - 1.0) * math.min(1.0, pk * 0.8))
                 end
             end
+            local pnx, pny, pnz = nx, ny, nz
+            if vl_ctx.cam_lit_em ~= nil then
+                pnx, pny, pnz = SNOW_LF.light_normal_local(
+                    vl_ctx.xf, vl_ctx.cam_lit_em,
+                    p[15] or 0.0, p[16] or 0.0, p[17] or 0.0,
+                    (lr ~= nil) and 1.0 or -1.0
+                )
+            end
             local ca = math.cos(rot)
             local sa = math.sin(rot)
             local e_x = r_x * ca + u_x * sa
@@ -2024,11 +2127,11 @@ local function snow3d_frame()
                 local y2 = p_y + (e_y * math.cos(a1) + g_y * math.sin(a1)) * rs
                 local z2 = p_z + (e_z * math.cos(a1) + g_z * math.sin(a1)) * rs
                 vi = vi + 1
-                verts[vi] = { p_x, p_y, p_z, rr, gg, bb, aa, nx, ny, nz }
+                verts[vi] = { p_x, p_y, p_z, rr, gg, bb, aa, pnx, pny, pnz }
                 vi = vi + 1
-                verts[vi] = { x2, y2, z2, rr, gg, bb, aa, nx, ny, nz }
+                verts[vi] = { x2, y2, z2, rr, gg, bb, aa, pnx, pny, pnz }
                 vi = vi + 1
-                verts[vi] = { x1, y1, z1, rr, gg, bb, aa, nx, ny, nz }
+                verts[vi] = { x1, y1, z1, rr, gg, bb, aa, pnx, pny, pnz }
             end
             if vi >= 5400 then
                 obj.drawpoly(verts, 3)
@@ -2040,6 +2143,9 @@ local function snow3d_frame()
         if vi > 0 then
             obj.drawpoly(verts, 3)
             draw_verts = draw_verts + vi
+        end
+        if vl_ctx.use_3d_add_base then
+            pcall(function() obj.setoption("blend", vl_ctx.saved_blend) end)
         end
     end
 

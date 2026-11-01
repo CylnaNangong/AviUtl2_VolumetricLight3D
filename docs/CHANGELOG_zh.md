@@ -12,7 +12,8 @@
   - 统一抽取 `is_volume_fx_name()`，自动排除日/中/英/德多语言环境下的 `雪（3D）` / `Snow3D` 及其他 `VolumetricLight3D` 图层被误捕获为 2D 剪影遮挡物或前景逆光融合目标。
 - **配套交付 `Snow3D（雪（3D））v1.23`（位于 `integrations/snow3d/`，含一键同步脚本 `apply_to_snow3d.py`）**：
   - 新增「体积光联动」折叠参数组（受体积光照亮 / 受光强度 / 光色染色度 / 光束外与阴影压暗 / 受光晕染范围）及中英德四语 `.aul2` 完整词条与悬停提示；实现**光束内雪花按局部光强与彩绘玻璃颜色发亮，进入 3D/2D 阴影柱或前景遮罩后自动熄灭（“能够被照亮 + 被遮挡就不亮”）**，无体积光时与 `v1.22` 逐顶点逐像素完全一致。
-- **沙箱端到端光学与阴影测试扩充（106 PASS / 0 FAIL / 0 WARN）**：扩展 `sandbox/vl3dsb/host.py` 支持跨脚本共享 `global` 与 `obj.load("figure", ...)`，新增 `sandbox/checks/checks_12_lightfield.py`（覆盖平行光/点光源发散/汇聚光/相机 3D 聚光灯、斜向 3D `.obj` 与 2D 投射阴影柱消光、前景遮罩前后分层、彩绘玻璃红蓝分色与暗铅条消光、对象旋转变换、多光源叠加、子场景隔离与撤回清理），详见 `docs/LIGHTFIELD_SYNC.zh.md` 与 `sandbox/docs/DSH_HANDOFF_v3.16_Snow3D_v1.23.zh.md`。
+  - **根治 3D 摄像机光源模式下雪花柔边变黑（WBOIT `Accum_w` 权重劫持）与逆光背光面熄灭（真机 `v2.1.16` 实测反馈修复）**：在 `VL3DLF v3` `flags` 中发布 `has_cam_3d_light`（bit 7）与 `cam_light_is_pos`（bit 8），修正 `H_host` HDR 峰值重复增益与 2D `light_color` 二次平方染色；当场景存在活动 3D 摄像机光源时，`雪（3D）v1.23` 自动将基底粒子批次切换为经真机验证零黑边的硬件加法混合（`blend = "add"`，彻底绕过 `Shader #118` WBOIT 中前景暗粒子高斯柔边 `α=0.002..0.08` 稀释背景 HDR 光束 `Accum_rgb / Accum_w` 所致的黑色圆环），并为受光/遮挡粒子分别赋予朝向/背离 3D 光源的 8 元顶点法线（既消除逆光 `max(0, N·L)=0` 变暗，又防止未开聚光灯阴影时硬件光源穿透 3D 阴影柱照亮遮挡雪花）。
+- **沙箱端到端光学与阴影测试扩充（107 PASS / 0 FAIL / 0 WARN）**：扩展 `sandbox/vl3dsb/host.py` 与 `compositor3d.py` 支持跨脚本共享 `global`、`obj.load("figure", ...)`、硬件加法通道（`shader118 = 2`）及 3D 摄像机光源 `H_host(wp, N)` 5/8 元法线着色，新增 `sandbox/checks/checks_12_lightfield.py`（覆盖平行光/点光源发散/汇聚光/相机 3D 聚光灯、3D 聚光灯前景柔边零黑环与逆光受光回归、斜向 3D `.obj` 与 2D 投射阴影柱消光、前景遮罩前后分层、彩绘玻璃红蓝分色与暗铅条消光、对象旋转变换、多光源叠加、子场景隔离与撤回清理），详见 `docs/LIGHTFIELD_SYNC.zh.md` 与 `sandbox/docs/DSH_HANDOFF_v3.16_Snow3D_v1.23.zh.md`。
 
 ## v3.15（2026-10-31）· AviUtl ExEdit2 v2.1.16 完整适配 & VL3DBridge v1.22 修复内置文本对齐/描边 SDK 覆盖缺陷 & ASLR 不变 SHA-256
 

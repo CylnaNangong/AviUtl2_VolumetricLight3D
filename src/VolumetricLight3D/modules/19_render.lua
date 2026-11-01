@@ -194,12 +194,28 @@ local function vl_bf_render()
     if (VL_BF.camocc_active or 0) < 0.5 then pcall(function() obj.clearbuffer(VL_BF.camocc_tex_name, 4, 4) end) end
 
     if VL_BF.ps_ok then
-        vl_lf_publish(
-            spot_ray_env_mode,
-            cb_tgt_r, cb_tgt_g, cb_tgt_b,
-            cb_cl_px, cb_cl_py, cb_cl_pz,
-            cb_in_rad, cb_out_rad, cb_att_k
-        )
+        do
+            local has_c3d = (cl_pr ~= nil) and (cb_ltype > 0.5) and not cli_r.suppressed
+            local c3d_pos = has_c3d and (cb_ltype > 2.5)
+            local base_u_lf = cb_unlit + cb_other_lum
+            local h_core_pk = has_c3d and math.max(
+                1.0,
+                base_u_lf + cb_amb_r + cb_cl_r,
+                base_u_lf + cb_amb_g + cb_cl_g,
+                base_u_lf + cb_amb_b + cb_cl_b
+            ) or 1.0
+            local l_rdx = has_c3d and -def_lwx or (VL_BF.cam_ray_dx or 0.0)
+            local l_rdy = has_c3d and -def_lwy or (VL_BF.cam_ray_dy or 0.0)
+            local l_rdz = has_c3d and -def_lwz or (VL_BF.cam_ray_dz or 1.0)
+            vl_lf_publish(
+                spot_ray_env_mode,
+                cb_tgt_r, cb_tgt_g, cb_tgt_b,
+                cb_cl_px, cb_cl_py, cb_cl_pz,
+                l_rdx, l_rdy, l_rdz,
+                cb_in_rad, cb_out_rad, cb_att_k,
+                has_c3d, c3d_pos, h_core_pk
+            )
+        end
     else
         vl_lf_withdraw()
     end
