@@ -1,4 +1,4 @@
-"""End-to-end verification of VL3DLF v3 shared 3D light field (VolumetricLight3D v3.16 x Snow3D v1.23)."""
+"""End-to-end verification of VL3DLF v3 shared 3D light field (VolumetricLight3D v3.17 x Snow3D v1.23 x VolumetricFog3D v2.06)."""
 from __future__ import annotations
 
 import base64
@@ -939,3 +939,129 @@ def lightfield_edit_camera_and_status():
 
     return {"edit_cam_span_z": round(span_z, 2), "edit_cam_drop_g": round(drop_ed, 5)}
 
+
+
+# ---------------------------------------------------------------------------
+# VolumetricFog3D v2.06 receiver regression
+# ---------------------------------------------------------------------------
+FOG_ROOT = REPO_ROOT / "integrations" / "volumetricfog3d"
+FOG_OBJ2 = FOG_ROOT / "Script" / "VolumetricFog3D.obj2"
+_FOG_SHADER_LIB: Optional[ShaderLibrary] = None
+
+
+def _run_fog_lightfield(params: Dict[str, Any], bus: Dict[str, bytes], *, frame: int = 10) -> Host:
+    global _FOG_SHADER_LIB
+    fog_script = load_script(FOG_OBJ2)
+    if _FOG_SHADER_LIB is None:
+        _FOG_SHADER_LIB = ShaderLibrary(
+            fog_script.shaders,
+            workdir=REPO_ROOT / "sandbox" / "out" / "fog_shader_build",
+        )
+    cam = {"x": 0.0, "y": 0.0, "z": -1024.0,
+           "tx": 0.0, "ty": 0.0, "tz": 0.0,
+           "ux": 0.0, "uy": -1.0, "uz": 0.0, "rz": 0.0, "d": 1024.0}
+    h = Host(
+        fog_script, [],
+        config=HostConfig(
+            screen_w=96, screen_h=54, image_max=(512, 512),
+            camera_mode=1, camera=cam, version="2.1.16",
+        ),
+        shader_lib=_FOG_SHADER_LIB,
+        params={
+            "slices": 8, "res_mode": 0, "density": 60,
+            "scatter": 60, "scatter_source": params.get("scatter_source", 1),
+            "log_mode": False,
+        },
+        shared_global=bus,
+    )
+    h.scene_id = 0
+    h.frame_s = 0
+    h.layer_index = 4
+    h.run_frame(frame, time_s=10.0 / 30.0)
+    require(not h.errors, f"VolumetricFog3D host errors: {h.errors}")
+    require(not h.pixelshader_failures, f"Fog shader failed: {h.prints}")
+    require(not h.shader_param_mismatches,
+            f"Fog shader cbuffer mismatch: {h.shader_param_mismatches}")
+    return h
+
+
+@check("lightfield: VolumetricFog3D spatial scattering follows VL3DLF colour, direction, and cast shadows",
+       tags=["runtime", "lightfield", "fog"])
+def volumetricfog3d_spatial_scattering():
+    fog_script = load_script(FOG_OBJ2)
+    require(fog_script.defaults().get("scatter_source") == 0.0,
+            "legacy Fog projects must keep manual scattering as the default")
+    lang_files = sorted((FOG_ROOT / "Language").glob("*.aul2"))
+    require(len(lang_files) == 4, f"expected four Fog language packs, got {len(lang_files)}")
+    for lang_file in lang_files:
+        raw_lang = lang_file.read_bytes()
+        require(b"\r\n" in raw_lang and b"\n" not in raw_lang.replace(b"\r\n", b""),
+                f"{lang_file.name}: expected CRLF")
+        pack = _parse_aul2(lang_file)
+        labels = pack.get("VolumetricFog3D", {})
+        tips = pack.get("Tips.VolumetricFog3D", {})
+        for label in ("散射光来源", "手动方向", "体积光联动"):
+            require(labels.get(label), f"{lang_file.name}: missing {label} translation")
+            require(tips.get(label), f"{lang_file.name}: missing {label} tooltip")
+
+    src = _solid_layer(1, 320, 320, (255, 190, 120, 255), z=600.0)
+    vl_params = {
+        "src_layer": 1, "ray_mode": 0, "screen_dir": False,
+        "direction": 0.0, "pitch": 90.0, "spread": 0.0,
+        "length": 1200.0, "decay": 20.0, "intensity": 140.0,
+        "threshold": 10.0, "occ_mode": 1,
+    }
+    bus_open: Dict[str, bytes] = {}
+    _run_vl([src], vl_params, bus_open, layer_index=3, frame=10, width=96, height=54)
+    require("VL3D_LF:0:3" in bus_open, "VolumetricLight3D did not publish the test beam")
+
+    blocker = _solid_layer(2, 360, 360, (255, 255, 255, 255), z=0.0)
+    bus_shadow: Dict[str, bytes] = {}
+    _run_vl([src, blocker], vl_params, bus_shadow, layer_index=3, frame=10, width=96, height=54)
+    require("VL3D_LF:0:3" in bus_shadow, "shadowed beam packet was not published")
+
+    linked = _run_fog_lightfield({"scatter_source": 1}, bus_open)
+    shaded = _run_fog_lightfield({"scatter_source": 1}, bus_shadow)
+    manual_with = _run_fog_lightfield({"scatter_source": 0}, bus_open)
+    manual_without = _run_fog_lightfield({"scatter_source": 0}, {})
+    fallback = _run_fog_lightfield({"scatter_source": 1}, {})
+
+    p_linked = linked.shader_traces["fogatlas"]["params"]
+    p_shaded = shaded.shader_traces["fogatlas"]["params"]
+    require(len(p_linked) == 8240 and len(p_shaded) == 8240,
+            f"unexpected Fog cbuffer lengths: {len(p_linked)} / {len(p_shaded)}")
+    require(p_linked[47] == 1.0 and p_shaded[47] == 1.0,
+            "Fog did not activate the current shared-light-field mode")
+
+    def radiance_energy(p: Sequence[float]) -> float:
+        return sum(max(0.0, p[i]) + max(0.0, p[i + 1]) + max(0.0, p[i + 2])
+                   for i in range(48, 48 + 4096, 4))
+
+    open_energy = radiance_energy(p_linked)
+    shadow_energy = radiance_energy(p_shaded)
+    require(open_energy > 1.0, f"no spatial fog-light samples received radiance ({open_energy:.3f})")
+    require(shadow_energy < open_energy * 0.9,
+            f"cast shadow failed to reduce fog scattering samples: {open_energy:.3f} -> {shadow_energy:.3f}")
+
+    im_linked = linked.volume_layer()
+    im_shaded = shaded.volume_layer()
+    require(im_linked is not None and im_shaded is not None, "Fog produced no 3D volume layer")
+    shadow_delta = np.abs(im_linked.astype(np.int16) - im_shaded.astype(np.int16))
+    require(int(shadow_delta[:, :, :3].sum()) > 1000,
+            "projected shadow did not produce a visible fog-render difference")
+
+    im_manual = manual_with.volume_layer()
+    im_no_field = manual_without.volume_layer()
+    im_fallback = fallback.volume_layer()
+    require(im_manual is not None and im_no_field is not None and im_fallback is not None,
+            "manual/fallback Fog render missing")
+    require(np.array_equal(im_manual, im_no_field),
+            "manual Fog mode changed when a VolumetricLight3D field was present")
+    require(np.array_equal(im_manual, im_fallback),
+            "linked mode without a current field did not fall back to manual scattering")
+    return {
+        "open_radiance": round(open_energy, 3),
+        "shadowed_radiance": round(shadow_energy, 3),
+        "shadow_image_delta": int(shadow_delta[:, :, :3].sum()),
+        "shader_constants": len(p_linked),
+    }
