@@ -10,6 +10,9 @@ Supports multiple OIT resolve models for controlled verification:
                            ``Out = Bg * Reveal + (1 - Reveal) * sum(w*r4.rgb) / sum(w*r4.w)``
   * ``"wboit_pow2"``    -- Shader #118 WBOIT with inverse-square depth weight
                            ``w(zc) = clamp((1024 / max(zc, 1))^2, 1e-4, 3e4)``
+  * ``"wboit_hw118"``   -- Calibrated live AviUtl2 v2.1.16 Shader #118 WBOIT:
+                           non-normalized ``r4.rgb = tex.rgb * alpha * gain`` with
+                           steep foreground depth dominance ``(1024 / max(zc, 16))^8``
   * ``"wboit_uniform"`` -- Equal-depth-weight WBOIT (``w(zc) = 1``)
   * ``"over"``          -- Strict back-to-front premultiplied Porter-Duff over
   * ``"pure_additive"`` -- Unattenuated additive ``Bg + sum(r4.rgb)`` (reference upper bound)
@@ -379,6 +382,11 @@ extern "C" void vl3dsb_composite3d(
                         } else if (oit_mode == 1) {
                             float zn = 1024.0f / std::max(zc, 1.0f);
                             wz = std::clamp(zn * zn, 1e-4f, 3e4f);
+                        } else if (oit_mode == 5) {
+                            float zn = 1024.0f / std::max(zc, 16.0f);
+                            float zn2 = zn * zn;
+                            float zn4 = zn2 * zn2;
+                            wz = std::clamp(zn4 * zn4 * std::pow(a118, 0.25f), 1e-6f, 1e7f);
                         }
                         acc_r[lp] += r4_r * wz;
                         acc_g[lp] += r4_g * wz;
@@ -542,6 +550,7 @@ OIT_MODES = {
     "wboit_uniform": 2,
     "over": 3,
     "pure_additive": 4,
+    "wboit_hw118": 5,
 }
 
 

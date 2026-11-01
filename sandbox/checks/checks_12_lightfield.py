@@ -640,27 +640,114 @@ def spotlight_3d_wboit_soft_edge_and_backlit_normals():
         "vl_enable": True, "vl_strength": 140.0, "vl_shade": 25.0,
     }
     h_snow_fg = _run_snow([], fg_snow_p, bus_fg, frame=3, camera=cam, width=W, height=H)
-    require(len(h_snow_fg.quads) == 1, f"expected 1 unlit foreground WBOIT snow quad, got {len(h_snow_fg.quads)}")
-    require(len(h_snow_fg.quads[0]["verts"][0]) == 8,
-            f"expected 3D spotlight snow base quad to use 8-tuple normals, got {len(h_snow_fg.quads[0]['verts'][0])}")
+    require(len(h_snow_fg.quads) == 0,
+            f"unlit foreground snow on active beam sightline must be suppressed in Shader #118 WBOIT, got {len(h_snow_fg.quads)}")
 
-    img_beam = composite_scene_3d(W, H, cam, [], h_vl.quads, camera_light=cam_spot)
-    img_fixed = composite_scene_3d(W, H, cam, [], list(h_vl.quads) + list(h_snow_fg.quads), camera_light=cam_spot)
+    # Off-beam unlit snow at (480, 0, -480) (clear of the 24-deg beam sightline) must STILL render normally!
+    h_snow_offbeam = _run_snow([], {**fg_snow_p, "area_x": 480.0}, bus_fg, frame=3, camera=cam, width=W, height=H)
+    require(len(h_snow_offbeam.quads) == 1,
+            f"off-beam unlit foreground snow must still render 1 quad, got {len(h_snow_offbeam.quads)}")
+    require(len(h_snow_offbeam.quads[0]["verts"][0]) == 8,
+            f"expected 3D spotlight snow base quad to use 8-tuple normals, got {len(h_snow_offbeam.quads[0]['verts'][0])}")
 
-    # Control: simulate pre-fix Snow3D (`vl_enable = False` -> raw Gaussian soft skirt in Shader #118 WBOIT)
+    # Behind-beam unlit snow: oblique spotlight at (-160, 0, 180) shooting (+0.85, 0, -0.52) across the center
+    # in front of an unlit snowflake at (0, 0, +520) (s_snow > s_beam) must ALSO be suppressed!
+    cam_spot_diag = {
+        "ltype": 5, "r": 0.0, "g": 1.0, "b": 1.0, "lum": 1.4, "unlit": 0.26,
+        "px": -180.0, "py": 0.0, "pz": 180.0,
+        "dx": -0.894427, "dy": 0.0, "dz": 0.447214,
+        "cos_ang": math.cos(math.radians(22.0)),
+    }
+    bus_behind: Dict[str, bytes] = {}
+    _run_vl(
+        [],
+        {"src_layer": 0, "cam_light_mode": 1, "length": 620.0, "decay": 8.0,
+         "intensity": 190.0, "occ_mode": 0},
+        bus_behind, layer_index=2, frame=3, camera=cam, cam_light_primary=cam_spot_diag, width=W, height=H,
+    )
+    h_snow_behind = _run_snow([], {**fg_snow_p, "area_x": 0.0, "area_z": 520.0}, bus_behind, frame=3, camera=cam, width=W, height=H)
+    require(len(h_snow_behind.quads) == 0,
+            f"unlit snow behind foreground oblique beam must be suppressed, got {len(h_snow_behind.quads)} quads")
+
+    # Faint penumbra snow (`amp_wb < 0.052`) on beam sightline must NOT leave an orphan `draw_wboit_base` grey circle:
+    h_snow_penumbra = _run_snow(
+        [], {**fg_snow_p, "area_z": 250.0, "vl_strength": 12.0}, bus_fg, frame=3, camera=cam, width=W, height=H
+    )
+    require(len(h_snow_penumbra.quads) != 1,
+            "penumbra snow left an orphan Pass-1b base quad without a matching lit glow quad")
+
+    img_beam_hw = composite_scene_3d(W, H, cam, [], h_vl.quads, oit_mode="wboit_hw118", camera_light=cam_spot)
+    img_fixed_hw = composite_scene_3d(
+        W, H, cam, [], list(h_vl.quads) + list(h_snow_fg.quads), oit_mode="wboit_hw118", camera_light=cam_spot
+    )
+
+    # Control: pre-fix Snow3D (`vl_enable = False` -> raw Gaussian soft skirt in live Shader #118 WBOIT)
     h_snow_legacy = _run_snow([], {**fg_snow_p, "vl_enable": False}, bus_fg, frame=3, camera=cam, width=W, height=H)
-    img_legacy = composite_scene_3d(W, H, cam, [], list(h_vl.quads) + list(h_snow_legacy.quads), camera_light=cam_spot)
+    img_legacy_hw = composite_scene_3d(
+        W, H, cam, [], list(h_vl.quads) + list(h_snow_legacy.quads), oit_mode="wboit_hw118", camera_light=cam_spot
+    )
 
-    legacy_drop_g = float(np.min(img_legacy[..., 1] - img_beam[..., 1]))
-    fixed_drop_g = float(np.min(img_fixed[..., 1] - img_beam[..., 1]))
-    fixed_drop_b = float(np.min(img_fixed[..., 2] - img_beam[..., 2]))
-    center_boost_r = float(img_fixed[H // 2, W // 2, 0] - img_beam[H // 2, W // 2, 0])
-    require(legacy_drop_g < -0.04,
-            f"expected legacy WBOIT control to reproduce dark soft-edge halo (< -0.04), got {legacy_drop_g:.4f}")
-    require(fixed_drop_g >= -0.008 and fixed_drop_b >= -0.008,
-            f"foreground snow darkened 3D spotlight beam: dG={fixed_drop_g:.5f}, dB={fixed_drop_b:.5f}")
-    require(center_boost_r > 0.02,
-            f"foreground unlit snow core disappeared completely over beam: dR={center_boost_r:.4f}")
+    legacy_drop_g = float(np.min(img_legacy_hw[..., 1] - img_beam_hw[..., 1]))
+    fixed_drop_g = float(np.min(img_fixed_hw[..., 1] - img_beam_hw[..., 1]))
+    fixed_drop_b = float(np.min(img_fixed_hw[..., 2] - img_beam_hw[..., 2]))
+    require(legacy_drop_g < -0.25,
+            f"expected live wboit_hw118 control to reproduce steep dark circle (< -0.25), got {legacy_drop_g:.4f}")
+    require(fixed_drop_g >= -0.001 and fixed_drop_b >= -0.001,
+            f"foreground snow darkened 3D spotlight beam in wboit_hw118: dG={fixed_drop_g:.5f}, dB={fixed_drop_b:.5f}")
+
+    # 1b) Third-round image-7/image-8 stress regression: 394 particles, oblique beam, 3D model shadow.
+    stress_w, stress_h = 640, 400
+    stress_spot = {
+        "ltype": 5, "r": 0.22, "g": 0.96, "b": 1.0, "lum": 1.65, "unlit": 0.35,
+        "px": 280.0, "py": -200.0, "pz": 350.0,
+        "dx": 0.72, "dy": -0.64, "dz": 0.268,
+        "cos_ang": math.cos(math.radians(19.0)),
+    }
+    stress_obj_path = assets.write_test_obj(REPO_ROOT / "sandbox" / "out" / "lf_snow_darkring_stress.obj", 110.0, scene_units=True)
+    stress_obj = Layer(
+        index=1, kind="obj", model_path=str(stress_obj_path),
+        effects={"モデルファイル": str(stress_obj_path)},
+        x=40.0, y=-20.0, z=220.0, zoom=100.0, alpha=1.0,
+    )
+    stress_bus: Dict[str, bytes] = {}
+    h_stress_vl = _run_vl(
+        [stress_obj],
+        {"src_layer": 0, "cam_light_mode": 1, "length": 1100.0, "decay": 10.0,
+         "intensity": 220.0, "occ_mode": 3, "occ_target": 1, "occ_strength": 100.0},
+        stress_bus, layer_index=5, frame=1, camera=cam, cam_light_primary=stress_spot,
+        width=stress_w, height=stress_h,
+    )
+    stress_snow_p = {
+        "count": 394, "psize": 28.0, "size_var": 45.0, "soft": 100,
+        "area_w": 1100.0, "area_h": 750.0, "area_d": 1500.0,
+        "area_x": 0.0, "area_y": 0.0, "area_z": -150.0,
+        "follow": False, "world_fixed": False,
+        "vl_enable": True, "vl_strength": 141.0, "vl_tint": 85.0, "vl_shade": 33.0, "vl_glow": 135.0,
+    }
+    h_stress_on = _run_snow([stress_obj], stress_snow_p, stress_bus, frame=1, camera=cam, width=stress_w, height=stress_h)
+    h_stress_off = _run_snow([stress_obj], {**stress_snow_p, "vl_enable": False}, stress_bus,
+                             frame=1, camera=cam, width=stress_w, height=stress_h)
+    beam_stress = composite_scene_3d(
+        stress_w, stress_h, cam, [], h_stress_vl.quads,
+        oit_mode="wboit_hw118", camera_light=stress_spot,
+    )
+    on_stress = composite_scene_3d(
+        stress_w, stress_h, cam, [], list(h_stress_vl.quads) + list(h_stress_on.quads),
+        oit_mode="wboit_hw118", camera_light=stress_spot,
+    )
+    off_stress = composite_scene_3d(
+        stress_w, stress_h, cam, [], list(h_stress_vl.quads) + list(h_stress_off.quads),
+        oit_mode="wboit_hw118", camera_light=stress_spot,
+    )
+    beam_px = beam_stress[..., 1] > 0.12
+    require(int(beam_px.sum()) > 10000, "394-particle stress scene did not generate a meaningful beam mask")
+    stress_old_drop = float(np.min(off_stress[..., 1][beam_px] - beam_stress[..., 1][beam_px]))
+    stress_new_drop = float(np.min(on_stress[..., 1][beam_px] - beam_stress[..., 1][beam_px]))
+    stress_dark_px = int((on_stress[..., 1][beam_px] - beam_stress[..., 1][beam_px] < -2.0 / 255.0).sum())
+    require(stress_old_drop < -0.08,
+            f"394-particle control failed to reproduce live dark rings: min_dG={stress_old_drop:.5f}")
+    require(stress_new_drop >= -0.001 and stress_dark_px == 0,
+            f"394-particle live-HW118 fix left dark beam pixels: min_dG={stress_new_drop:.5f}, dark_px={stress_dark_px}")
 
     # 2) Backlit lit snow at (0, 0, +250) inside spotlight cone with unlit=0.0:
     cam_spot_zero = {**cam_spot, "unlit": 0.0}
@@ -677,14 +764,16 @@ def spotlight_3d_wboit_soft_edge_and_backlit_normals():
     for q in h_snow_bk.quads:
         vn = q["verts"][0][5:8]
         require(vn[2] > 0.99, f"backlit lit snow normal must face +Z spotlight (got {vn})")
-    img_beam_bk = composite_scene_3d(W, H, cam, [], h_vl_bk.quads, camera_light=cam_spot_zero)
-    img_snow_bk = composite_scene_3d(W, H, cam, [], list(h_vl_bk.quads) + list(h_snow_bk.quads), camera_light=cam_spot_zero)
+    img_beam_bk = composite_scene_3d(W, H, cam, [], h_vl_bk.quads, oit_mode="wboit_hw118", camera_light=cam_spot_zero)
+    img_snow_bk = composite_scene_3d(
+        W, H, cam, [], list(h_vl_bk.quads) + list(h_snow_bk.quads), oit_mode="wboit_hw118", camera_light=cam_spot_zero
+    )
     backlit_gain_g = float(np.max(img_snow_bk[..., 1] - img_beam_bk[..., 1]))
     backlit_drop_g = float(np.min(img_snow_bk[..., 1] - img_beam_bk[..., 1]))
     require(backlit_gain_g > 0.12,
             f"backlit snow inside 3D spotlight cone failed to illuminate at unlit=0: dG={backlit_gain_g:.4f}")
     require(backlit_drop_g >= -0.008,
-            f"backlit lit snow created dark ring over 3D spotlight beam: dG={backlit_drop_g:.5f}")
+            f"backlit lit snow created dark ring over 3D spotlight beam in wboit_hw118: dG={backlit_drop_g:.5f}")
 
     # 3) 3D .obj cast shadow inside spotlight cone:
     #    - At unlit=0.0 (100% spotlight brightness, zero ambient), occluded beam-overlapping snow is culled (0 black hole)
@@ -790,19 +879,44 @@ def lightfield_edit_camera_and_status():
         "follow": False, "world_fixed": False,
         "vl_enable": True, "vl_strength": 150.0, "vl_shade": 20.0, "log_mode": True,
     }
-    h_snow_edit = _run_snow([], fg_edit_snow, bus, frame=4, camera=tl_cam, camera_mode=2, width=W, height=H)
-    require(len(h_snow_edit.quads) == 1, f"expected 1 foreground quad in Edit Camera mode, got {len(h_snow_edit.quads)}")
-    vs = h_snow_edit.quads[0]["verts"]
+    # 1) Unlit foreground snow ON the Edit Camera beam sightline `(620, 0, 0)` must be suppressed (`0` dark drop):
+    h_snow_edit_onbeam = _run_snow([], fg_edit_snow, bus, frame=4, camera=tl_cam, camera_mode=2, width=W, height=H)
+    require(len(h_snow_edit_onbeam.quads) == 0,
+            f"Edit Camera unlit snow on beam sightline must be suppressed, got {len(h_snow_edit_onbeam.quads)}")
+
+    # 2) Unlit snow OFF the beam sightline `(620, 480, 0)` must render 1 quad facing `+X` Edit Camera:
+    h_snow_edit_offbeam = _run_snow(
+        [], {**fg_edit_snow, "area_y": 480.0}, bus, frame=4, camera=tl_cam, camera_mode=2, width=W, height=H
+    )
+    require(len(h_snow_edit_offbeam.quads) == 1,
+            f"expected 1 off-beam quad in Edit Camera mode, got {len(h_snow_edit_offbeam.quads)}")
+    vs = h_snow_edit_offbeam.quads[0]["verts"]
     span_x = max(v[0] for v in vs) - min(v[0] for v in vs)
     span_z = max(v[2] for v in vs) - min(v[2] for v in vs)
     require(span_z > 25.0 and span_x < 1.0,
             f"Edit Camera billboard failed to face +X camera (span_x={span_x:.2f}, span_z={span_z:.2f})")
 
-    img_beam_ed = composite_scene_3d(W, H, edit_cam, [], h_vl.quads, camera_light=cam_spot)
-    img_snow_ed = composite_scene_3d(W, H, edit_cam, [], list(h_vl.quads) + list(h_snow_edit.quads), camera_light=cam_spot)
+    # 3) Illuminated snow inside the spotlight cone `(-120, 0, 0)` in Edit Camera mode must face `+X` and brighten cleanly:
+    h_snow_edit_lit = _run_snow(
+        [], {**fg_edit_snow, "psize": 36.0, "area_x": -120.0}, bus, frame=4, camera=tl_cam, camera_mode=2, width=W, height=H
+    )
+    require(len(h_snow_edit_lit.quads) >= 2,
+            f"expected lit base + glow quads inside cone in Edit Camera mode, got {len(h_snow_edit_lit.quads)}")
+    vs_lit = h_snow_edit_lit.quads[0]["verts"]
+    span_x_lit = max(v[0] for v in vs_lit) - min(v[0] for v in vs_lit)
+    span_z_lit = max(v[2] for v in vs_lit) - min(v[2] for v in vs_lit)
+    require(span_z_lit > 18.0 and span_x_lit < 1.0,
+            f"Edit Camera lit billboard failed to face +X camera (span_x={span_x_lit:.2f}, span_z={span_z_lit:.2f})")
+
+    img_beam_ed = composite_scene_3d(W, H, edit_cam, [], h_vl.quads, oit_mode="wboit_hw118", camera_light=cam_spot)
+    img_snow_ed = composite_scene_3d(
+        W, H, edit_cam, [], list(h_vl.quads) + list(h_snow_edit_onbeam.quads) + list(h_snow_edit_lit.quads),
+        oit_mode="wboit_hw118", camera_light=cam_spot,
+    )
     drop_ed = float(np.min(img_snow_ed[..., 1] - img_beam_ed[..., 1]))
-    require(drop_ed >= -0.008,
-            f"Edit Camera foreground snow left dark ring over 3D spotlight beam: dG={drop_ed:.5f}")
+    gain_ed = float(np.max(img_snow_ed[..., 1] - img_beam_ed[..., 1]))
+    require(drop_ed >= -0.008 and gain_ed > 0.10,
+            f"Edit Camera snow WBOIT failed (drop_ed={drop_ed:.5f}, gain_ed={gain_ed:.4f})")
 
     # Fading particle (`obj.alpha = 0.04`) overlapping beam must skip Pass 1b instead of punching a dark hole:
     h_snow_fade = _run_snow(
