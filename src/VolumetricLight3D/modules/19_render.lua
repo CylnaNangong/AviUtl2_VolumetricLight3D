@@ -189,6 +189,43 @@ local function vl_bf_render()
     end
     local KNOT_M = { -8.0, -2.6, -0.95, -0.32, 0.0, 0.32, 0.95, 2.6, 8.0 }
 
+    if (VL_BF.n_occ_active or 0) == 0 then pcall(function() obj.clearbuffer(VL_BF.occ_tex_name, 4, 4) end) end
+    if (VL_BF.sh3d_active or 0) < 0.5 then pcall(function() obj.clearbuffer(VL_BF.shmap_tex_name, 4, 4) end) end
+    if (VL_BF.camocc_active or 0) < 0.5 then pcall(function() obj.clearbuffer(VL_BF.camocc_tex_name, 4, 4) end) end
+
+    if VL_BF.ps_ok then
+        do
+            local has_c3d = (cl_pr ~= nil) and (cb_ltype > 0.5) and not cli_r.suppressed
+            local c3d_pos = has_c3d and (cb_ltype > 2.5)
+            local base_u_lf = cb_unlit + cb_other_lum
+            local h_unlit_max = has_c3d and math.max(
+                0.0,
+                base_u_lf + cb_amb_r,
+                base_u_lf + cb_amb_g,
+                base_u_lf + cb_amb_b
+            ) or 1.0
+            local h_core_pk = has_c3d and math.max(
+                1.0,
+                base_u_lf + cb_amb_r + cb_cl_r,
+                base_u_lf + cb_amb_g + cb_cl_g,
+                base_u_lf + cb_amb_b + cb_cl_b
+            ) or 1.0
+            local l_rdx = has_c3d and -def_lwx or (VL_BF.cam_ray_dx or 0.0)
+            local l_rdy = has_c3d and -def_lwy or (VL_BF.cam_ray_dy or 0.0)
+            local l_rdz = has_c3d and -def_lwz or (VL_BF.cam_ray_dz or 1.0)
+            vl_lf_publish(
+                spot_ray_env_mode,
+                cb_tgt_r, cb_tgt_g, cb_tgt_b,
+                cb_cl_px, cb_cl_py, cb_cl_pz,
+                l_rdx, l_rdy, l_rdz,
+                cb_in_rad, cb_out_rad, cb_att_k,
+                has_c3d, c3d_pos, h_core_pk, h_unlit_max
+            )
+        end
+    else
+        vl_lf_withdraw()
+    end
+
     for ch = VL_BF.ch_first, VL_BF.ch_last, VL_BF.ch_step do
         if not VL_BF.ps_ok then break end
         local ch_start = ch * 64
@@ -407,6 +444,9 @@ local function vl_bf_render()
             obj.drawpoly(verts, 4, VL_BF.poly_alpha)
             VL_BF.total_v = VL_BF.total_v + vi
         end
+    end
+    if not VL_BF.ps_ok then
+        vl_lf_withdraw()
     end
 
     -- 前景なじませ（AutoBlendLight 統合パス：ON 時のみ指定2D前景レイヤーへ逆光/縁取り/環境乗算を適用）

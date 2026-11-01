@@ -76,6 +76,11 @@
     },
     {
       "kind": "pixelshader",
+      "name": "ps_vl_lfpack",
+      "path": "shaders/ps_vl_lfpack.hlsl"
+    },
+    {
+      "kind": "pixelshader",
       "name": "beamatlas",
       "path": "shaders/beamatlas.hlsl"
     },
@@ -146,6 +151,10 @@
     {
       "kind": "lua",
       "path": "modules/18_autoblend.lua"
+    },
+    {
+      "kind": "lua",
+      "path": "modules/18b_lightfield.lua"
     },
     {
       "kind": "lua",

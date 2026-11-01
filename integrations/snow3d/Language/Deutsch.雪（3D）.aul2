@@ -1,0 +1,126 @@
+;===============================================================
+; Target: Schnee (3D) v1.23 (雪（3D）.obj2)
+; Language: Deutsch
+; Place this file in  C:\ProgramData\aviutl2\Language\\
+;===============================================================
+
+[Language]
+Information=Schnee (3D) v1.23 Sprachpaket Deutsch
+SubLanguage=English
+
+[Effect]
+雪（3D）=Schnee (3D)
+
+[雪（3D）]
+雪（3D）=Schnee (3D)
+
+; --- 雪 -> Schnee ---
+雪=Schnee
+粒子数=Partikelanzahl
+粒径=Partikelgröße
+大きさのばらつき=Größenvariation
+図形=Form
+エッジのぼかし=Randunschärfe
+雪の色=Schneefarbe
+
+; --- 運動 -> Bewegung ---
+運動=Bewegung
+初速X=Startgeschw. X
+初速Y=Startgeschw. Y
+初速Z=Startgeschw. Z
+初速のばらつき=Startstreuung
+重力=Schwerkraft
+風X=Wind X
+風Y=Wind Y
+風Z=Wind Z
+揺れ幅=Pendelweite
+揺れ速さ=Pendeltempo
+回転速度=Drehgeschwindigkeit
+
+; --- 領域 -> Bereich ---
+領域=Bereich
+領域の余裕=Bereichsrand
+幅(X)=Breite (X)
+高さ(Y)=Höhe (Y)
+奥行き(Z)=Tiefe (Z)
+中心X=Zentrum X
+中心Y=Zentrum Y
+中心Z=Zentrum Z
+画面サイズに同期=An Bildgröße koppeln
+壁を画面の外へ=Grenzen außerhalb halten
+カメラに追従=Kamera folgen
+世界座標に固定=Weltkoordinaten-fest
+折り返しのぼかし=Umbruch-Weichheit
+領域の枠を表示=Bereichsrahmen zeigen
+
+; --- 寿命 -> Lebensdauer ---
+寿命=Lebensdauer
+移動時間から自動=Auto aus Flugzeit
+生存時間=Lebenszeit
+出現フェード=Einblenden
+消滅フェード=Ausblenden
+
+; --- 描画 -> Darstellung ---
+描画=Darstellung
+奥行き減衰=Tiefenausblendung
+近景カット=Nahbereich ausblenden
+近景カット距離=Nahbereich-Distanz
+奥行き順に描画=Tiefensortierung
+ログに描画モードを出力=Rendermodus protokollieren
+乱数シード=Zufalls-Seed
+
+; --- 体積光連動 -> Volumenlicht-Kopplung ---
+体積光連動=Volumenlicht-Kopplung
+体積光に照らされる=Vom Volumenlicht beleuchtet
+受光の強さ=Lichtstärke-Reaktion
+光色の染まり=Lichtfarben-Färbung
+光束外・影の減光=Abdunklung im Schatten
+発光の広がり=Streulicht-Größe
+
+[Tips.雪（3D）]
+effect.name=Echte 3D-Partikel (Schnee, Blüten, Staub, Funken) als kamerazugewandte Billboards unter AviUtl2-Kamerasteuerung, inkl. 3D-Lichtfeld- & Schattenkopplung mit Volumenlicht (3D) v3.16+.
+粒子数=Anzahl der gleichzeitig im Bereich vorhandenen Partikel (1–4000).
+粒径=Durchmesser eines einzelnen Partikels in Pixeln.
+大きさのばらつき=Zufällige Schwankung der Partikelgröße (0–100 %).
+図形=Eingebaute oder eigene SVG/PNG-Form in AviUtl2, die als Partikeltextur verwendet wird.
+エッジのぼかし=0 = zeichnet die gewählte Form unverändert (für weiche SVGs auf 0 lassen). Über 0 erzeugt ein gepolsterter GPU-Gauß-Weichzeichner weiche Kanten unter voller Erhaltung beliebiger Formkonturen; bei Fehler Rückfall auf Originalform.
+雪の色=Grundfarbe, mit der die Partikeltextur eingefärbt wird.
+初速X=Anfangsgeschwindigkeit entlang X. Positiv = nach rechts, negativ = nach links.
+初速Y=Anfangsgeschwindigkeit entlang Y. Positiv = nach unten (Schnee), negativ = nach oben (Funken).
+初速Z=Anfangsgeschwindigkeit entlang Z. Positiv = von der Kamera weg, negativ = zur Kamera hin.
+初速のばらつき=Streuungswinkel des Kegels um den Anfangsgeschwindigkeitsvektor (0–85 Grad).
+重力=Beschleunigung entlang Y. Positiv = nach unten fallend, negativ = nach oben aufsteigend.
+風X=Konstante Winddrift entlang X. Positiv = nach rechts.
+風Y=Konstante Winddrift entlang Y. Positiv = nach unten.
+風Z=Konstante Winddrift entlang Z. Positiv = in die Tiefe.
+揺れ幅=Amplitude des seitlichen und tiefen Pendelns in Pixeln.
+揺れ速さ=Frequenz der Pendelbewegung in Schwingungen pro Sekunde (Hz).
+回転速度=Drehgeschwindigkeit jedes Partikels in Grad pro Sekunde.
+領域の余裕=Zusätzlicher Rand um das Bild bei aktivem „An Bildgröße koppeln“ (0–200 %, Standard 20 %).
+幅(X)=Breite des quaderförmigen Emissionsbereichs entlang X.
+高さ(Y)=Höhe des Emissionsbereichs entlang Y; dient auch zur automatischen Lebenszeitberechnung.
+奥行き(Z)=Tiefe des Emissionsbereichs entlang Z; größere Werte sorgen für starke Tiefenparallaxe.
+中心X=X-Versatz des Bereichszentrums relativ zum Objekt.
+中心Y=Y-Versatz des Bereichszentrums relativ zum Objekt.
+中心Z=Z-Versatz des Bereichszentrums relativ zum Objekt.
+画面サイズに同期=Koppelt Breite und Höhe automatisch an die Projekt-Bildgröße.
+壁を画面の外へ=Vergrößert die Umbruchbox anhand von Kamerabrennweite und Distanz, damit Ränder außerhalb des Bilds bleiben.
+カメラに追従=Führt den Emissionsbereich mit dem Kameraziel mit, sodass das Schneefeld nie das Bild verlässt.
+世界座標に固定=Verankert Partikelbahnen fest im Weltkoordinatensystem mit nahtlosem Umbruch für echte 3D-Parallaxe.
+折り返しのぼかし=Weiche Überblendbreite an den Umbruchgrenzen als Vielfaches der Partikelgröße (Standard 40).
+領域の枠を表示=Zeichnet einen türkisfarbenen 3D-Hilfsrahmen des Bereichs; vor dem Export deaktivieren.
+移動時間から自動=Berechnet die Lebenszeit automatisch aus Geschwindigkeit, Bereichsgröße und Schwerkraft.
+生存時間=Manuelle Lebenszeit in Sekunden (aktiv, wenn „Auto aus Flugzeit“ ausgeschaltet ist).
+出現フェード=Einblenddauer bei Entstehung in Prozent der Lebenszeit.
+消滅フェード=Ausblenddauer vor dem Verschwinden in Prozent der Lebenszeit.
+奥行き減衰=Luftperspektivische Abschwächung entfernter Partikel für mehr Tiefenwirkung.
+近景カット=Blendet Partikel näher als „Nahbereich-Distanz“ per Smoothstep-Rampe flackerfrei aus, damit keine riesigen Flocken direkt vor der Linse kleben.
+近景カット距離=Abstand entlang der Blickachse, bei dem die Deckkraft 0 erreicht; volle Deckkraft ab dem 1,6-Fachen (typisch: 100–300 px).
+奥行き順に描画=Sortiert Partikel nach Kameratiefe von hinten nach vorn für saubere Halbtransparenz.
+ログに描画モードを出力=Protokolliert bei Moduswechsel den aktiven Rendermodus (soft-vertex / figure-texture / flat-circle) samt Partikel- und Vertexzahl.
+乱数シード=Zufalls-Seed zur Änderung der anfänglichen Partikelverteilung.
+体積光に照らされる=Empfängt das geteilte 3D-Lichtfeld von Volumenlicht (3D) v3.16+ in derselben Szene: Partikel im Lichtkegel leuchten auf und bleiben in 3D-/2D-Schlagschatten sowie hinter Vordergrundmasken unbeleuchtet.
+受光の強さ=Beleuchtungsstärke für Partikel im unverschatteten Volumenlicht (0–300 %, Standard 120 %).
+光色の染まり=Wie stark beleuchtete Partikel die lokale Strahlfarbe (inkl. Buntglas) annehmen (0–100 %).
+光束外・影の減光=Dunkelt Partikel außerhalb des Strahls und in 3D-/2D-Schatten bei aktivem Volumenlicht ab (0–100 %; 90–100 % für reine Tyndall-Staubpartikel).
+発光の広がり=Größenfaktor des Vorwärtsstreu-Halos beleuchteter Partikel (100–280 %, Standard 135 %).

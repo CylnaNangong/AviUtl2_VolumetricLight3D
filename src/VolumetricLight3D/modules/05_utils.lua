@@ -34,15 +34,35 @@ local function parse_layer_list(spec, skip_a, skip_b)
     return out
 end
 
+local function is_volume_fx_name(lfnm)
+    if type(lfnm) ~= "string" or lfnm == "" then return false end
+    return lfnm == "雪（3D）"
+        or lfnm == "3D雪"
+        or lfnm == "Snow (3D)"
+        or lfnm == "Schnee (3D)"
+        or lfnm == "VolumetricLight3D"
+        or lfnm == "体積光（3D）"
+        or lfnm == "体积光（3D）"
+        or lfnm == "Volumetric Light (3D)"
+        or lfnm == "Volumenlicht (3D)"
+        or lfnm == "VolumetricFog3D"
+        or lfnm == "体積霧（3D）"
+        or lfnm == "体积雾（3D）"
+        or lfnm == "Volumetric Fog (3D)"
+        or lfnm == "Volumennebel (3D)"
+end
+
 local function is_volume_effect_layer(oln)
     local hit = false
     pcall(function()
         local lp = "layer" .. tostring(oln) .. "."
-        if obj.getvalue(oln, "体積光（3D）", "強さ") ~= nil
+        if obj.getvalue(oln, "VolumetricLight3D", "強さ") ~= nil
+            or obj.getvalue(oln, "体積光（3D）", "強さ") ~= nil
             or obj.getvalue(oln, "体积光（3D）", "发光强度") ~= nil
             or obj.getvalue(oln, "体积光（3D）", "强度") ~= nil
             or obj.getvalue(oln, "Volumetric Light (3D)", "Intensity") ~= nil
             or obj.getvalue(oln, "Volumenlicht (3D)", "Intensität") ~= nil
+            or obj.getvalue(lp .. "VolumetricLight3D.強さ") ~= nil
             or obj.getvalue(lp .. "体積光（3D）.強さ") ~= nil
             or obj.getvalue(lp .. "体积光（3D）.发光强度") ~= nil
             or obj.getvalue(oln, "VolumetricFog3D", "濃さ") ~= nil

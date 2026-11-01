@@ -1,0 +1,20 @@
+[ Snow3D / 雪（3D） / 3D Snow — v1.23 ]
+
+面向 AviUtl ExEdit2 的真·3D 雪粒子系统自定义物件（v1.23）。
+最多 4000 片雪花拥有独立三维位置/速度/重力/风场/摆动，作为真 3D 几何绘制、
+与人物建筑自然前后遮挡；支持与「体积光（3D）v3.16+」共享真 3D 光场与遮挡阴影
+（光束内雪花染光发亮、进入 3D/2D 阴影柱或前景遮罩后自动熄灭）。纯脚本零插件依赖。
+
+THE REAL 3D snow particle system custom object (v1.23) for AviUtl ExEdit2.
+Up to 4000 snowflakes with independent 3D position, velocity, gravity, wind and
+sway, drawn as true 3D geometry with natural depth occlusion, plus real-time 3D
+light-field and cast-shadow sync with VolumetricLight3D v3.16+.
+Pure script with zero plugin dependencies.
+
+AviUtl ExEdit2 用「真・3D」雪パーティクル（v1.23）。
+最大 4000 片が独立した 3D 位置・速度・重力・風・揺れを持ち、真の 3D ジオメトリ
+として描画。「体積光（3D）v3.16+」との 3D 光場・投影遮蔽影共有を搭載（光束内で輝き、
+3D/2D 影柱では消灯）。プラグイン不要の純スクリプト。
+
+作者 / 作者 / Authors: 南宮若馨Cylna (Cylna Nangong) & Arena.ai Agent
+反馈 / 報告 / Feedback: GitHub Issues 或 Discord「AviUtl2の情報が知りたいだろって‼」@nangongerregtcylna

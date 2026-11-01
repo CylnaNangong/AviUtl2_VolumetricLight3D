@@ -226,6 +226,7 @@ function AB.run_foreground_blend()
                     local skip_2d = (lstat == "EMPTY" or lstat == "HIDDEN" or lstat == "DISABLED"
                         or lstat == "OBJ" or lstat == "VRM" or lstat == "WATER"
                         or lfnm == "カメラ制御" or lfnm == "音声ファイル"
+                        or is_volume_fx_name(lfnm)
                         or has_3d_or_water_signature(oln) ~= nil)
                     if not skip_2d then
                         local is_txt, afx, afy, pl, pr, pt, pb = resolve_text_align_for_layer(oln, cur_frame, linfo, aup2_hints)

@@ -86,7 +86,8 @@ local function vl_bf_occlusion()
                     local lfnm  = linfo and linfo.fx_name or ""
                     local skip_2d = (lstat == "EMPTY" or lstat == "HIDDEN" or lstat == "DISABLED"
                         or lstat == "OBJ" or lstat == "VRM" or lstat == "WATER"
-                        or lfnm == "カメラ制御" or lfnm == "音声ファイル")
+                        or lfnm == "カメラ制御" or lfnm == "音声ファイル"
+                        or is_volume_fx_name(lfnm))
                     if mesh3d ~= nil then
                         models_3d[#models_3d + 1] = {
                             layer = oln, kind = mkind, mesh = mesh3d,

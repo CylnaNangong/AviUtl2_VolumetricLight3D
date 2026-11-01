@@ -1,5 +1,25 @@
 # 更新历史 — 体积光（3D） / VL3DBridge
 
+## v3.16（2026-10-31）· 跨脚本共享真 3D 光场与遮挡阴影协议（`VL3DLF v3`）& `Snow3D（雪（3D））v1.23` 丁达尔受光/阴影联动
+
+- **新增跨脚本真 3D 光场发布器（`ps_vl_lfpack.hlsl` + `18b_lightfield.lua`，协议 `VL3DLF v3`）**：
+  - **单次 GPU 打包、零额外缓存开销**：在 `beamatlas` 覆写 `"object"` 前，利用 `48×48` / `48×96` / `48×114` 单次像素着色器调用（`ps_vl_lfpack`）将三大物理场一次性打包并写出至官方跨脚本共享表 `global["VL3D_LF:<scene_id>:<layer>"]` 与索引 `global["VL3D_LF_IDX:<scene_id>"]`（`+0` 峰值缓存像素、零新增 UI 参数）：
+    1. **Band 0（`48×48` 光源辐射亮度场）**：保留阈值过滤后的局部光强与彩绘玻璃多色光 RGB；
+    2. **Band 1（`48×48` 光线投射阴影深度场，16-bit 精度）**：在 GPU 上统一融合 `.obj`/`.vrm` 3D 阴影贴图（`g_shmap`）与最多 8 层 2D 遮挡平面光线求交（`g_occ`），精确记录每条体积光线首次被遮挡的深度 `t_occ`；
+    3. **Band 2（`48×18` 相机空间前景遮罩深度场，16-bit 精度）**：统一融合 3D 模型相机深度图（`g_camocc`）与 2D 前景剪影平面视向深度，支持 `occ_mode = 2 / 3` 前景轮廓保护。
+  - **全純 7-bit ASCII Base64 传输封包（`VL3DB64:...`）与严密生命周期管理**：所有跨脚本字符串均不含任何 `\0` 字节，彻底免疫宿主 C++ 桥接层 `lua_tostring` / `c_str()` 截断风险；严格按 `scene_id` 隔离主合成与子场景，并在强度归零、源图层失效或异常回退时通过 `vl_lf_withdraw()` 立即撤回槽位，杜绝跨场景串光与停用残光。
+- **体积光与粒子图层互不误遮挡加固（`05_utils.lua` / `17_occlusion_pipeline.lua` / `18_autoblend.lua`）**：
+  - 统一抽取 `is_volume_fx_name()`，自动排除日/中/英/德多语言环境下的 `雪（3D）` / `Snow3D` 及其他 `VolumetricLight3D` 图层被误捕获为 2D 剪影遮挡物或前景逆光融合目标。
+- **配套交付 `Snow3D（雪（3D））v1.23`（位于 `integrations/snow3d/`，含一键同步脚本 `apply_to_snow3d.py`）**：
+  - 新增「体积光联动」折叠参数组（受体积光照亮 / 受光强度 / 光色染色度 / 光束外与阴影压暗 / 受光晕染范围）及中英德四语 `.aul2` 完整词条与悬停提示；实现**光束内雪花按局部光强与彩绘玻璃颜色发亮，进入 3D/2D 阴影柱或前景遮罩后自动熄灭（“能够被照亮 + 被遮挡就不亮”）**，无体积光时与 `v1.22` 逐顶点逐像素完全一致。
+  - **根治 3D 摄像机控制模式下雪花柔边变黑（`Shader #118` WBOIT 权重劫持）、视角切换（`camera_mode == 2` 编辑自由相机）同步及逆光背光面熄灭（两轮真机 `v2.1.16` 实测反馈闭环修复）**：
+    - 真机像素核验确认：在 `AviUtl2 v2.1.16` 3D 摄像机通道（`カメラ制御の対象` 开启）中，脚本内调用 `obj.setoption("blend", "add")` **不会绕过** `Shader #118`（`0x1404404b0`）WBOIT 累加器，且开启「视角切换」（`camera_mode == 2` 编辑相机）时 `obj.getoption("camera_param")` 仍返回时间轴相机。
+    - `VL3DLF v3` 扩展至 `320` 字节头（`flags` 新增 `bit 7=has_cam_3d_light`、`bit 8=cam_light_is_pos`、`bit 9=has_ext_cam`，追加实时渲染相机基底 `cam_x..z / f / r / d / focal_d` 与宿主背光上界 `host_unlit_max`），同时修正 `H_host` HDR 峰值重复增益、2D `light_color` 二次平方染色及 `15_frame_prepare.lua` 中 `obj.load("layer", ln, true)` 返回值判定。
+    - `image-7.png`（联动关闭）/ `image-8.png`（联动开启）第三轮真机截图对比发现旧 `probe_ray_behind` 的剩余漏检：有限轴向点采样未覆盖所有光束视线，且未将真实光源锥、投影阴影深度与相机前景 holdout 纳入逐点判定；因此少数屏幕上重叠的未受光雪花仍落入普通 Shader #118 WBOIT，留下黑圆边。现在改为完整相机射线求交（轴向 9 点 + 聚光极值点），逐点核验辐射有效性、3D/2D 投影阴影深度及相机前景遮罩；所有光束视线上的未受光粒子均不提交到 WBOIT，光束视线外的粒子仍正常渲染。
+    - 受光 WBOIT 的 base pass 现在只覆盖仍通过稳定受光阈值的粒子；低于阈值时同步撤销受光标记，避免遗留无配套光晕的灰色底片。`camera_mode == 2` 实时编辑相机同步、`VL3DLF v3` 320B 头和反向光源法线维持不变。
+    - 为受光/遮挡粒子分别赋予朝向/背离 3D 光源的 8 元顶点法线（既消除逆光 `max(0, N·L)=0` 变暗，又防止硬件光源穿透 3D 阴影柱照亮遮挡雪花）。
+- **沙箱端到端光学与阴影测试扩充（108 PASS / 0 FAIL / 0 WARN）**：同步修正 `sandbox/vl3dsb/compositor3d.py` 使 3D 相机模式下所有 `drawpoly`（含 `"add"`）均真实流经 `Shader #118` WBOIT + `H_host(wp, N)` 法线着色，新增/扩充 `sandbox/checks/checks_12_lightfield.py` 至 10 项大类检查（覆盖平行光/点光源发散/汇聚光/相机 3D 聚光灯、真 WBOIT 下前景柔边零黑环与 `unlit=0` 防黑洞、逆光受光、`camera_mode == 2` 编辑相机 90° 侧视同步与残影剔除、`WAIT/IDLE` 状态机、斜向 3D `.obj` 与 2D 投射阴影柱消光、前景遮罩前后分层、彩绘玻璃红蓝分色与暗铅条消光、对象旋转变换、多光源叠加、子场景隔离与撤回清理），详见 `docs/LIGHTFIELD_SYNC.zh.md` 与 `sandbox/docs/DSH_HANDOFF_v3.16_Snow3D_v1.23.zh.md`。
+
 ## v3.15（2026-10-31）· AviUtl ExEdit2 v2.1.16 完整适配 & VL3DBridge v1.22 修复内置文本对齐/描边 SDK 覆盖缺陷 & ASLR 不变 SHA-256
 
 - **AviUtl ExEdit2 `v2.1.16`（2026-10-31 发布）与官方 Plugin SDK `[2026/10/31]` 完整适配**：

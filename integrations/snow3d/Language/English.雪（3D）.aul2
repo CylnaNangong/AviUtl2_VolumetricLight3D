@@ -1,0 +1,126 @@
+;===============================================================
+; Target: Snow (3D) v1.23 (雪（3D）.obj2)
+; Language: English
+; Place this file in  C:\ProgramData\aviutl2\Language\\
+;===============================================================
+
+[Language]
+Information=Snow (3D) v1.23 English Language Pack
+SubLanguage=English
+
+[Effect]
+雪（3D）=Snow (3D)
+
+[雪（3D）]
+雪（3D）=Snow (3D)
+
+; --- 雪 -> Snow ---
+雪=Snow
+粒子数=Particles
+粒径=Particle Size
+大きさのばらつき=Size Variation
+図形=Shape
+エッジのぼかし=Edge Softness
+雪の色=Snow Color
+
+; --- 運動 -> Motion ---
+運動=Motion
+初速X=Initial Velocity X
+初速Y=Initial Velocity Y
+初速Z=Initial Velocity Z
+初速のばらつき=Initial Spread
+重力=Gravity
+風X=Wind X
+風Y=Wind Y
+風Z=Wind Z
+揺れ幅=Sway Amount
+揺れ速さ=Sway Speed
+回転速度=Spin Speed
+
+; --- 領域 -> Area ---
+領域=Area
+領域の余裕=Area Margin
+幅(X)=Width (X)
+高さ(Y)=Height (Y)
+奥行き(Z)=Depth (Z)
+中心X=Center X
+中心Y=Center Y
+中心Z=Center Z
+画面サイズに同期=Sync to Frame Size
+壁を画面の外へ=Keep Walls Off-Frame
+カメラに追従=Follow Camera
+世界座標に固定=World-Fixed
+折り返しのぼかし=Wrap Softness
+領域の枠を表示=Show Area Box
+
+; --- 寿命 -> Life ---
+寿命=Life
+移動時間から自動=Auto from Travel Time
+生存時間=Lifetime
+出現フェード=Fade In
+消滅フェード=Fade Out
+
+; --- 描画 -> Render ---
+描画=Render
+奥行き減衰=Depth Fade
+近景カット=Cull Near
+近景カット距離=Near Cull Distance
+奥行き順に描画=Depth Sorting
+ログに描画モードを出力=Log Render Mode
+乱数シード=Random Seed
+
+; --- 体積光連動 -> Volumetric Light Sync ---
+体積光連動=Volumetric Light Sync
+体積光に照らされる=Lit by Volumetric Light
+受光の強さ=Light Response
+光色の染まり=Beam Color Tint
+光束外・影の減光=Shadow / Out-of-Beam Dim
+発光の広がり=Scatter Glow Size
+
+[Tips.雪（3D）]
+effect.name=True 3D particles (snow, petals, dust, embers) drawn as camera-facing billboards under AviUtl2 Camera Control, with real-time 3D light-field and shadow coupling for Volumetric Light (3D) v3.16+.
+粒子数=How many particles exist in the area at once (1-4000).
+粒径=Diameter of one particle in pixels.
+大きさのばらつき=Random variation of particle size (0-100%).
+図形=Built-in or custom SVG/PNG AviUtl2 figure used as the particle texture.
+エッジのぼかし=0 = draws the chosen figure as-is (keep at 0 for pre-softened SVGs). Above 0 applies a padded GPU Gaussian blur that preserves any custom/built-in shape outline while softening its edges; falls back to the original shape on error.
+雪の色=Color tint applied to the particle texture.
+初速X=Initial velocity along X. Positive = right, negative = left.
+初速Y=Initial velocity along Y. Positive = downward (snow), negative = upward (embers/fireflies).
+初速Z=Initial velocity along Z. Positive = away from camera, negative = toward camera.
+初速のばらつき=Cone spread angle around the initial velocity vector (0-85 degrees).
+重力=Acceleration along Y. Positive = downward gravity, negative = upward lift.
+風X=Constant wind drift along X. Positive = right.
+風Y=Constant wind drift along Y. Positive = down.
+風Z=Constant wind drift along Z. Positive = away from camera.
+揺れ幅=Amplitude of left-right / front-back swaying in pixels.
+揺れ速さ=Frequency of swaying in cycles per second (Hz).
+回転速度=billboard rotation speed of each particle (degrees per second).
+領域の余裕=Extra margin added around the frame when Sync to Frame Size is active (0-200%, default 20%).
+幅(X)=Width of the box-shaped emission area along X.
+高さ(Y)=Height of the emission area along Y; also used for automatic lifetime.
+奥行き(Z)=Depth of the emission area along Z; larger values create deeper foreground/background parallax.
+中心X=X offset of the emission area center relative to this object.
+中心Y=Y offset of the emission area center relative to this object.
+中心Z=Z offset of the emission area center relative to this object.
+画面サイズに同期=Locks area width and height to the project frame dimensions so particles fill any resolution.
+壁を画面の外へ=Automatically expands the wrap box from camera focal length and distance so wrap seams stay off-screen.
+カメラに追従=Moves the active emission box with the camera target so particles never run out of view.
+世界座標に固定=Keeps particles anchored in world space with modulo tiling around the moving camera for true 3D parallax.
+折り返しのぼかし=Soft fade width near wrap boundaries as a multiple of particle size (30-50 hides wrap seams cleanly).
+領域の枠を表示=Draws a cyan 3D wireframe box of the emission volume for layout; turn off before rendering.
+移動時間から自動=Computes particle lifetime automatically from initial velocity, box size, and gravity.
+生存時間=Manual particle lifetime in seconds (used when Auto from Travel Time is off).
+出現フェード=Fade-in duration at birth as a percentage of lifetime.
+消滅フェード=Fade-out duration before death as a percentage of lifetime.
+奥行き減衰=Aerial-perspective fade applied to distant particles for depth sense.
+近景カット=When on, particles closer than Near Cull Distance smoothly fade out via a smoothstep ramp so lens-hugging flakes never block the frame or flicker.
+近景カット距離=Camera view-space distance where opacity reaches zero; full opacity restores at 1.6x this distance (typical: 100-300 px).
+奥行き順に描画=Sorts particles back-to-front by camera depth so semi-transparent overlaps blend accurately.
+ログに描画モードを出力=Logs active render mode (soft-vertex / figure-texture / flat-circle) plus particle and vertex counts on mode change.
+乱数シード=Seed value changing the deterministic initial distribution of particles.
+体積光に照らされる=Receives the shared 3D light field from Volumetric Light (3D) v3.16+ in the same scene: particles inside beams glow and automatically stay unlit inside 3D/2D cast shadows or behind foreground masks (zero overhead when no beam is active).
+受光の強さ=Illumination intensity applied to particles inside unoccluded volumetric beams (0-300%, default 120%).
+光色の染まり=How strongly illuminated particles absorb the local beam color (including multi-color stained glass): 0% keeps snow color, 100% uses full beam color.
+光束外・影の減光=Dims ambient particles outside the beam and inside 3D/2D cast shadows when an active Volumetric Light is present (0-100%; 90-100% creates pure Tyndall dust motes visible only inside lit shafts).
+発光の広がり=Forward-scattering halo size multiplier for illuminated particles (100-280%, default 135%).
