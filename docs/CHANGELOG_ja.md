@@ -12,8 +12,11 @@
   - `is_volume_fx_name()` を統合し、日/中/英/独環境の `雪（3D）` / `Snow3D` および他レイヤーの `VolumetricLight3D` を 2D 遮蔽・前景なじませ自動検出から確実に除外。
 - **`Snow3D（雪（3D））v1.23` 同梱提供（`integrations/snow3d/`、同期スクリプト `apply_to_snow3d.py` 付属）**：
   - 「体積光連動」グループおよび 4 言語 `.aul2` 翻訳・Tips を追加し、**光束内の雪粒子が局所光色で輝き、3D/2D 遮蔽物の影柱や前景マスク背後では自動的に消灯する真の 3D 光学連動**を実現（体積光が無いシーンでは負荷ゼロ・`v1.22` と完全一致）。
-  - **3D カメラライト使用時の雪粒子ソフトエッジ黒縁ハロー（WBOIT `Accum_w` 乗っ取り）および逆光消灯の根治（実機 `v2.1.16` 検証反映）**：`VL3DLF v3` の `flags` に `has_cam_3d_light`（bit 7）および `cam_light_is_pos`（bit 8）を追加し、ホスト `H_host` の HDR ピーク重複ゲインおよび 2D `light_color` 二重乗算を補正。3D カメラライト有効シーンでは `雪（3D）v1.23` の基底パスをハードウェア加算（`blend = "add"`）＋受光/遮蔽符号付き 8 要素光源法線へ切り替え、前景粒子のガウス裾が HDR 体積光を暗化させる黒輪と逆光時の `max(0, N·L)=0` 消灯を完全解消。
-- **E2E 3D 光学・遮蔽サンドボックス検証を追加（107 PASS / 0 FAIL / 0 WARN）**：`sandbox/vl3dsb/compositor3d.py` にハードウェア加算パス（`shader118 = 2`）および 3D カメラライト `H_host(wp, N)` 法線シェーディングを追加し、`sandbox/checks/checks_12_lightfield.py` で平行/放射/収束/カメラ 3D スポット、3D スポット前景雪ソフトエッジ黒縁ゼロ＆逆光受光回帰、斜め 3D `.obj`・2D 影柱での消灯、前景マスク前後分離、ステンドグラス多色染色、複数光源重畳、サブシーン分離を網羅検証。
+  - **3D カメラ制御下の雪粒子ソフトエッジ黒縁ハロー（`Shader #118` WBOIT 重み乗っ取り）・視点切り替え（`camera_mode == 2` 編集カメラ）基底同期・逆光消灯の根治（実機 `v2.1.16` 二段階検証反映）**：
+    - 実機ピクセル検証により、3D カメラ対象描画ではスクリプト内の `obj.setoption("blend", "add")` が `Shader #118`（`0x1404404b0`）WBOIT を迂回しないこと、および `camera_mode == 2`（視点切り替え）時に `obj.getoption("camera_param")` がタイムラインカメラを返し続けることを確認。
+    - `VL3DLF v3` を `320` バイト拡張ヘッダ（`flags` に `bit 7=has_cam_3d_light`・`bit 8=cam_light_is_pos`・`bit 9=has_ext_cam`、実表示カメラ基底 `cam_x..z / f / r / d / focal_d` および `host_unlit_max`）へ拡張し、`H_host` HDR ピーク重複ゲイン・2D `light_color` 二重乗算・`15_frame_prepare.lua` の `obj.load("layer", ln, true)` 戻り値判定を修正。
+    - `雪（3D）v1.23` に視線後方の光束重複＆深度比プローブ（`probe_ray_behind`）および `ps_snow_shape_tint` 比率不変トークン α 量子化（`out_a = round(a * 5) / 255`）を導入し、光束重複粒子を 2 パス WBOIT 安全経路で描画（ガウス外裾は `r4.w < 0.001` でハードウェア `discard` して黒い輪を完全排除、中心部は深度重み比 $\rho_w = \operatorname{clamp}(e^{(z_{\text{beam}}-z_{\text{snow}})/550}, 1, 8)$ で補正、`unlit=0` の暗黒シルエットや極薄フェード粒子は自動カリング）。さらに `camera_mode == 2` での実表示カメラ同期、受光/遮蔽符号付き 8 要素光源法線、およびログ状態 `OFF / WAIT / IDLE / ON` の明確化を実装。
+- **E2E 3D 光学・遮蔽サンドボックス検証を追加（108 PASS / 0 FAIL / 0 WARN）**：`sandbox/vl3dsb/compositor3d.py` を実機準拠（3D カメラ下の `"add"` も `Shader #118` WBOIT 経由）へ修正し、`sandbox/checks/checks_12_lightfield.py`（全 10 チェック）で平行/放射/収束/カメラ 3D スポット、真の WBOIT 下での前景雪黒縁ゼロ＆逆光受光、`camera_mode == 2` 編集カメラ 90° 横視点同期＆`WAIT/IDLE` ログ状態、斜め 3D `.obj`・2D 影柱消灯、前景マスク、ステンドグラス多色染色、複数光源重畳、サブシーン分離を網羅検証。
 
 ## v3.15（2026-10-31）・AviUtl ExEdit2 v2.1.16 完全対応 ＆ VL3DBridge v1.22「テキスト」揃え/装飾 SDK 上書き不具合修正 ＆ ASLR 不変 SHA-256 化
 

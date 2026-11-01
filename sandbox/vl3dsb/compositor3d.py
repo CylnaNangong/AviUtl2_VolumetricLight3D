@@ -738,10 +738,11 @@ def composite_scene_3d(
         else:
             hr, hg, hb = 1.0, 1.0, 1.0
         qs.gain_r, qs.gain_g, qs.gain_b = hr, hg, hb
-        if blend == "none":
+        if blend in ("none", "add"):
+            # Verified on live AviUtl2 v2.1.16 (0x1404404b0): in 3D Camera mode,
+            # obj.setoption("blend", "add") inside an object script still routes
+            # framebuffer drawpoly through Shader #118 WBOIT + host 3D lighting.
             qs.shader118 = 1
-        elif blend == "add":
-            qs.shader118 = 2
         else:
             qs.shader118 = 0
         qs.sampler_dot = 1 if q.get("sampler") == "dot" else 0

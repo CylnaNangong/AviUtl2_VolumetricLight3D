@@ -67,7 +67,7 @@ local function vl_lf_publish(
     cb_cl_px, cb_cl_py, cb_cl_pz,
     cl_rdx, cl_rdy, cl_rdz,
     cb_in_rad, cb_out_rad, cb_att_k,
-    has_cam_3d_light, cam_light_is_pos, h_core_peak
+    has_cam_3d_light, cam_light_is_pos, h_core_peak, h_unlit_max
 )
     if global == nil or not lf_ffi_ok or lf_ffi == nil then return end
     if not VL_BF.ps_ok then
@@ -202,6 +202,7 @@ local function vl_lf_publish(
     if VL_BF.is_edit then flags = flags + 64 end
     if has_cam_3d_light then flags = flags + 128 end
     if cam_light_is_pos then flags = flags + 256 end
+    flags = flags + 512 -- bit9: extended 320-byte header with live camera basis + host_unlit_max
 
     local z_win_cam = 1e9
     if not VL_BF.is_edit then
@@ -214,7 +215,7 @@ local function vl_lf_publish(
     local cos_out_sp = math.cos(math.max(0.0, math.min(math.pi * 0.99, cb_out_rad or 0.0)))
     local sh_soft_t  = math.max(8.0, (P.occ_soft or 8.0) * 1.8)
 
-    local hdr_bytes = 264
+    local hdr_bytes = 320
     local pix_bytes = out_w * out_h * 4
     local total_bytes = hdr_bytes + pix_bytes
     local buf = lf_ffi.new("uint8_t[?]", total_bytes)
@@ -261,6 +262,12 @@ local function vl_lf_publish(
     f32[51] = VL_BF.fog_amt or 0.0
     f32[52] = 1.0 / math.max(10.0, VL_BF.f_scale or 220.0)
     f32[53], f32[54], f32[55] = VL_BF.wox or 0.0, VL_BF.woy or 0.0, VL_BF.woz or 0.0
+    f32[56], f32[57], f32[58] = VL_BF.cam_x or 0.0, VL_BF.cam_y or 0.0, VL_BF.cam_z or -1024.0
+    f32[59], f32[60], f32[61] = VL_BF.f_x or 0.0,   VL_BF.f_y or 0.0,   VL_BF.f_z or 1.0
+    f32[62], f32[63], f32[64] = VL_BF.r_x or 1.0,   VL_BF.r_y or 0.0,   VL_BF.r_z or 0.0
+    f32[65], f32[66], f32[67] = VL_BF.d_x or 0.0,   VL_BF.d_y or 1.0,   VL_BF.d_z or 0.0
+    f32[68] = VL_BF.focal_d or 1024.0
+    f32[69] = h_unlit_max or 1.0
 
     -- Direct RGBA8 copy (obj.getpixeldata("object", "rgba") returns RGBA byte order)
     lf_ffi.copy(buf + hdr_bytes, pix_ptr, pix_bytes)

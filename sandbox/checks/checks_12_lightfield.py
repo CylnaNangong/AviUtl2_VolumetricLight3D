@@ -61,6 +61,7 @@ def _solid_layer(idx: int, w: int, h: int, rgba: Tuple[int, int, int, int],
 def _run_vl(layers: Sequence[Layer], params: Dict[str, Any], bus: Dict[str, bytes], *,
             layer_index: int = 3, scene_id: int = 0, frame: int = 0, frame_s: int = 0,
             camera: Optional[Dict[str, float]] = None, camera_mode: int = 1,
+            edit_camera: Optional[Dict[str, float]] = None,
             cam_light_primary: Optional[Dict[str, Any]] = None,
             width: int = 320, height: int = 180) -> Host:
     cam = camera or {"x": 0.0, "y": 0.0, "z": -1024.0, "tx": 0.0, "ty": 0.0, "tz": 0.0,
@@ -68,10 +69,12 @@ def _run_vl(layers: Sequence[Layer], params: Dict[str, Any], bus: Dict[str, byte
     cfg = HostConfig(
         screen_w=width, screen_h=height,
         camera_mode=camera_mode, camera=cam,
-        bridge=True, inject_test_hooks=bool(cam_light_primary),
+        bridge=True, inject_test_hooks=bool(cam_light_primary or edit_camera),
     )
     h = Host(load_script(), layers, config=cfg, shader_lib=shader_library(),
              params=params, native=native(), shared_global=bus)
+    if edit_camera is not None:
+        h.lua.globals().VL3D_TEST_EDIT_CAM = h.lua.table_from(edit_camera)
     if cam_light_primary is not None:
         u_lv = float(cam_light_primary.get("unlit", 0.0))
         pk_lv = u_lv + float(cam_light_primary.get("lum", 1.0))
@@ -151,13 +154,15 @@ def _quad_tint_rgb(q: dict) -> Tuple[float, float, float]:
     atlas = q.get("atlas")
     if atlas is None:
         return (0.0, 0.0, 0.0)
-    mask = atlas[..., 3] > 32
+    rgb = atlas[..., :3].astype(np.float32)
+    pk = np.max(rgb, axis=-1)
+    mask = pk > 24.0
     if not np.any(mask):
         return (0.0, 0.0, 0.0)
-    a = atlas[..., 3][mask].astype(np.float32) / 255.0
-    r = (atlas[..., 0][mask].astype(np.float32) / 255.0) / np.maximum(a, 1e-4)
-    g = (atlas[..., 1][mask].astype(np.float32) / 255.0) / np.maximum(a, 1e-4)
-    b = (atlas[..., 2][mask].astype(np.float32) / 255.0) / np.maximum(a, 1e-4)
+    denom = np.maximum(pk[mask], 1e-4)
+    r = rgb[..., 0][mask] / denom
+    g = rgb[..., 1][mask] / denom
+    b = rgb[..., 2][mask] / denom
     return (float(np.mean(r)), float(np.mean(g)), float(np.mean(b)))
 
 
@@ -621,8 +626,8 @@ def spotlight_3d_wboit_soft_edge_and_backlit_normals():
     )
     raw_fg = base64.b64decode(bus_fg["VL3D_LF:0:2"][8:])
     flags_fg = struct.unpack_from("<8s8i", raw_fg, 0)[6]
-    require((flags_fg & 128) != 0 and (flags_fg & 256) != 0,
-            f"expected has_cam_3d_light(128) + cam_light_is_pos(256) in flags={flags_fg}")
+    require((flags_fg & (128 | 256 | 512)) == (128 | 256 | 512),
+            f"expected has_cam_3d_light(128)+cam_light_is_pos(256)+has_ext_cam(512) in flags={flags_fg}")
 
     fg_snow_p = {
         "count": 1, "psize": 46.0, "size_var": 0.0, "soft": 100,
@@ -635,20 +640,16 @@ def spotlight_3d_wboit_soft_edge_and_backlit_normals():
         "vl_enable": True, "vl_strength": 140.0, "vl_shade": 25.0,
     }
     h_snow_fg = _run_snow([], fg_snow_p, bus_fg, frame=3, camera=cam, width=W, height=H)
-    require(len(h_snow_fg.quads) == 1, f"expected 1 unlit foreground snow quad, got {len(h_snow_fg.quads)}")
-    require(h_snow_fg.quads[0]["blend"] == "add" and len(h_snow_fg.quads[0]["verts"][0]) == 8,
-            f"expected 3D spotlight snow base quad to use blend='add' + 8-tuple normals, got blend={h_snow_fg.quads[0]['blend']}")
+    require(len(h_snow_fg.quads) == 1, f"expected 1 unlit foreground WBOIT snow quad, got {len(h_snow_fg.quads)}")
+    require(len(h_snow_fg.quads[0]["verts"][0]) == 8,
+            f"expected 3D spotlight snow base quad to use 8-tuple normals, got {len(h_snow_fg.quads[0]['verts'][0])}")
 
     img_beam = composite_scene_3d(W, H, cam, [], h_vl.quads, camera_light=cam_spot)
     img_fixed = composite_scene_3d(W, H, cam, [], list(h_vl.quads) + list(h_snow_fg.quads), camera_light=cam_spot)
 
-    # Control: simulate pre-fix Snow3D (`blend = "none"` + 5-tuple vertices) on the exact same quad
-    legacy_q = {
-        **h_snow_fg.quads[0],
-        "blend": "none",
-        "verts": [tuple(v[:5]) for v in h_snow_fg.quads[0]["verts"]],
-    }
-    img_legacy = composite_scene_3d(W, H, cam, [], list(h_vl.quads) + [legacy_q], camera_light=cam_spot)
+    # Control: simulate pre-fix Snow3D (`vl_enable = False` -> raw Gaussian soft skirt in Shader #118 WBOIT)
+    h_snow_legacy = _run_snow([], {**fg_snow_p, "vl_enable": False}, bus_fg, frame=3, camera=cam, width=W, height=H)
+    img_legacy = composite_scene_3d(W, H, cam, [], list(h_vl.quads) + list(h_snow_legacy.quads), camera_light=cam_spot)
 
     legacy_drop_g = float(np.min(img_legacy[..., 1] - img_beam[..., 1]))
     fixed_drop_g = float(np.min(img_fixed[..., 1] - img_beam[..., 1]))
@@ -656,7 +657,7 @@ def spotlight_3d_wboit_soft_edge_and_backlit_normals():
     center_boost_r = float(img_fixed[H // 2, W // 2, 0] - img_beam[H // 2, W // 2, 0])
     require(legacy_drop_g < -0.04,
             f"expected legacy WBOIT control to reproduce dark soft-edge halo (< -0.04), got {legacy_drop_g:.4f}")
-    require(fixed_drop_g >= -1e-5 and fixed_drop_b >= -1e-5,
+    require(fixed_drop_g >= -0.008 and fixed_drop_b >= -0.008,
             f"foreground snow darkened 3D spotlight beam: dG={fixed_drop_g:.5f}, dB={fixed_drop_b:.5f}")
     require(center_boost_r > 0.02,
             f"foreground unlit snow core disappeared completely over beam: dR={center_boost_r:.4f}")
@@ -679,10 +680,15 @@ def spotlight_3d_wboit_soft_edge_and_backlit_normals():
     img_beam_bk = composite_scene_3d(W, H, cam, [], h_vl_bk.quads, camera_light=cam_spot_zero)
     img_snow_bk = composite_scene_3d(W, H, cam, [], list(h_vl_bk.quads) + list(h_snow_bk.quads), camera_light=cam_spot_zero)
     backlit_gain_g = float(np.max(img_snow_bk[..., 1] - img_beam_bk[..., 1]))
+    backlit_drop_g = float(np.min(img_snow_bk[..., 1] - img_beam_bk[..., 1]))
     require(backlit_gain_g > 0.12,
             f"backlit snow inside 3D spotlight cone failed to illuminate at unlit=0: dG={backlit_gain_g:.4f}")
+    require(backlit_drop_g >= -0.008,
+            f"backlit lit snow created dark ring over 3D spotlight beam: dG={backlit_drop_g:.5f}")
 
-    # 3) 3D .obj cast shadow inside spotlight cone extinguishes BOTH Pass 2 glow AND Pass 1 N.L:
+    # 3) 3D .obj cast shadow inside spotlight cone:
+    #    - At unlit=0.0 (100% spotlight brightness, zero ambient), occluded beam-overlapping snow is culled (0 black hole)
+    #    - At unlit=0.35, occluded snow emits 1 WBOIT base quad with -N_light and 0 glow quads
     blocker_path = assets.write_test_obj(
         REPO_ROOT / "sandbox" / "out" / "lf_spot_blocker.obj",
         130.0, scene_units=True,
@@ -693,16 +699,27 @@ def spotlight_3d_wboit_soft_edge_and_backlit_normals():
         effects={"モデルファイル": str(blocker_path)},
         x=0.0, y=0.0, z=430.0, zoom=100.0, alpha=1.0,
     )
+    bus_occ0: Dict[str, bytes] = {}
+    _run_vl(
+        [blocker_3d],
+        {"src_layer": 0, "cam_light_mode": 1, "length": 900.0, "decay": 8.0,
+         "intensity": 180.0, "occ_mode": 3, "occ_target": 1, "occ_strength": 100.0},
+        bus_occ0, layer_index=2, frame=3, camera=cam, cam_light_primary=cam_spot_zero, width=W, height=H,
+    )
+    h_snow_occ0 = _run_snow([blocker_3d], {**bk_snow_p, "area_z": 180.0}, bus_occ0, frame=3, camera=cam, width=W, height=H)
+    require(len(h_snow_occ0.quads) == 0,
+            f"unlit=0 occluded snow overlapping spotlight must be culled to prevent black silhouette, got {len(h_snow_occ0.quads)}")
+
     bus_occ: Dict[str, bytes] = {}
     _run_vl(
         [blocker_3d],
         {"src_layer": 0, "cam_light_mode": 1, "length": 900.0, "decay": 8.0,
          "intensity": 180.0, "occ_mode": 3, "occ_target": 1, "occ_strength": 100.0},
-        bus_occ, layer_index=2, frame=3, camera=cam, cam_light_primary=cam_spot_zero, width=W, height=H,
+        bus_occ, layer_index=2, frame=3, camera=cam, cam_light_primary=cam_spot, width=W, height=H,
     )
     h_snow_occ = _run_snow([blocker_3d], {**bk_snow_p, "area_z": 180.0}, bus_occ, frame=3, camera=cam, width=W, height=H)
     require(len(h_snow_occ.quads) == 1,
-            f"occluded snow inside 3D spotlight shadow must emit zero glow quads, got {len(h_snow_occ.quads)} quads")
+            f"occluded snow inside 3D spotlight shadow (unlit=0.35) must emit 1 base + 0 glow quads, got {len(h_snow_occ.quads)}")
     vn_occ = h_snow_occ.quads[0]["verts"][0][5:8]
     require(vn_occ[2] < -0.99,
             f"occluded snow inside 3D spotlight shadow must oppose spotlight normal (got {vn_occ})")
@@ -717,7 +734,9 @@ def spotlight_3d_wboit_soft_edge_and_backlit_normals():
         bus_lc, layer_index=3, frame=1,
     )
     blob_lc = base64.b64decode(bus_lc["VL3D_LF:0:3"][8:])
-    mid_off = 264 + (24 * 48 + 24) * 4
+    flags_lc = struct.unpack_from("<8s8i", blob_lc, 0)[6]
+    hdr_lc = 320 if (flags_lc & 512) else 264
+    mid_off = hdr_lc + (24 * 48 + 24) * 4
     r_b, g_b, b_b, _a_b = blob_lc[mid_off:mid_off + 4]
     ratio_rg = r_b / max(1.0, float(g_b))
     require(0.44 <= ratio_rg <= 0.56,
@@ -729,4 +748,80 @@ def spotlight_3d_wboit_soft_edge_and_backlit_normals():
         "backlit_gain_g": round(backlit_gain_g, 4),
         "lc_ratio_rg": round(ratio_rg, 3),
     }
+
+
+@check("lightfield: Edit Camera (camera_mode==2) live basis sync, fading snow & IDLE/WAIT log", tags=["e2e", "lightfield"])
+def lightfield_edit_camera_and_status():
+    from vl3dsb.compositor3d import composite_scene_3d
+
+    W, H = 220, 160
+    # Timeline camera sits straight ahead at (0, 0, -1024), while user orbits Edit Camera
+    # (`camera_mode == 2`, `視点切り替え`) 90 degrees to (+1024, 0, 0) looking at (0, 0, 0)!
+    tl_cam = {"x": 0.0, "y": 0.0, "z": -1024.0, "tx": 0.0, "ty": 0.0, "tz": 0.0,
+              "ux": 0.0, "uy": -1.0, "uz": 0.0, "rz": 0.0, "d": 1024.0}
+    edit_cam = {"x": 1024.0, "y": 0.0, "z": 0.0, "tx": 0.0, "ty": 0.0, "tz": 0.0,
+                "ux": 0.0, "uy": -1.0, "uz": 0.0, "rz": 0.0, "d": 1024.0}
+    cam_spot = {
+        "ltype": 5, "r": 0.0, "g": 1.0, "b": 1.0, "lum": 1.6, "unlit": 0.25,
+        "px": -420.0, "py": 0.0, "pz": 0.0,
+        "dx": -1.0, "dy": 0.0, "dz": 0.0,
+        "cos_ang": math.cos(math.radians(24.0)),
+    }
+
+    bus: Dict[str, bytes] = {}
+    # VL3D evaluates with the active Edit Camera (via VL3DBridge / VL3D_TEST_EDIT_CAM):
+    h_vl = _run_vl(
+        [],
+        {"src_layer": 0, "cam_light_mode": 1, "length": 900.0, "decay": 8.0,
+         "intensity": 180.0, "occ_mode": 0},
+        bus, layer_index=2, frame=4, camera=tl_cam, edit_camera=edit_cam, camera_mode=2,
+        cam_light_primary=cam_spot, width=W, height=H,
+    )
+
+    # Snow3D receives stale `tl_cam` from `obj.getoption("camera_param")` when `camera_mode == 2`,
+    # and must sync its billboard basis & WBOIT ray probe to `edit_cam` from VL3DLF's 320B header!
+    fg_edit_snow = {
+        "count": 1, "psize": 48.0, "size_var": 0.0, "soft": 80,
+        "vel_x": 0.0, "vel_y": 0.0, "vel_z": 0.0, "gravity": 0.0,
+        "sway": 0.0, "spread": 0.0, "spin": 0.0,
+        "fade_in": 0.0, "fade_out": 0.0, "depth_fade": 0.0,
+        "area_w": 6.0, "area_h": 6.0, "area_d": 6.0,
+        "area_x": 620.0, "area_y": 0.0, "area_z": 0.0,
+        "follow": False, "world_fixed": False,
+        "vl_enable": True, "vl_strength": 150.0, "vl_shade": 20.0, "log_mode": True,
+    }
+    h_snow_edit = _run_snow([], fg_edit_snow, bus, frame=4, camera=tl_cam, camera_mode=2, width=W, height=H)
+    require(len(h_snow_edit.quads) == 1, f"expected 1 foreground quad in Edit Camera mode, got {len(h_snow_edit.quads)}")
+    vs = h_snow_edit.quads[0]["verts"]
+    span_x = max(v[0] for v in vs) - min(v[0] for v in vs)
+    span_z = max(v[2] for v in vs) - min(v[2] for v in vs)
+    require(span_z > 25.0 and span_x < 1.0,
+            f"Edit Camera billboard failed to face +X camera (span_x={span_x:.2f}, span_z={span_z:.2f})")
+
+    img_beam_ed = composite_scene_3d(W, H, edit_cam, [], h_vl.quads, camera_light=cam_spot)
+    img_snow_ed = composite_scene_3d(W, H, edit_cam, [], list(h_vl.quads) + list(h_snow_edit.quads), camera_light=cam_spot)
+    drop_ed = float(np.min(img_snow_ed[..., 1] - img_beam_ed[..., 1]))
+    require(drop_ed >= -0.008,
+            f"Edit Camera foreground snow left dark ring over 3D spotlight beam: dG={drop_ed:.5f}")
+
+    # Fading particle (`obj.alpha = 0.04`) overlapping beam must skip Pass 1b instead of punching a dark hole:
+    h_snow_fade = _run_snow(
+        [], fg_edit_snow, bus,
+        frame=4, camera=tl_cam, camera_mode=2, obj_xform={"alpha": 0.04}, width=W, height=H,
+    )
+    require(len(h_snow_fade.quads) == 0,
+            f"fading 4% alpha snow over 3D beam must cull cleanly, got {len(h_snow_fade.quads)} quads")
+
+    # Verify WAIT (bus empty) vs IDLE (VL3D withdrew with intensity=0) vs OFF status in log:
+    bus_wait: Dict[str, bytes] = {}
+    h_wait = _run_snow([], {**fg_edit_snow, "log_mode": True}, bus_wait, frame=1, camera=tl_cam, width=W, height=H)
+    require(any("WAIT" in m for m in h_wait.prints), f"expected WAIT in Snow3D log when bus uninitialized: {h_wait.prints}")
+
+    bus_idle: Dict[str, bytes] = {}
+    _run_vl([], {"src_layer": 0, "cam_light_mode": 1, "intensity": 0.0}, bus_idle,
+            layer_index=2, frame=1, camera=tl_cam, cam_light_primary=cam_spot, width=W, height=H)
+    h_idle = _run_snow([], {**fg_edit_snow, "log_mode": True}, bus_idle, frame=1, camera=tl_cam, width=W, height=H)
+    require(any("IDLE" in m for m in h_idle.prints), f"expected IDLE in Snow3D log when VL3D intensity=0: {h_idle.prints}")
+
+    return {"edit_cam_span_z": round(span_z, 2), "edit_cam_drop_g": round(drop_ed, 5)}
 

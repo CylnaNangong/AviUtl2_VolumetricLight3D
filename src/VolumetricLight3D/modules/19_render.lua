@@ -198,6 +198,12 @@ local function vl_bf_render()
             local has_c3d = (cl_pr ~= nil) and (cb_ltype > 0.5) and not cli_r.suppressed
             local c3d_pos = has_c3d and (cb_ltype > 2.5)
             local base_u_lf = cb_unlit + cb_other_lum
+            local h_unlit_max = has_c3d and math.max(
+                0.0,
+                base_u_lf + cb_amb_r,
+                base_u_lf + cb_amb_g,
+                base_u_lf + cb_amb_b
+            ) or 1.0
             local h_core_pk = has_c3d and math.max(
                 1.0,
                 base_u_lf + cb_amb_r + cb_cl_r,
@@ -213,7 +219,7 @@ local function vl_bf_render()
                 cb_cl_px, cb_cl_py, cb_cl_pz,
                 l_rdx, l_rdy, l_rdz,
                 cb_in_rad, cb_out_rad, cb_att_k,
-                has_c3d, c3d_pos, h_core_pk
+                has_c3d, c3d_pos, h_core_pk, h_unlit_max
             )
         end
     else

@@ -8,7 +8,7 @@ Hi DSH！辛苦啦～上一次 `v3.15` + `VL3DBridge v1.22` 靠你的真机 Harn
 
 1. **跨脚本 `global` 传输已做成 100% 纯 7-bit ASCII Base64（`VL3DB64:...`）**：
    - 我们特意考虑到 `aviutl2.exe` 内部桥接 `global` 表时如果走了 `lua_tostring` / `lua_pushstring`（遇到 `\0` 截断 C 字符串），裸二进制包会在第 8 字节被截断！
-   - 所以 `18b_lightfield.lua` 直接复用了 `12_bridge_raster.lua` 久经真机考验的 `vl_encode_b64_ffi` 把 `264B 头 + RGBA8 光场/阴影带` 编码成纯可打印 ASCII（`0x2B..0x7A`，**零 `\0` 字节**），`Snow3D v1.23` 端用 FFI `int16_t[256]` 查表微秒级解码。
+   - 所以 `18b_lightfield.lua` 直接复用了 `12_bridge_raster.lua` 久经真机考验的 `vl_encode_b64_ffi` 把 `320B 扩展头（向后兼容 264B）+ RGBA8 光场/阴影带` 编码成纯可打印 ASCII（`0x2B..0x7A`，**零 `\0` 字节**），`Snow3D v1.23` 端用 FFI `int16_t[256]` 查表微秒级解码。
 2. **`+0` 额外缓存像素开销**：
    - `ps_vl_lfpack` 在 `beamatlas` 把 `"object"` 清成 `1×1` 之前，借用 `"object"`（最大 `48×114`）单次 GPU pass 同时烤出：
      - Band 0：`48×48` 阈值后光源辐射亮度（含彩绘玻璃多色 RGB）
@@ -78,11 +78,41 @@ python integrations/snow3d/apply_to_snow3d.py --build-pkg
 2. **宿主 3D 光照 `H_host(wp, N)` 逆光法线归零**：
    - 5 元顶点 `{x,y,z,u,v}` 的默认广告牌法线朝向镜头 `-f`，当 3D 聚光灯从粒子后方逆光射向镜头时 $\mathbf{N}\cdot\mathbf{L} < 0 \Rightarrow \max(0,\mathbf{N}\cdot\mathbf{L}) = 0$，宿主硬件着色器将粒子受光项清零（若聚光灯 `明るさ >= 100%` 即 `unlit = 0` 更会完全变黑）。
 
-### 已合入的根治方案（`107/107` 沙箱全绿，含 `compositor3d` 像素级回归）
-1. **`VL3DLF v3` 扩展（`18b_lightfield.lua` / `19_render.lua`）**：
-   - 在 `flags` 中新增 `bit 7 (128) = has_cam_3d_light` 与 `bit 8 (256) = cam_light_is_pos`，补偿宿主 `H_host` HDR 峰值重复增益，并修复 2D `light_color` 被重复相乘一次的色度平方问题（`lc_ratio_rg = 0.502` 精确线性）。
-2. **`Snow3D v1.23` 3D 光源通道升级（`雪（3D）.obj2`）**：
-   - 当 `cam ~= nil`、存在活动 3D 摄像机光源且图层自身为标准合成（`saved_blend == "none"`）时，将基底雪花通道自动切换为真机已验证零黑边的硬件加法（`blend = "add"`），数学上保证任意柔边像素 `Dst + Src >= Dst`（沙箱实测柔边最大暗化从 `-0.5446` 归零至 `0.00000`）；
-   - 同时对确认受光粒子（`lr ~= nil`）输出朝向 3D 光源的 8 元局部法线 `+\mathbf{L}`（逆光同样满额发亮），对光束外及 **3D/2D 阴影柱内粒子（`lr == nil`）**输出背离 3D 光源的 8 元法线 `-\mathbf{L}`（强制硬件 `max(0, N·L) = 0`，即使聚光灯未开内置阴影也不会穿透 VRM 阴影柱照亮遮挡雪花！）。
+### 二轮真机反馈（`测试沙箱2.aup2` 开启「视角切换」`camera_mode == 2`）与最终根治方案（`108/108` 沙箱全绿）
 
-如果真机复测还有任何细节想微调，随时喊我们！祝测试顺畅～✨
+在首轮尝试 `obj.setoption("blend", "add")` 后，真机在 `测试沙箱2.aup2`（开启右上角蓝色准星「视角切换」编辑自由相机 `camera_mode == 2`）复测发现：
+- **好消息**：光束圆锥内部的 8 颗青色受光雪花已 100% 正常发光且外围零黑圈（如 `(500,263)` 从背景 `(66,179,179)` 单调升至 `(98,253,253)`）；
+- **残余问题**：处于聚光灯圆锥外侧、但在编辑相机视线上投影叠在青色光束前方的前景未受光雪花（如 `(568,334)` 与残影 `(458,264)`）**依然带有明显暗圈/黑洞**（青色 `(0,137,137)` 在雪花柔边裙摆处跌至 `(2,44,44)`，跌幅 `-93/255`）。
+
+#### 为什么 `2216fa9` 的 `blend = "add"` 没能绕过前景黑圈？
+逐像素拟合真机截图确认了两条关键宿主硬件事实（也同步修正进了 `sandbox/vl3dsb/compositor3d.py`）：
+1. **在 `AviUtl2 v2.1.16` 3D 摄像机控制通道（`カメラ制御の対象` 开启）下，对象脚本内调用 `obj.setoption("blend", "add")` 依然流经 `Shader #118`（`0x1404404b0`）WBOIT 累加器**，并不会切换为硬件 `ONE+ONE` 直加！因此前景暗雪花的高斯外裙（`tex.a ≈ 0.004..0.08`）乘上近景权重 $w(z_{\text{snow}}) = e^{-z_{\text{snow}}/550} \gg w(z_{\text{beam}})$ 后仍然会劫持 `Accum_w`。
+2. **开启「视角切换」（`camera_mode == 2` 编辑自由相机）时，`obj.getoption("camera_param")` 仍返回时间轴相机**：`Snow3D` 没有加载 `.aux2` 插件，若不从 `VL3DLF` 获取实时渲染相机基底，广告牌朝向、深度排序与视线重叠判定都会停留在旧时间轴视角。
+
+#### 最终合入的双通道比率不变 WBOIT + 实时相机同步方案（`+0` 额外缓存像素）
+1. **`VL3DLF\3\0` 扩展至 `320` 字节头（`flags` `bit 9 = 512` `has_ext_cam`）**：
+   - 在 `f32[56..69]` 发布 `VolumetricLight3D` 当前帧真实渲染相机基底（`cam_x..z, f_x..z, r_x..z, d_x..z, focal_d`）以及宿主 3D 光照背光上界 `host_unlit_max`（`unlit + amb`）；`Snow3D` 向后兼容 `264B / 320B` 双长度包。
+2. **`camera_mode == 2` 编辑自由相机实时同步（`SNOW_LF.resolve_view_cam`）**：
+   - 当处于「视角切换」模式且 `VL3D` 持有精确编辑相机时，`Snow3D` 保持雪盒中心锚定在时间轴注视点（方便围绕角色和光束自由旋转观察），同时将粒子广告牌正对基底 `(r, u)`、深度排序、Band 2 前景遮罩以及视线后方光束探测实时同步到编辑相机！
+3. **双通道比率不变 WBOIT 量化（`SNOW_LF.probe_ray_behind` + `ps_snow_shape_tint` `wboit={1,5,0,0}`）**：
+   - 对每颗存活粒子沿实时相机射线检测其后方是否穿过活动体积光束并估算深度权重比 $\rho_w = \operatorname{clamp}(e^{(z_{\text{beam}}-z_{\text{snow}})/550}, 1, 8)$；
+   - **不与光束重叠的粒子**走原生的 `Pass 1`（暗空与不透明背景上与原版 100% 一致）；
+   - **与光束重叠的粒子**走 `Pass 1b`（白核）+ `Pass 2`（受光彩色光晕），在 `ps_snow_shape_tint` 中输出比率不变最小量化令牌 $\text{out\_a} = \lfloor 5a + 0.5 \rfloor / 255$：
+     - 外圈高斯柔边（$a < 0.10$）满足 $r_4.w < 0.001$，直接触发 `Shader #118` 硬件 `discard`，**从物理上根绝柔边裙摆写入 `Accum_w`**；
+     - 核内有效像素保持 $\text{tex.rgb} / \text{tex.a} \equiv \text{const}$，并按 $1/\rho_w$ 缩放 `poly_alpha` 抵消前景深度权重膨胀；当聚光灯 `明るさ >= 100%` 且零环境光（`host_unlit < 0.025`）或粒子处于极淡生灭残影（`a_wb < 0.055`）时自动剔除，彻底杜绝黑洞。
+   - 260 粒子全画幅压力回归实测：旧路径光束区最深暗化 `-38.2/255`（968 像素变暗），新路径在时间轴相机与 `camera_mode == 2` 编辑相机下均为 **`min_dG = 0.00/255`（0 像素变暗）**！
+
+---
+
+## 5. 对 DSH《PR15-验收报告.md》观察项的逐条回应与落盘说明
+
+非常感谢 DSH 超详尽的真机 `v2.1.16` 验收报告（连 `88,556` 三角形 VRM CS 光栅、OpenGlow 联动、holdout 截断与零开销逐像素 `mean=0.0, max=0` 都全部实测覆盖了！）：
+1. **报告 §5.1 / §5.2（`WAIT` 与 `IDLE` 日志语义区分）**：已采纳并合入！现在 `SNOW_LF.collect` 明确区分：
+   - `OFF`：关闭「受体积光照亮」或强度为 0；
+   - `WAIT`：`global["VL3D_LF_IDX:<sid>"] == nil`（尚无任何 `VL3D` 初始化写入）；
+   - `IDLE`：`VL3D` 已主动撤回槽位（如 `强度 = 0` 使索引变为空串 `""`，或帧号已过期）；
+   - `ON(N:M)`：成功连接 `N` 个活动体积光发射器、当帧点亮 `M` 颗粒子。
+2. **报告 §5.3（`global` 代理表不支持 `pairs(global)` 枚举）**：重要真机踩坑经验已记录！AviUtl2 宿主的 `global` userdata/proxy 仅实现了 `__index` / `__newindex` 而未挂载 `__pairs` 元方法，因此任何诊断脚本或第三方联动方在读取 `VL3DLF` 时**严禁调用 `pairs(global)`**，必须先按 `local idx = global["VL3D_LF_IDX:" .. tostring(scene_id)]` 读取槽位列表，再按 `(%d+)` 逐一索引 `global["VL3D_LF:<sid>:<layer>"]`。
+3. **报告 §9（`15_frame_prepare.lua` 中 `obj.load("layer", ln, true)` 返回值判定）**：已在 `15_frame_prepare.lua` 合入 `local ld_fx_ok = (obj.load("layer", VL_BF.ln, true) ~= false)` 显式校验，同时保留 `lw > 0 and lh > 0` 兼容 `1×1` 纯色测试层。
+
+如果二轮复测还有任何细节想微调，随时喊我们！祝测试顺畅～✨

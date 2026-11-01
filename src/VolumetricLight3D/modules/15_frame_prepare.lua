@@ -336,14 +336,21 @@ local function vl_bf_capture()
                 end
             end
 
-            pcall(function() obj.load("layer", VL_BF.ln, true) end)
-            if check_and_grab_fb_draw() then
+            local ld_fx_ok = false
+            pcall(function()
+                ld_fx_ok = (obj.load("layer", VL_BF.ln, true) ~= false)
+            end)
+            if ld_fx_ok and check_and_grab_fb_draw() then
                 VL_BF.tex_loaded = true
                 restore_fb_now()
                 _, VL_BF.found_thr, VL_BF.u0_s, VL_BF.u1_s, VL_BF.v0_s, VL_BF.v1_s, VL_BF.base_ratio = scan_pool_from_object(VL_BF.lw, VL_BF.lh, VL_BF.thr_norm)
             else
-                pcall(function() VL_BF.lw, VL_BF.lh = obj.getpixel() end)
-                if type(VL_BF.lw) == "number" and type(VL_BF.lh) == "number" and VL_BF.lw > 0 and VL_BF.lh > 0 then
+                if ld_fx_ok then
+                    pcall(function() VL_BF.lw, VL_BF.lh = obj.getpixel() end)
+                else
+                    VL_BF.lw, VL_BF.lh = 0, 0
+                end
+                if ld_fx_ok and type(VL_BF.lw) == "number" and type(VL_BF.lh) == "number" and VL_BF.lw > 0 and VL_BF.lh > 0 then
                     VL_BF.tex_loaded = true
                     restore_fb_now()
                     local ok_base
