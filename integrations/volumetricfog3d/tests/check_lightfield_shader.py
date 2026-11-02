@@ -88,7 +88,29 @@ def main() -> int:
     if not np.array_equal(manual_out, _run(lib, manual_stale)):
         raise AssertionError("manual mode changed when inactive light-field constants were present")
 
-    print("PASS: receiver contract, 8240-float cbuffer, manual fallback, spatial light colour")
+    # A sharp change between adjacent spatial samples must interpolate smoothly,
+    # not appear as a nearest-neighbour rectangular patch in the rendered fog.
+    transition = _base_constants()
+    transition[0:4] = [32.0, 8.0, 8.0, 0.0]
+    transition[27] = 1.0
+    transition[28] = 0.0  # uniform fog density, isolate light-field interpolation
+    transition[41] = 0.9  # keep the sample region away from the slice edge fade
+    transition[47] = 1.0
+    for gy in range(4):
+        for gx in range(4):
+            i = 3 * 16 + gy * 4 + gx
+            cell = 48 + i * 4
+            transition[cell:cell + 4] = [0.8 if gx < 2 else 0.0, 0.0, 0.0, 1.0]
+            direction = 48 + 4096 + i * 4
+            transition[direction:direction + 4] = [0.0, 0.0, 1.0, 0.0]
+    transition_out = lib.run("fogatlas", transition, size=(256, 32), out_hw=(32, 256))
+    row = transition_out[16, 96:128, 0].astype(np.int16)
+    if not (0 < int(row[16]) < int(row[12])):
+        raise AssertionError(f"light-field sample boundary was not interpolated: {row.tolist()}")
+    if int(np.abs(np.diff(row[8:24])).max()) > 20:
+        raise AssertionError(f"light-field interpolation still has a visible step: {row.tolist()}")
+
+    print("PASS: receiver contract, 8240-float cbuffer, manual fallback, spatial colour interpolation")
     return 0
 
 

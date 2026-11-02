@@ -19,7 +19,7 @@ Generates a **continuous 3D atmospheric fog volume** directly inside AviUtl2's 3
 
 > 📜 **v2.05 change**: the script's identifier was renamed from 「体積霧（3D）」 to **`VolumetricFog3D`** (UI display names remain localized by language packs). Re-add the object in existing projects, or keep the old script installed side-by-side. `Volumetric Light (3D)` v3.07+ recognizes both names automatically.
 
-> ✨ **v2.06 shared-light-field mode**: select “Link to VolumetricLight3D” under Scattering Light Source to sample local beam colour, travel direction, and projected shadows from `VL3DLF v3`. Manual direction remains the default; without a fresh field the effect falls back to manual scattering. The link requires VolumetricLight3D v3.16 or newer in the same scene.
+> ✨ **v2.06 shared-light-field mode**: select “Link to VolumetricLight3D” under Scattering Light Source to sample local beam colour, travel direction, and projected shadows from `VL3DLF v3`. Manual direction remains the default; without a fresh field the effect falls back to manual scattering. A 4×4 per-slice field is bilinearly reconstructed to avoid blocky sample boundaries. The link requires VolumetricLight3D v3.16 or newer in the same scene.
 
 ## 2. System Requirements
 

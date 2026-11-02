@@ -236,16 +236,38 @@
         float3 light_add = p9.xyz * phase;
         if (p11.w > 0.5)
         {
-            float gx_f = (pos.x - tx * tile_sz) / tile_sz;
-            float gy_f = (pos.y - ty * tile_sz) / tile_sz;
-            int gx_i = (int)clamp(floor(gx_f * 4.0), 0.0, 3.0);
-            int gy_i = (int)clamp(floor(gy_f * 4.0), 0.0, 3.0);
-            int lf_i = (int)si * 16 + gy_i * 4 + gx_i;
-            float4 lf_c = lf_col[lf_i];
-            float4 lf_d = lf_dir[lf_i];
-            if (lf_c.w > 1e-5 && dot(lf_d.xyz, lf_d.xyz) > 1e-6)
+            float gx_f = saturate((pos.x - tx * tile_sz - pad_px) / span);
+            float gy_f = saturate((pos.y - ty * tile_sz - pad_px) / span);
+            // Bilinearly reconstruct the 4x4 spatial field. Nearest-cell lookup made
+            // each coarse sample boundary visible as a rectangular patch in the fog.
+            float sx = gx_f * 4.0 - 0.5;
+            float sy = gy_f * 4.0 - 0.5;
+            float bx = floor(sx);
+            float by = floor(sy);
+            float fx = sx - bx;
+            float fy = sy - by;
+            int x0 = (int)clamp(bx, 0.0, 3.0);
+            int x1 = (int)clamp(bx + 1.0, 0.0, 3.0);
+            int y0 = (int)clamp(by, 0.0, 3.0);
+            int y1 = (int)clamp(by + 1.0, 0.0, 3.0);
+            int base_i = (int)si * 16;
+            int i00 = base_i + y0 * 4 + x0;
+            int i10 = base_i + y0 * 4 + x1;
+            int i01 = base_i + y1 * 4 + x0;
+            int i11 = base_i + y1 * 4 + x1;
+            float4 c00 = lf_col[i00];
+            float4 c10 = lf_col[i10];
+            float4 c01 = lf_col[i01];
+            float4 c11 = lf_col[i11];
+            float4 lf_c = lerp(lerp(c00, c10, fx), lerp(c01, c11, fx), fy);
+            float3 d00 = lf_dir[i00].xyz * c00.w;
+            float3 d10 = lf_dir[i10].xyz * c10.w;
+            float3 d01 = lf_dir[i01].xyz * c01.w;
+            float3 d11 = lf_dir[i11].xyz * c11.w;
+            float3 lf_d = lerp(lerp(d00, d10, fx), lerp(d01, d11, fx), fy);
+            if (lf_c.w > 1e-5 && dot(lf_d, lf_d) > 1e-6)
             {
-                float3 ldir = normalize(lf_d.xyz);
+                float3 ldir = normalize(lf_d);
                 float cos_l = -dot(vdir, ldir);
                 float den_l = max(1.0 + g2 - 2.0 * g * cos_l, 1e-4);
                 float phase_l = (1.0 - g2) / (den_l * sqrt(den_l));
