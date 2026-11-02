@@ -6,7 +6,7 @@
 **AviUtl ExEdit2 用 真・3D ボリューメトリックライト（ボリュームライト／ゴッドレイ／薄明光線）カスタムオブジェクト**  
 **3D 連動「前景なじませ」内蔵 · D3D11 CS 高速化プラグイン同梱**
 
-`VolumetricLight3D.obj2 v3.16` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.16+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.17` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.16+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 言語切替 / Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **日本語** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
@@ -99,8 +99,10 @@
 ### 🚀 方法 1：`.au2pkg.zip` パッケージをプレビュー画面へドラッグ＆ドロップ（推奨・一番簡単！）
 
 1. **GitHub Releases** から最新版パッケージをダウンロードします（**解凍せずそのまま**使用します）：
-   - **`VolumetricLight3D-v3.16.au2pkg.zip`**（フル推奨版：本体スクリプト ＋ `VL3DBridge.aux2` GPU 高速化プラグイン ＋ 多言語パック）
-   - *または `VolumetricLight3D-v3.16-ScriptOnly.au2pkg.zip`（スクリプト単体版：`.obj2` ＋ 多言語パックのみ）*
+   - **`VolumetricLight3D-v3.17.au2pkg.zip`**（フル推奨版：本体スクリプト ＋ `VL3DBridge.aux2` GPU 高速化プラグイン ＋ 多言語パック）
+   - *または `VolumetricLight3D-v3.17-ScriptOnly.au2pkg.zip`（スクリプト単体版：`.obj2` ＋ 多言語パックのみ）*
+   - **`Snow3D-v1.23.au2pkg.zip`**（本版の VolumetricLight3D 光場と連携する 3D 雪）
+   - **`VolumetricFog3D-v2.06.au2pkg.zip`**（体積霧連携版。ScriptOnly 版もあります）
 2. AviUtl ExEdit2 を起動し、ダウンロードした `.au2pkg.zip` を **プレビュー画面へ直接ドラッグ＆ドロップ** すると確認ダイアログが表示され、一括で自動インストールされます。
 3. `VL3DBridge.aux2` を含む場合は、インストール後に **AviUtl2 を一度再起動** してください（導入後は AviUtl2 の「パッケージ情報」から確認・ワンクリック削除も可能です）。
 
@@ -111,7 +113,7 @@
 ```text
 C:\ProgramData\aviutl2\
 ├── Script\
-│   └── VolumetricLight3D.obj2                  # [必須] カスタムオブジェクト本体（v3.16）
+│   └── VolumetricLight3D.obj2                  # [必須] カスタムオブジェクト本体（v3.17）
 ├── Plugin\
 │   ├── VL3DBridge.aux2                    # [推奨/任意] 無ロック読取＋D3D11 CS 3D影高速化プラグイン（v1.22）
 │   └── VL3DBridge.ini                     # [任意] 安全ホワイトリスト・GPU設定ファイル（.aux2 と同フォルダ）
@@ -285,7 +287,7 @@ AviUtl ExEdit2 は現在も活発に更新が続けられており、一部の�
 ## 8. バグ報告・フィードバック
 
 - **一番確実なのは [GitHub Issues](../../issues) です！** 報告の際は以下を添えていただけると大変助かります：
-  - スクリプトのバージョン（「画面に状態表示」を ON にすると画面左上の HUD に表示されます。例: `v3.16`）と `AviUtl ExEdit2` 本体のバージョン；
+  - スクリプトのバージョン（「画面に状態表示」を ON にすると画面左上の HUD に表示されます。例: `v3.17`）と `AviUtl ExEdit2` 本体のバージョン；
   - 再現手順・タイムラインのレイヤー構成スクリーンショット・異常時の描画スクリーンショット（**HUD を写したまま撮ってください**。`遮蔽=…` `光源=…` などの表示が原因特定の重要な手がかりになります！）；
   - HUD の遮蔽表示に `,opq`（マスクがほぼ全面不透明＝遮蔽レイヤー素材に Alpha 透過チャンネルがあるかご確認を）や `L4*`（そのレイヤーは生画像ロードへ自動フォールバック済み）が出ている場合も併記ください ^_^
 - **Discord コミュニティ**：日本語 AviUtl2 情報共有サーバー **「AviUtl2の情報が知りたいだろって‼」**（[参加リンク](https://discord.gg/8qzmGY5NgQ)）でも OK！サーバー内で **南宫若馨Cylna**（`@nangongerregtcylna`／作者本人）を見つけて直接報告できます～
@@ -327,7 +329,7 @@ python3 packaging/build_au2pkg.py
 - **ＫＥＮくん** 氏（[AviUtlのお部屋](https://spring-fragrance.mints.ne.jp/aviutl/) ｜ [X `@__kenkun`](https://x.com/__kenkun)） — AviUtl ExEdit2 本体および公式 Plugin SDK の開発・公開に深く感謝いたします。
 
 #### AI 開発パートナー
-- **Arena.ai Agent** — `v2.90`〜`v3.16` の設計刷新、`VL3DBridge.aux2` 無ロック読取ブリッジ＆D3D11 ComputeShader 実装、`AutoBlendLight` 3D 統合、`VL3DLF v3` スクリプト間 3D 光場共有、および超高解像度耐性の強化を担当。
+- **Arena.ai Agent** — `v2.90`〜`v3.17` の設計刷新、`VL3DBridge.aux2` 無ロック読取ブリッジ＆D3D11 ComputeShader 実装、`AutoBlendLight` 3D 統合、`VL3DLF v3` スクリプト間 3D 光場共有、および超高解像度耐性の強化を担当。
 - **ChatGPT** — コードレビューおよびバグ発見（3D 霧ノイズの三線形補間格子点座標のバグを特定してくれました！）。
 - **Gemini** — 初期の「体積霧」HLSL シェーダプロトタイプを作成（ある意味で同シリーズの『体積霧（3D）』は本体積光開発の副産物でもあります XD）。
 - **Microsoft Copilot** — 初期に超高解像度画像で `OpenGlow` のキャッシュ溢れに遭遇した際、原因調査とドキュメント整理を粘り強くサポートしてくれました。

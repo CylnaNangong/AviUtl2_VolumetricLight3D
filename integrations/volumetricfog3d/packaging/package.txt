@@ -1,0 +1,23 @@
+[ VolumetricFog3D / 体积雾（3D） / Volumetric Fog (3D) — v2.06 ]
+
+面向 AviUtl ExEdit2 的真·3D 连续体积雾自定义物件（v2.06）。
+GPU 实时积分 4 阶三维分形噪声（3D fBm）× Beer-Lambert 透射 × Henyey-Greenstein 前向散射，并可联动 VolumetricLight3D 的共享光场，
+切片作为真 3D 多边形绘制、与 AviUtl2 硬件深度缓冲咬合——手前清晰、远处渐入深雾，
+自动获得正确的三维遮挡关系；预览编辑视点自动切换 360° 球体体积模式。
+v2.06：新增可选 VL3DLF v3 联动，按局部光色、方向与投影阴影计算雾中散射；默认手动模式保持旧工程效果。
+
+THE REAL 3D continuous volumetric fog custom object (v2.06) for AviUtl ExEdit2.
+GPU-integrated 4-octave 3D fBm noise, Beer-Lambert transmittance and
+Henyey-Greenstein forward scattering with optional shared VolumetricLight3D field lighting; slices render as true 3D polygons that
+interlock with the hardware depth buffer for automatic, physically correct 3D
+occlusion. The preview editor viewpoint switches to a 360-degree spherical
+volume automatically. v2.06: optional VL3DLF v3 link for spatial scattering direction, local light color, and projected shadows.
+
+AviUtl ExEdit2 用「真・3D」連続ボリュームフォグ（v2.06）。
+4 オクターブ 3D fBm・Beer-Lambert 透過率・Henyey-Greenstein 前方散乱と VolumetricLight3D 共有光場連携を GPU で
+リアルタイム積分し、スライスを真の 3D ポリゴンとして描画。ハードウェア深度
+バッファと噛み合う自動 3D 遮蔽と、編集視点の 360° 球体モードを搭載。
+v2.06：VL3DLF v3 連携を追加。局所光色・方向・投影影を反映し、既定の手動モードは従来の見た目を維持。
+
+作者 / 作者 / Authors: 南宮若馨Cylna (Cylna Nangong) & Arena.ai Agent
+反馈 / 報告 / Feedback: GitHub Issues 或 Discord「AviUtl2の情報が知りたいだろって‼」@nangongerregtcylna

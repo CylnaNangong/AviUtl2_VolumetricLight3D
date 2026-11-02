@@ -1,4 +1,4 @@
---information:VolumetricLight3D v3.16
+--information:VolumetricLight3D v3.17
 -- =============================================================================
 -- 体積光（3D） — AviUtl ExEdit2 用 3D ボリューメトリックライト・カスタムオブジェクト
 -- 作者：南宮若馨Cylna (Cylna Nangong) ／ 共同開発：Arena.ai Agent
@@ -32,6 +32,11 @@
 -- =============================================================================
 -- 更新履歴
 -- =============================================================================
+-- v3.17 更新点（2026-11-01・VolumetricFog3D v2.06 共有光場散乱連携）:
+--   ・VolumetricFog3D v2.06 へ VL3DLF v3 の局所放射輝度・光線方向・投影影を共有し、
+--     GPU Henyey–Greenstein 散乱を雾の各 4×4 空間サンプルへ適用。既定の手動方向は後方互換で維持。
+--   ・VolumetricFog3D v2.06 用フル/ScriptOnly インストーラーを同梱ビルドし、Release に添付。
+--   ・AviUtl2 v2.1.16 実機検証対象。光場がない場合の既定動作および共有プロトコル v3 は変更なし。
 -- v3.16 更新点（2026-10-31・3D 光場共有 VL3DLF v3 新搭載：「雪（3D）v1.23+」連動照明＆真の 3D 遮蔽影）：
 --   1. 【3D 光場パブリッシャー（VL3DLF v3 / `ps_vl_lfpack`）新搭載】
 --      ・描画直前の `object` バッファ上で単一パス GPU パック（`48×48` しきい値適用済み放射輝度＆ステンドグラス色、
@@ -2671,34 +2676,34 @@ local I18N = {
         de = "\n*Tipp: Diese Ebene unter Ebene %d legen, damit Vordergrundstrahlen sichtbar bleiben",
     },
     hud = {
-        ja = "[体積光 3D v3.16] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
-        zh = "[体积光 3D v3.16] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
-        en = "[Volumetric Light 3D v3.16] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
-        de = "[Volumenlicht 3D v3.16] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
+        ja = "[体積光 3D v3.17] GPU=%s(%dx%dx%dpass) | スライス:%d(dz:%.1f) 遮蔽:%s キャッシュ頂点:%.2fM/14.0M\n光源:レイヤー%d(%dx%d) 座標:(%.0f, %.0f, %.0f) 有効UV:(%.2f..%.2f, %.2f..%.2f) 固有充填:%.0f%%\n長さ:%.0f(最大%.0f) 頂点:%d 最大画素RGBA:(%d,%d,%d,%d)%s",
+        zh = "[体积光 3D v3.17] GPU=%s(%dx%dx%d趟) | 切片:%d(dz:%.1f) 遮挡:%s 峰值缓存:%.2fM/14.0M\n光源:图层%d(%dx%d) 坐标:(%.0f, %.0f, %.0f) 有效UV:(%.2f..%.2f, %.2f..%.2f) 固有填充:%.0f%%\n长度:%.0f(全长%.0f) 顶点:%d 峰值RGBA:(%d,%d,%d,%d)%s",
+        en = "[Volumetric Light 3D v3.17] GPU=%s(%dx%dx%dpass) | Slices:%d(dz:%.1f) Occ:%s CachePeak:%.2fM/14.0M\nSource:Layer%d(%dx%d) Pos:(%.0f, %.0f, %.0f) ActiveUV:(%.2f..%.2f, %.2f..%.2f) Fill:%.0f%%\nLength:%.0f(Max%.0f) Verts:%d PeakRGBA:(%d,%d,%d,%d)%s",
+        de = "[Volumenlicht 3D v3.17] GPU=%s(%dx%dx%d-Pass) | Scheiben:%d(dz:%.1f) Abschat.:%s CacheSpitze:%.2fM/14.0M\nQuelle:Ebene%d(%dx%d) Pos:(%.0f, %.0f, %.0f) AktivUV:(%.2f..%.2f, %.2f..%.2f) Füllung:%.0f%%\nLänge:%.0f(Max%.0f) Verts:%d SpitzenRGBA:(%d,%d,%d,%d)%s",
     },
     log_info = {
-        ja = "体積光（3D）v3.16 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
-        zh = "体积光（3D）v3.16 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
-        en = "Volumetric Light (3D) v3.16 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
-        de = "Volumenlicht (3D) v3.16 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
+        ja = "体積光（3D）v3.17 GPU=%s 光源=%s 遮蔽=%s アトラス=%dx%dx%d スライス=%d(dz=%.1f) 頂点=%d 固有充填=%.2f キャッシュ頂点=%.2fM",
+        zh = "体积光（3D）v3.17 GPU=%s 光源=%s 遮挡=%s 图集=%dx%dx%d 切片=%d(dz=%.1f) 顶点=%d 固有填充=%.2f 峰值缓存=%.2fM",
+        en = "Volumetric Light (3D) v3.17 GPU=%s Src=%s Occ=%s Atlas=%dx%dx%d Slices=%d(dz=%.1f) Verts=%d Fill=%.2f CachePeak=%.2fM",
+        de = "Volumenlicht (3D) v3.17 GPU=%s Quelle=%s Abschat.=%s Atlas=%dx%dx%d Scheiben=%d(dz=%.1f) Verts=%d Füllung=%.2f CacheSpitze=%.2fM",
     },
     shader_err = {
-        ja = "体積光（3D）v3.16 シェーダー失敗: ",
-        zh = "体积光（3D）v3.16 着色器执行失败: ",
-        en = "Volumetric Light (3D) v3.16 shader error: ",
-        de = "Volumenlicht (3D) v3.16 Shader-Fehler: ",
+        ja = "体積光（3D）v3.17 シェーダー失敗: ",
+        zh = "体积光（3D）v3.17 着色器执行失败: ",
+        en = "Volumetric Light (3D) v3.17 shader error: ",
+        de = "Volumenlicht (3D) v3.17 Shader-Fehler: ",
     },
     init_start = {
-        ja = "体積光（3D）v3.16：初期化中……",
-        zh = "体积光（3D）v3.16：初始化中……",
-        en = "Volumetric Light (3D) v3.16: Initializing...",
-        de = "Volumenlicht (3D) v3.16: Initialisierung läuft...",
+        ja = "体積光（3D）v3.17：初期化中……",
+        zh = "体积光（3D）v3.17：初始化中……",
+        en = "Volumetric Light (3D) v3.17: Initializing...",
+        de = "Volumenlicht (3D) v3.17: Initialisierung läuft...",
     },
     init_done = {
-        ja = "体積光（3D）v3.16：初期化完了（%.2f秒）",
-        zh = "体积光（3D）v3.16：初始化完成（耗时 %.2f 秒）",
-        en = "Volumetric Light (3D) v3.16: Initialized (%.2fs)",
-        de = "Volumenlicht (3D) v3.16: Initialisiert (%.2fs)",
+        ja = "体積光（3D）v3.17：初期化完了（%.2f秒）",
+        zh = "体积光（3D）v3.17：初始化完成（耗时 %.2f 秒）",
+        en = "Volumetric Light (3D) v3.17: Initialized (%.2fs)",
+        de = "Volumenlicht (3D) v3.17: Initialisiert (%.2fs)",
     },
 }
 
@@ -9369,7 +9374,7 @@ function AB.run_foreground_blend()
 end
 
 --------------------------------------------------------------------
--- Shared 3D Light Field Publisher (v3.16, Protocol "VL3DLF\3\0")
+-- Shared 3D Light Field Publisher (v3.17, Protocol "VL3DLF\3\0")
 -- Publishes compact GPU-packed 3D radiance + cast-shadow + foreground
 -- depth fields into AviUtl2's inter-script `global` table so companion
 -- 3D particle/object scripts (e.g. Snow3D v1.23+) can illuminate
@@ -10260,7 +10265,7 @@ local function vl_run_frame()
         for k in pairs(P) do P[k] = nil end
         for k, v in pairs(saved_p) do P[k] = v end
         if not ok_in then
-            pcall(function() print("@error", "Volumetric Light (3D) v3.16 nested error: " .. tostring(err_in)) end)
+            pcall(function() print("@error", "Volumetric Light (3D) v3.17 nested error: " .. tostring(err_in)) end)
         end
         return ok_in
     end
@@ -10290,7 +10295,7 @@ local function vl_run_frame()
         vl_lf_withdraw()
         release_work_caches()
         pcall(function() obj.setoption("draw_state", true) end)
-        pcall(function() print("@error", "Volumetric Light (3D) v3.16 error: " .. tostring(err)) end)
+        pcall(function() print("@error", "Volumetric Light (3D) v3.17 error: " .. tostring(err)) end)
     end
     return ok
 end

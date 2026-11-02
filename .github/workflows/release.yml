@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to build & upload .au2pkg.zip assets for (leave blank for latest release, e.g. v3.15)"
+        description: "Release tag to build & upload .au2pkg.zip assets for (leave blank for latest release, e.g. v3.17)"
         required: false
         default: ""
 
@@ -56,6 +56,9 @@ jobs:
           python3 packaging/build_au2pkg.py --out-dir dist
           if [ -f integrations/snow3d/apply_to_snow3d.py ]; then
             python3 integrations/snow3d/apply_to_snow3d.py --build-pkg --out-dir dist
+          fi
+          if [ -f integrations/volumetricfog3d/apply_to_volumetricfog3d.py ]; then
+            python3 integrations/volumetricfog3d/apply_to_volumetricfog3d.py --build-pkg --out-dir dist
           fi
 
           FULL_ZIP="dist/VolumetricLight3D-${TAG}.au2pkg.zip"

@@ -30,6 +30,9 @@ jobs:
         working-directory: sandbox
         run: python3 run_checks.py --json out/results.json
 
+      - name: Run Fog light-field shader regression
+        run: python3 integrations/volumetricfog3d/tests/check_lightfield_shader.py
+
       - name: Render demo gallery
         working-directory: sandbox
         run: python3 render_demo.py

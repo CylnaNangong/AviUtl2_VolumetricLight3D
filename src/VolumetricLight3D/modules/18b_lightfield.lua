@@ -1,5 +1,5 @@
 --------------------------------------------------------------------
--- Shared 3D Light Field Publisher (v3.16, Protocol "VL3DLF\3\0")
+-- Shared 3D Light Field Publisher (v3.17, Protocol "VL3DLF\3\0")
 -- Publishes compact GPU-packed 3D radiance + cast-shadow + foreground
 -- depth fields into AviUtl2's inter-script `global` table so companion
 -- 3D particle/object scripts (e.g. Snow3D v1.23+) can illuminate
