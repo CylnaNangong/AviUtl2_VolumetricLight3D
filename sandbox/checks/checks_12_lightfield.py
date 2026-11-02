@@ -989,6 +989,9 @@ def _run_fog_lightfield(params: Dict[str, Any], bus: Dict[str, bytes], *, frame:
        tags=["runtime", "lightfield", "fog"])
 def volumetricfog3d_spatial_scattering():
     fog_script = load_script(FOG_OBJ2)
+    require("--select@scatter_source:散射光来源=0,手动方向=0,体积光联动=1" in
+            FOG_OBJ2.read_text(encoding="utf-8"),
+            "AviUtl select syntax must declare default index 0 before its options")
     require(fog_script.defaults().get("scatter_source") == 0.0,
             "legacy Fog projects must keep manual scattering as the default")
     lang_files = sorted((FOG_ROOT / "Language").glob("*.aul2"))

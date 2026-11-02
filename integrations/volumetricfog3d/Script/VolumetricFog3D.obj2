@@ -75,7 +75,7 @@
 --track@light_x:光の向きX,-1,1,0,0.01
 --track@light_y:光の向きY,-1,1,0.25,0.01
 --track@light_z:光の向きZ,-1,1,-1,0.01
---select@scatter_source:散射光来源=手动方向=0,体积光联动=1
+--select@scatter_source:散射光来源=0,手动方向=0,体积光联动=1
 --group
 
 --group:描画,true

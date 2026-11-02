@@ -45,7 +45,9 @@ def main() -> int:
     if "math.abs(cur_frame - sframe) > 1" not in text:
         raise AssertionError("fog receiver must reject stale frame packets")
     if "P.scatter_source = tonumber(scatter_source) or 0" not in text:
-        raise AssertionError("manual direction must remain the default for old projects")
+        raise AssertionError("manual direction must remain the runtime fallback")
+    if "--select@scatter_source:散射光来源=0,手动方向=0,体积光联动=1" not in text:
+        raise AssertionError("select declaration must encode manual direction as the host default")
     if "local LF_GRID = 4" not in text or "64 * LF_GRID * LF_GRID" not in text:
         raise AssertionError("expected a 4x4 spatial sample grid for up to 64 slices")
 
