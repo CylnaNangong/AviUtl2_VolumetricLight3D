@@ -1,5 +1,12 @@
 # 更新历史 — 体积光（3D） / VL3DBridge
 
+## v3.17（2026-11-01）· VolumetricFog3D v2.06 共享光场散射联动
+
+- **新增 VolumetricLight3D × VolumetricFog3D 联动包**：Fog3D 可读取同场景、当前帧的 `VL3DLF v3` 数据，在每个雾切片的 4×4 空间采样点应用局部光色、真实光束方向和 Band 1 投影阴影，再由 GPU Henyey–Greenstein 相位函数计算散射。
+- **保留旧工程的手动散射方向**：手动模式仍为默认；联动模式没有新鲜光场时自动回退，不改变旧工程既有外观。现有光场协议及 `VolumetricLight3D` 无雾场景路径保持不变。
+- **随版提供 VolumetricFog3D v2.06 完整版与 ScriptOnly 安装包**；后续 Release 工作流会自动构建并附上两种安装包。
+- **回归验证**：模拟 VolumetricLight3D 输出、雾层空间采样及 2D 投影阴影；手动模式逐像素兼容，自动模式的雾中散射随局部受光与遮挡变化。
+
 ## v3.16（2026-10-31）· 跨脚本共享真 3D 光场与遮挡阴影协议（`VL3DLF v3`）& `Snow3D（雪（3D））v1.23` 丁达尔受光/阴影联动
 
 - **新增跨脚本真 3D 光场发布器（`ps_vl_lfpack.hlsl` + `18b_lightfield.lua`，协议 `VL3DLF v3`）**：

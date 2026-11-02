@@ -1,0 +1,94 @@
+;===============================================================
+; Target: VolumetricFog3D v2.06 (VolumetricFog3D.obj2)
+; Language: Deutsch
+; Place this file in  C:\ProgramData\aviutl2\Language\\
+;===============================================================
+
+[Language]
+Information=VolumetricFog3D v2.06 Sprachpaket Deutsch
+SubLanguage=English
+
+[Effect]
+VolumetricFog3D=Volumennebel (3D)
+
+[VolumetricFog3D]
+VolumetricFog3D=Volumennebel (3D)
+
+; --- 霧 -> Nebel ---
+霧=Nebel
+濃さ=Nebeldichte
+霧の色=Nebelfarbe
+模様の大きさ=Wolkenskalierung
+模様の強さ=Wolkenkontrast
+
+; --- 流れ -> Strömung & Wind ---
+流れ=Strömung & Wind
+風X=Wind X
+風Y=Wind Y
+風Z=Wind Z
+揺らぎ速さ=Turbulenztempo
+
+; --- 領域・高さ -> Raum & Höhe ---
+領域・高さ=Raum & Höhe
+手前の距離=Nahdistanz
+奥行き=Tiefenspanne
+画面の広がり=Sichtfeld-Überhang
+高さ減衰=Höhenabnahme
+基準の高さY=Bodenbasis Y
+
+; --- 散乱光 -> Streulicht ---
+散乱光=Streulicht
+散乱の強さ=Streustärke
+光の色=Lichtfarbe
+前方散乱(g)=Vorwärtsstreuung (g)
+光の向きX=Lichtrichtung X
+光の向きY=Lichtrichtung Y
+光の向きZ=Lichtrichtung Z
+散射光来源=Streuquelle
+手动方向=Manuelle Richtung
+体积光联动=Mit VolumetricLight3D koppeln
+
+; --- 描画 -> Qualität & Ansicht ---
+描画=Qualität & Ansicht
+スライス数=Scheibenanzahl
+テクスチャ品質=Texturqualität
+軽量(1/2)=Leicht (1/2)
+標準=Standard
+視点追従=Ansichtsmodus
+自動(編集視点対応)=Auto (3D-Kamera & Vorschau)
+カメラ制御に固定=Fest auf Kamerasteuerung
+3D球ボリューム=Immer 3D-Kugelvolumen
+奥行き減衰=Fernausblendung
+乱数シード=Zufalls-Seed
+ログに出力=Konsole protokollieren
+
+[Tips.VolumetricFog3D]
+effect.name=Echtes kontinuierliches 3D-Volumennebel-Objekt mit GPU-4-Oktaven-fBm-Dichteatlas und Hardware-Z-Puffer-Verdeckung (ohne Partikelpunkte) sowie automatischem 360-Grad-Kugelvolumen in der Bearbeitungsansicht.
+濃さ=Gesamte optische Beer-Lambert-Nebeldichte. Den Ebenen-Mischmodus bitte auf „Normal“ belassen.
+霧の色=Grundlegende Eigen- und Streufarbe des Nebels.
+模様の大きさ=Räumliche 3D-Größe der Nebelbänke in Pixeln. Größere Werte erzeugen weite, ruhige Nebelschwaden.
+模様の強さ=0 % = vollkommen gleichmäßiger Dunst; höhere Werte formen strukturierte 3D-Nebelschwaden und Lücken.
+風X=Winddrift im Weltkoordinatensystem entlang X (links/rechts) in px/s.
+風Y=Winddrift im Weltkoordinatensystem entlang Y (unten/oben) in px/s.
+風Z=Winddrift im Weltkoordinatensystem entlang Z (nah/fern) in px/s.
+揺らぎ速さ=Zeitliche Veränderungsrate der inneren Turbulenz (0 = ruhendes 3D-Nebelfeld mit reiner Kameraparallaxe).
+手前の距離=Startabstand von der Kamera bis zum Beginn des Nebels in Pixeln.
+奥行き=Gesamte 3D-Tiefenausdehnung des Nebelvolumens in Pixeln.
+画面の広がり=Überhangfaktor des Sichtfelds (%), damit an den Bildrändern keine Lücken entstehen.
+高さ減衰=0 % = füllt alle Höhen; höhere Werte verdünnen den Nebel nach oben zu dichtem Bodennebel.
+基準の高さY=Welt-Y-Koordinate der Boden-/Wasserebene (positives Y zeigt in AviUtl2 nach unten).
+散乱の強さ=Intensität des im Nebel gestreuten gerichteten Lichts.
+光の色=Farbe des gestreuten Lichts (z. B. warmes Morgenlicht oder kühles Mondblau).
+前方散乱(g)=Henyey-Greenstein-Anisotropie g (-0,9 bis 0,9): positive Werte bündeln Gegenlicht; 0 = isotrop.
+光の向きX=X-Komponente des Lichtrichtungsvektors.
+光の向きY=Y-Komponente des Lichtrichtungsvektors.
+光の向きZ=Z-Komponente des Lichtrichtungsvektors.
+散射光来源=Wählen Sie eine feste manuelle Streurichtung oder das gemeinsame VolumetricLight3D-Lichtfeld der aktuellen Szene. Der Kopplungsmodus berücksichtigt lokale Lichtfarbe, Strahlrichtung und projizierte Schatten. Fehlt ein aktuelles Lichtfeld, wird automatisch der manuelle Modus verwendet.
+手动方向=Verwendet die X/Y/Z-Regler unten für eine feste Streurichtung.
+体积光联动=Abtastung des aktuellen VolumetricLight3D-Lichtfelds mit lokaler Farbe und Schatten. Für Aktualisierung im selben Frame die VolumetricLight3D-Ebene oberhalb dieser Nebelebene platzieren.
+スライス数=Anzahl der 3D-Tiefenscheiben (8–64; Standard 48 für weiche Übergänge).
+テクスチャ品質=GPU-Atlasauflösung (Standard = 2048er-Atlas, Leicht 1/2 = schneller 1024er-Atlas).
+視点追従=Auto nutzt im Kameramodus Sichtkegel-Scheiben und wechselt in der Bearbeitungsansicht automatisch auf ein 3D-Kugelvolumen ohne Schnittkanten.
+奥行き減衰=Blendet die vorderen und hinteren Grenzscheiben sanft aus.
+乱数シード=Zufalls-Seed zur Variation des 3D-Nebelmusters.
+ログに出力=Schreibt GPU-Atlas- und Ansichtsstatus ins Skript-Protokollfenster von AviUtl2.

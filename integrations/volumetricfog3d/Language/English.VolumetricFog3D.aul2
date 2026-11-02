@@ -1,0 +1,94 @@
+;===============================================================
+; Target: VolumetricFog3D v2.06 (VolumetricFog3D.obj2)
+; Language: English
+; Place this file in  C:\ProgramData\aviutl2\Language\\
+;===============================================================
+
+[Language]
+Information=VolumetricFog3D v2.06 English Language Pack
+SubLanguage=English
+
+[Effect]
+VolumetricFog3D=Volumetric Fog (3D)
+
+[VolumetricFog3D]
+VolumetricFog3D=Volumetric Fog (3D)
+
+; --- 霧 -> Fog Appearance ---
+霧=Fog Appearance
+濃さ=Density
+霧の色=Fog Color
+模様の大きさ=Cloud Scale
+模様の強さ=Cloud Contrast
+
+; --- 流れ -> Flow & Wind ---
+流れ=Flow & Wind
+風X=Wind X
+風Y=Wind Y
+風Z=Wind Z
+揺らぎ速さ=Turbulence Speed
+
+; --- 領域・高さ -> Space & Height ---
+領域・高さ=Space & Height
+手前の距離=Near Distance
+奥行き=Depth Span
+画面の広がり=View Overscan
+高さ減衰=Height Falloff
+基準の高さY=Ground Base Y
+
+; --- 散乱光 -> Light Scattering ---
+散乱光=Light Scattering
+散乱の強さ=Scatter Strength
+光の色=Light Color
+前方散乱(g)=Forward Scatter (g)
+光の向きX=Light Dir X
+光の向きY=Light Dir Y
+光の向きZ=Light Dir Z
+散射光来源=Scattering Light Source
+手动方向=Manual Direction
+体积光联动=Link to VolumetricLight3D
+
+; --- 描画 -> Quality & View ---
+描画=Quality & View
+スライス数=Slice Count
+テクスチャ品質=Texture Quality
+軽量(1/2)=Lightweight (1/2)
+標準=Standard
+視点追従=View Tracking
+自動(編集視点対応)=Auto (3D Camera & Edit View)
+カメラ制御に固定=Lock to Camera Control
+3D球ボリューム=Always 3D Sphere Volume
+奥行き減衰=Far Fade
+乱数シード=Random Seed
+ログに出力=Log to Console
+
+[Tips.VolumetricFog3D]
+effect.name=True continuous 3D volumetric fog object using a GPU 4-octave fBm density atlas and hardware Z-buffer depth occlusion (zero billboard dots), automatically switching to a 360-deg spherical volume in Edit View.
+濃さ=Overall Beer-Lambert optical fog density. Keep layer blend mode set to Normal rather than Add.
+霧の色=Base scattering color of the fog medium.
+模様の大きさ=3D spatial scale of continuous fog banks in pixels. Larger values produce broader atmospheric clouds.
+模様の強さ=0% = completely smooth homogeneous haze; higher values carve rich 3D cloud wisps and gaps.
+風X=World-space wind drift along X (left/right) in px/s.
+風Y=World-space wind drift along Y (down/up) in px/s.
+風Z=World-space wind drift along Z (near/far) in px/s.
+揺らぎ速さ=Internal boiling/morphing rate over time (0 = frozen 3D fog field with pure camera parallax).
+手前の距離=Near start distance from the camera in pixels.
+奥行き=Total 3D depth span of the fog volume along the view direction in pixels.
+画面の広がり=Frustum width/height overscan (%) so screen corners never clip during camera motion.
+高さ減衰=0% = fills all heights; higher values thin out upper air to form low-lying ground or water mist.
+基準の高さY=World Y coordinate of the ground/water plane (positive Y points downward in AviUtl2).
+散乱の強さ=Brightness of directional light scattered through the fog.
+光の色=Color tint of scattered directional light.
+前方散乱(g)=Henyey-Greenstein anisotropy g (-0.9 to 0.9): positive concentrates glow toward the light; 0 = isotropic.
+光の向きX=X component of light direction vector.
+光の向きY=Y component of light direction vector.
+光の向きZ=Z component of light direction vector.
+散射光来源=Choose a fixed manual scattering direction or read the current scene’s shared VolumetricLight3D field. Link mode uses local light color, beam direction, and projected shadows. If no fresh field is available, it falls back to manual mode.
+手动方向=Use the X/Y/Z controls below for a fixed scattering direction.
+体积光联动=Sample the current scene’s VolumetricLight3D field, local color, and shadows. Place the VolumetricLight3D layer before this fog layer for same-frame updates.
+スライス数=Number of 3D depth slices integrated across the volume (8-64; 48 default for smooth depth).
+テクスチャ品質=GPU atlas resolution (Standard = 2048 atlas, Lightweight 1/2 = fast 1024 atlas).
+視点追従=Auto uses camera-frustum slices in Camera View and seamlessly switches to a 3D spherical volume in Edit View so orbiting never shows flat edges.
+奥行き減衰=Smoothly feathers near/far boundary slices so volume edges never clip harshly.
+乱数シード=Seed offset changing the 3D spatial noise pattern.
+ログに出力=Writes GPU atlas and view-mode status to the AviUtl2 Script Log window.
