@@ -78,6 +78,10 @@
    - Entwickelt, um streng innerhalb von AviUtl2s Standard-`TemporaryImageCacheSize` (16 Mio. Pixel) und D3D11-`4096px`-RTV-Grenzen zu bleiben — selbst bei **8K UHD (`7680×4320`)**-Canvas oder **50 MP / 16K**-Quellmaterialien (Live-Cache-Peak ~`3.9 M–7.2 M` Pixel, am Frame-Ende wieder auf `1×1` freigegeben).
    - Beim ersten Laden schwerer Szenen oder Sub-Scenes werden `Initializing...` / `Initialization complete`-Hinweise in der Konsole ausgegeben, damit Wartezeiten bei der Dekodierung großer Assets nicht als Einfrieren missverstanden werden.
 
+6. **Gemeinsames 3D-Lichtfeld `VL3DLF v3`: Fog3D-/Snow3D-Kopplung (v3.17)**
+   - VolumetricLight3D veröffentlicht pro Szene und Frame lokale RGB-Strahldichte, Lichtrichtung und Abschattungsdaten. `VolumetricFog3D v2.06` nutzt sie für volumetrische Streuung; `Snow3D v1.23` beleuchtet und färbt Schneeflocken und dimmt sie bei Abschattung korrekt. Fog und Snow benötigen keine harte Abhängigkeit vom `.aux2`-Plugin.
+   - Fog rekonstruiert seine 4×4-Lichtfeldstichproben je Scheibe bilinear und behält manuelle Richtung sowie den Fallback ohne gültiges Lichtfeld bei. **Bekannte Einschränkung:** Bilineare Rekonstruktion beseitigt nicht alle Artefakte im Host; bei manchen Kamerafahrten bleiben lokale Streuflecken sichtbar und werden weiter untersucht.
+
 ---
 
 ## 2. Systemanforderungen
@@ -140,9 +144,13 @@ AviUtl ExEdit2 rendert Zeitleistenebenen **von oben nach unten (`Layer 1 → Lay
 Layer 1  [Hintergrund / Lichtquelle]  Bild, Video, Text, Form, @水面 usw. (z. B. Quellebene = 1)
 Layer 2  [Vordergrund-3D-Modell]      .obj-3D-Modell oder .vrm-Avatar (wirft physikalische 3D-Schattensäulen)
 Layer 3  [Vordergrund-2D-Ebene]       Figuren-Ausschnitt / Requisite (abschattet & optionale Vordergrund-Einblendung)
-Layer 4  [Volumenlicht (3D)]  ★   ← Custom-Objekt „Volumenlicht (3D)“ hier hinzufügen, Quellebene = 1 setzen
-Layer 5  [Untertitel / UI-Overlay]    Unterhalb von Volumenlicht platziert, bleibt Text/UI scharf und unbeeinflusst
+Layer 4  [Volumenlicht (3D)]  ★   ← Veröffentlicht das gemeinsame 3D-Lichtfeld der Szene
+Layer 5  [Volumennebel (3D)]          Optional: „Mit VolumetricLight3D koppeln“ wählen
+Layer 6  [Snow (3D)]                   Optional: Schneeflocken werden beleuchtet und abgeschattet
+Layer 7  [Untertitel / UI-Overlay]     Nach den Volumeneffekten, bleibt klar und scharf
 ```
+
+> **v3.17-Kopplung:** Rendern Sie Volumenlicht vor Fog3D / Snow3D, damit diese das Lichtfeld des aktuellen Frames lesen können. Untertitel/UI bleiben hinter diesen Effekten. Fog3D kann verknüpfte Streuung oder die manuelle Richtung verwenden.
 
 > [!NOTE]
 > **⏳ Hinweis zum ersten Szenenladen (~10 Sekunden Erstkompilierung — NICHT EINGEFROREN!)**  
@@ -274,7 +282,6 @@ Wir offenlegen transparent, welche Funktionen versionssensible sind:
 
 ## 7. Zukunftsroadmap
 
-- **3D-Optische Kopplung mit den Begleitskripten `Volumetric Fog (3D)` & `Snow (3D)`**: Gemeinsame Nutzung des 3D-Volumenlichtfeldes via `VL3DBridge`, sodass **Volumenlichtstrahlen 3D-Volumennebel lokal illuminieren und fallende 3D-Schneeflocken in Lichtstrahlen in Echtzeit eingefärbt werden können**.
 - **Vollständige Migration zu offiziellen Plugin-SDK-APIs**: Alle verbleibenden Schreib-gesperrten Memory-Probes werden sofort ersetzt, sobald KEN-kun offizielle SDK-Schnittstellen für Kamerasteuerung-3D-Lichtquellen, Editor-Viewport-Matrizen und 3D-Mesh-Buffer veröffentlicht.
 - **Breitere 3D-Asset- & Multi-Licht-Unterstützung**: Native `.glb` / `.gltf`-Mesh-Rasterisierung in der D3D11-ComputeShader-Pipeline von `VL3DBridge`, simultane Emission mehrerer 3D-Lichtquellen und farbige halbtransparente Schattensäulen (z. B. gefärbtes Glas-Lichtfälle).
 - **Einheitliche ComputeShader-Voxel-Integration**: Erkundung einer Froxel-/Ray-Marching-Integration auf Basis von `ID3D11Device3`-Compute-Shaders, um den Cache-Bandbreitenverbrauch bei hohen Frameraten in `4K` / `8K`-Zeitleisten weiter zu senken.
