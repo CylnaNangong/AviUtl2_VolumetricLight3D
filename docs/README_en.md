@@ -78,6 +78,10 @@
    - Engineered to stay strictly inside AviUtl2's default `TemporaryImageCacheSize` (16M pixels) and D3D11 `4096px` RTV limits — even on **8K UHD (`7680×4320`)** canvases or **50MP / 16K** source assets (peak live cache ~`3.9M–7.2M` pixels, released to `1×1` at end of frame).
    - Emits `Initializing...` / `Initialization complete` console notifications during first-frame loading of heavy scenes or sub-scenes so asset decoding waits are clearly communicated.
 
+6. **`VL3DLF v3` Shared 3D Light Field: Fog3D / Snow3D Interoperability (v3.17)**
+   - VolumetricLight3D publishes per-scene, per-frame local RGB radiance, light-travel direction, and occlusion data. `VolumetricFog3D v2.06` uses it for volumetric scattering; `Snow3D v1.23` lights and tints snowflakes and dims them correctly when occluded. Fog and Snow do not require a hard dependency on the `.aux2` plugin.
+   - Fog bilinearly reconstructs its 4×4 light-field samples per slice and retains manual-direction / no-valid-field fallback. **Known limitation:** bilinear reconstruction has not eliminated every in-host artifact; residual localized scattering patches remain in some moving-camera scenes and are under investigation.
+
 ---
 
 ## 2. System Requirements
@@ -140,9 +144,13 @@ AviUtl ExEdit2 renders timeline layers **from top to bottom (`Layer 1 → Layer 
 Layer 1  [Background / Light Source]  Image, video, text, shape, @水面, etc. (e.g. Source Layer = 1)
 Layer 2  [Foreground 3D Model]        .obj 3D Model or .vrm avatar (casts physical 3D shadow shafts)
 Layer 3  [Foreground 2D Layer]        Character art / cutout / prop (occludes rays & optional Foreground Blend)
-Layer 4  [Volumetric Light (3D)]  ★   ← Add Custom Object "Volumetric Light (3D)" here, set Source Layer = 1
-Layer 5  [Subtitles / UI Overlay]     Placed below Volumetric Light so text/UI stays crisp and unaffected
+Layer 4  [Volumetric Light (3D)]  ★   ← Publishes the current scene’s shared 3D light field
+Layer 5  [Volumetric Fog (3D)]          Optional: select “Link to VolumetricLight3D”
+Layer 6  [Snow (3D)]                     Optional: snow is lit and dims under occlusion
+Layer 7  [Subtitles / UI Overlay]        Stays crisp, after the volumetric effects
 ```
+
+> **v3.17 interoperability:** Render `Volumetric Light (3D)` before Fog3D / Snow3D so they can read the current frame’s light field. Keep subtitles/UI after these effects. Fog3D can use linked scattering or remain in manual-direction mode.
 
 > [!NOTE]
 > **⏳ First-Time Scene Load Notice (~10s Initial Compile — Not Frozen!)**  
@@ -274,7 +282,6 @@ We disclose the exact scope of version-sensitivity transparently below:
 
 ## 7. Future Roadmap
 
-- **3D Optical Coupling with Companion `Volumetric Fog (3D)` & `Snow (3D)` Scripts**: Sharing the 3D volumetric light field via `VL3DBridge` so **`Volumetric Light (3D)` beams can locally illuminate 3D Volumetric Fog and tint falling 3D Snowflakes passing through light shafts in real time**.
 - **Full Migration to Official Plugin SDK APIs**: Replacing remaining read-only memory probes immediately as KEN-kun exposes official SDK interfaces for Camera Control 3D lights, editor viewport matrices, and 3D mesh buffers.
 - **Broader 3D Asset & Multi-Light Support**: Native `.glb` / `.gltf` mesh rasterization inside `VL3DBridge`'s D3D11 ComputeShader pipeline, multi-light simultaneous emission, and colored translucent shadow shafts (e.g., stained-glass caustics).
 - **Unified ComputeShader Volumetric Integration**: Exploring `ID3D11Device3` compute-shader froxel/ray-marching integration to further reduce cache bandwidth on high-FPS `4K` / `8K` timelines.
