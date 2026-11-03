@@ -79,7 +79,7 @@
    - Emits `Initializing...` / `Initialization complete` console notifications during first-frame loading of heavy scenes or sub-scenes so asset decoding waits are clearly communicated.
 
 6. **`VL3DLF v3` Shared 3D Light Field: Fog3D / Snow3D Interoperability (v3.17)**
-   - VolumetricLight3D publishes per-scene, per-frame local RGB radiance, light-travel direction, and occlusion data. `VolumetricFog3D v2.06` uses it for volumetric scattering; `Snow3D v1.23` lights and tints snowflakes and dims them correctly when occluded. Fog and Snow do not require a hard dependency on the `.aux2` plugin.
+   - VolumetricLight3D publishes per-scene, per-frame local RGB radiance, light-travel direction, and occlusion data. [`VolumetricFog3D v2.06`](https://github.com/CylnaNangong/AviUtl2_VolumetricFog3D) uses it for volumetric scattering; [`Snow3D v1.23`](https://github.com/CylnaNangong/AviUtl2_Snow3D) lights and tints snowflakes and dims them correctly when occluded. Fog and Snow do not require a hard dependency on the `.aux2` plugin.
    - Fog bilinearly reconstructs its 4×4 light-field samples per slice and retains manual-direction / no-valid-field fallback. **Known limitation:** bilinear reconstruction has not eliminated every in-host artifact; residual localized scattering patches remain in some moving-camera scenes and are under investigation.
 
 ---
