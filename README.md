@@ -79,7 +79,7 @@
    - 首次打开含体积光的工程或展开次合成（サブシーン）时，自动在日志窗口输出多语言进度提示（`初始化中……` → `初始化完成`），避免首帧加载大图黑屏时被误判为卡死。
 
 6. **`VL3DLF v3` 共享三维光场：Fog3D / Snow3D 联动（v3.17）**
-   - VolumetricLight3D 按场景和帧发布局部 RGB 辐射、传播方向与遮挡信息；`VolumetricFog3D v2.06` 可据此进行体积散射，`Snow3D v1.23` 可使雪花受光染色，并在遮挡时正确变暗。联动读取的是当前场景的光场，不需要把 Fog 或 Snow 硬依赖到 `.aux2` 插件上。
+   - VolumetricLight3D 按场景和帧发布局部 RGB 辐射、传播方向与遮挡信息；[`VolumetricFog3D v2.06`](https://github.com/CylnaNangong/AviUtl2_VolumetricFog3D) 可据此进行体积散射，[`Snow3D v1.23`](https://github.com/CylnaNangong/AviUtl2_Snow3D) 可使雪花受光染色，并在遮挡时正确变暗。联动读取的是当前场景的光场，不需要把 Fog 或 Snow 硬依赖到 `.aux2` 插件上。
    - Fog 对每个切片的 4×4 光场样点进行双线性重建，且保留手动方向和无有效光场时的回退。**说明：双线性处理并未消除所有实机斑块；少数动态镜头仍有残余局部散射斑块，正在继续排查。**
 
 ---

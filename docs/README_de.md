@@ -79,7 +79,7 @@
    - Beim ersten Laden schwerer Szenen oder Sub-Scenes werden `Initializing...` / `Initialization complete`-Hinweise in der Konsole ausgegeben, damit Wartezeiten bei der Dekodierung großer Assets nicht als Einfrieren missverstanden werden.
 
 6. **Gemeinsames 3D-Lichtfeld `VL3DLF v3`: Fog3D-/Snow3D-Kopplung (v3.17)**
-   - VolumetricLight3D veröffentlicht pro Szene und Frame lokale RGB-Strahldichte, Lichtrichtung und Abschattungsdaten. `VolumetricFog3D v2.06` nutzt sie für volumetrische Streuung; `Snow3D v1.23` beleuchtet und färbt Schneeflocken und dimmt sie bei Abschattung korrekt. Fog und Snow benötigen keine harte Abhängigkeit vom `.aux2`-Plugin.
+   - VolumetricLight3D veröffentlicht pro Szene und Frame lokale RGB-Strahldichte, Lichtrichtung und Abschattungsdaten. [`VolumetricFog3D v2.06`](https://github.com/CylnaNangong/AviUtl2_VolumetricFog3D) nutzt sie für volumetrische Streuung; [`Snow3D v1.23`](https://github.com/CylnaNangong/AviUtl2_Snow3D) beleuchtet und färbt Schneeflocken und dimmt sie bei Abschattung korrekt. Fog und Snow benötigen keine harte Abhängigkeit vom `.aux2`-Plugin.
    - Fog rekonstruiert seine 4×4-Lichtfeldstichproben je Scheibe bilinear und behält manuelle Richtung sowie den Fallback ohne gültiges Lichtfeld bei. **Bekannte Einschränkung:** Bilineare Rekonstruktion beseitigt nicht alle Artefakte im Host; bei manchen Kamerafahrten bleiben lokale Streuflecken sichtbar und werden weiter untersucht.
 
 ---
