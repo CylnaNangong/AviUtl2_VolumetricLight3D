@@ -2,7 +2,7 @@ local function vl_bf_render()
     -- 5) GPU マルチパス体積描画
     ------------------------------------------------------------
     VL_BF.TILES_X, VL_BF.ATLAS, VL_BF.TILE, VL_BF.PAD= 8, 2560, 320, 2.0
-    VL_BF.k_gain_base= (P.intensity / 100.0) * K.GAIN.CALIB / VL_BF.L_char
+    VL_BF.k_gain_base= (P.intensity / K.GAIN.REF_INTENSITY) * K.GAIN.CALIB / VL_BF.L_char
     VL_BF.fog_amt= math.max(0.0, math.min(1.0, P.fog / 100.0))
     VL_BF.f_scale= math.max(10.0, P.fog_scale)
     VL_BF.wox, VL_BF.woy, VL_BF.woz= 0.0, 0.0, 0.0

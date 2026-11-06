@@ -33,7 +33,7 @@ local function vl_bf_geometry()
             VL_BF.wy = VL_BF.cam_y + VL_BF.f_y * 1200.0 - uy_c * (VL_BF.L_tot * 0.45)
             VL_BF.wz = VL_BF.cam_z + VL_BF.f_z * 1200.0 - uz_c * (VL_BF.L_tot * 0.45)
             VL_BF.Hx, VL_BF.Hy = math.max(VL_BF.scr_w, VL_BF.scr_h) * 1.25, math.max(VL_BF.scr_w, VL_BF.scr_h) * 1.25
-            VL_BF.L_char = 195.0
+            VL_BF.L_char = K.LCHAR.PAR_FIXED
         else
             local dir_x, dir_y, dir_z
             if is_spot_g then
@@ -64,8 +64,9 @@ local function vl_bf_geometry()
             VL_BF.wy = cl.py + dir_y * ap_dist
             VL_BF.wz = cl.pz + dir_z * ap_dist
             VL_BF.Hx, VL_BF.Hy = ap_pad, ap_pad
-            local ref_r = math.min(520.0, 600.0 * math.tan(math.min(1.15, clamped_ang)))
-            VL_BF.L_char = math.min(200.0, math.max(22.0, ref_r * 0.32))
+            local lc = K.LCHAR
+            local ref_r = math.min(lc.R_MAX, lc.SPOT_GAIN * math.tan(math.min(lc.ANG_MAX, clamped_ang)))
+            VL_BF.L_char = math.min(lc.MAX_SPOT, math.max(lc.MIN_SPOT, ref_r * lc.SPOT_COEF))
         end
         local upx, upy, upz = 0.0, 1.0, 0.0
         if math.abs(VL_BF.Wny) > 0.92 then upx, upy, upz = 1.0, 0.0, 0.0 end

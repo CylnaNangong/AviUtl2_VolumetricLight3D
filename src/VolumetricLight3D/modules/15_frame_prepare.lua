@@ -460,8 +460,11 @@ local function vl_bf_capture()
 
     VL_BF.cx_sh= ((VL_BF.u0_s + VL_BF.u1_s) * 0.5 - 0.5) * 2.0 * VL_BF.Hx
     VL_BF.cy_sh= ((VL_BF.v0_s + VL_BF.v1_s) * 0.5 - 0.5) * 2.0 * VL_BF.Hy
-    VL_BF.R_fixed= math.min(math.max(VL_BF.Hx, VL_BF.Hy), 520.0)
-    VL_BF.L_char= math.min(260.0, math.max(42.0, VL_BF.R_fixed * (0.12 + 0.36 * VL_BF.base_ratio * VL_BF.base_ratio)))
+    -- L_char 的三条估算路径与常量见 00a_consts.lua 的 K.LCHAR
+    VL_BF.R_fixed= math.min(math.max(VL_BF.Hx, VL_BF.Hy), K.LCHAR.R_MAX)
+    local lc = K.LCHAR
+    VL_BF.L_char= math.min(lc.MAX_FIXED, math.max(lc.MIN_FIXED,
+        VL_BF.R_fixed * (lc.BASE + lc.RATIO2 * VL_BF.base_ratio * VL_BF.base_ratio)))
 
     ------------------------------------------------------------
 end

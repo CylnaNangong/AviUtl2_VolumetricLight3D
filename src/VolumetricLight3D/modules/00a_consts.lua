@@ -40,6 +40,7 @@ local K = {
     -- 补偿项：两者必须一起改，否则整条光束的亮度会阶跃。
     GAIN = {
         CALIB = 0.155,                    -- k_gain_base 的标定常数（见 docs/CHANGELOG v3.14）
+        REF_INTENSITY = 100.0,            -- 强度归一化基准（100 = 默认强度）
         QUANT = 1.05,                     -- 8bit 量化互补余量
     },
     ---------------------------------------------------------------
@@ -70,6 +71,36 @@ local K = {
     -- 所以标志位不会被量化误差翻转（断言见文件末尾）。
     -- 注意：此处的 0.48 与 19_render.lua 的 cam_comp = 0.48 只是同值，
     -- 语义无关（一个是编码斜率，一个是相机补偿），千万不要一起替换。
+    ---------------------------------------------------------------
+    -- 特征光距 L_char：把「光束有多大」折算成一个等效距离
+    ---------------------------------------------------------------
+    -- L_char 参与亮度归一化（k_gain_base = 强度/100 * CALIB / L_char），所以它
+    -- 一旦变化，整条光束的亮度会跟着变。历史上有三条**互不相同的估算路径**，
+    -- 它们不是同一个公式的三个写法，而是三套针对不同光源类型的标定：
+    --   (a) 屏幕空间一般路径（15_frame_prepare）：
+    --       L = clamp(R_fixed * (BASE + RATIO2 * base_ratio^2), MIN_FIXED, MAX_FIXED)
+    --   (b) 相机光源·平行光（16_geometry_mip）：固定 PAR_FIXED
+    --   (c) 相机光源·点/聚光（16_geometry_mip）：
+    --       L = clamp(SPOT_GAIN * tan(min(ANG_MAX, half_angle)) * SPOT_COEF,
+    --                 MIN_SPOT, MAX_SPOT)
+    -- (a) 的 R_fixed 与 (c) 的 ref_r 都先夹到同一个屏幕半径上限 R_MAX ——
+    -- 这是三条路径唯一共用的量。
+    -- PAR_FIXED 同时落在 (a)(c) 的窗口内，是「切换光源类型时亮度不跳变」的
+    -- 最低保障；要真正消除分支间的不连续，得重做标定（会改变现有画面），
+    -- 不在常量整理范围内。
+    LCHAR = {
+        R_MAX     = 520.0,   -- 屏幕半径上限（(a) 的 R_fixed 与 (c) 的 ref_r 共用）
+        BASE      = 0.12,    -- (a) 常数项
+        RATIO2    = 0.36,    -- (a) base_ratio² 的系数
+        MIN_FIXED = 42.0,    -- (a) 下限
+        MAX_FIXED = 260.0,   -- (a) 上限
+        PAR_FIXED = 195.0,   -- (b) 平行光的固定特征距离
+        SPOT_GAIN = 600.0,   -- (c) tan(半角) → 参考半径
+        SPOT_COEF = 0.32,    -- (c) 参考半径 → 特征距离
+        ANG_MAX   = 1.15,    -- (c) 参与计算的半角上限（rad）
+        MIN_SPOT  = 22.0,    -- (c) 下限
+        MAX_SPOT  = 200.0,   -- (c) 上限
+    },
     PROX = {
         STEP      = 0.48,   -- 归一化深度 → code 的斜率（区间总宽 0.49 - 0.01）
         BASE_MESH = 0.01,   -- 网格区间下限
@@ -143,4 +174,17 @@ do
         end
         assert(math.abs(s3 - px.CHAN * c) < 1e-12, "K.PROX: channel spread is not lossless")
     end
+    -- L_char 三条路径的窗口关系：固定值必须落在另外两条的窗口内，
+    -- 否则切换光源类型时亮度会跳变（这是历史遗留的感知标定，不是数学恒等式）
+    local lc = K.LCHAR
+    assert(lc.MIN_FIXED < lc.PAR_FIXED and lc.PAR_FIXED < lc.MAX_FIXED,
+           "K.LCHAR: PAR_FIXED left the screen-space window")
+    assert(lc.MIN_SPOT < lc.PAR_FIXED and lc.PAR_FIXED < lc.MAX_SPOT,
+           "K.LCHAR: PAR_FIXED left the point/spot window")
+    assert(lc.MIN_FIXED < lc.MAX_FIXED and lc.MIN_SPOT < lc.MAX_SPOT and lc.MIN_SPOT > 0,
+           "K.LCHAR: inverted or non-positive clamp window")
+    -- R_MAX 必须真的会生效：不加夹取时 (c) 的参考半径要能超过它
+    assert(lc.SPOT_GAIN * math.tan(lc.ANG_MAX) > lc.R_MAX,
+           "K.LCHAR: R_MAX no longer clamps the spot reference radius")
+    assert(K.GAIN.REF_INTENSITY > 0, "K.GAIN: reference intensity must be positive")
 end

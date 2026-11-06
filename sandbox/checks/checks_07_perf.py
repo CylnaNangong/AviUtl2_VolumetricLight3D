@@ -102,19 +102,12 @@ def atlas_side_from_budget():
     这里直接在 LuaJIT 里执行 00a_consts.lua（连带跑完它末尾的 assert），
     再读回运行时真实值 —— 比解析文本更接近"脚本实际看到的常量"。
     """
-    from lupa.luajit21 import LuaRuntime
+    from vl3dsb.consts import lua_consts
 
-    require(_CONSTS_LUA.exists(), f"missing {_CONSTS_LUA}")
-    src = _CONSTS_LUA.read_text(encoding="utf-8")
-    lua = LuaRuntime(unpack_returned_tuples=True)
-    try:
-        K = lua.execute(src + "\nreturn K")
-    except Exception as exc:                       # noqa: BLE001 - LuaError
-        raise AssertionError(f"00a_consts.lua failed its own self-check: {exc}") from exc
-
-    budget = int(K.ATLAS.BUDGET_DOTS)
-    align = int(K.ATLAS.ALIGN)
-    side = K.ATLAS.SIDE_3
+    K = lua_consts()
+    budget = int(K["ATLAS"]["BUDGET_DOTS"])
+    align = int(K["ATLAS"]["ALIGN"])
+    side = K["ATLAS"]["SIDE_3"]
 
     require(budget == 1_800_000, f"single-atlas dot budget changed: {budget}")
     require(align == 8, f"atlas alignment changed: {align}")

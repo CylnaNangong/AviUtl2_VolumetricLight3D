@@ -6,6 +6,7 @@ import re
 
 import numpy as np
 
+from vl3dsb.config import REPO_ROOT
 from vl3dsb.harness import check, fail, require, skip
 from vl3dsb.obj2 import parse_obj2
 from vl3dsb.session import DEFAULT_SCRIPT, OUT_ROOT, save_png, shader_library, script
@@ -518,3 +519,42 @@ def dither_constants():
     return {"phi_inv": got["VL_PHI_INV"], "min_gap": round(lo, 6),
             "max_gap": round(hi, 6), "channel_sep": round(worst, 4),
             "ign_levels": len(q)}
+
+
+@check("hlsl: shadow softness ramp is named apart from the screen-radius cap",
+       tags=["hlsl", "contract", "core"])
+def shadow_soft_ramp():
+    """520 这个数在两处出现，但**语义不同**：Lua 侧是屏幕半径上限，这里是被
+    遮挡后距离的半影饱和距离。命名必须分开，否则一次全局替换会同时改坏两件事。
+    """
+    from vl3dsb.consts import lua_consts
+
+    src = script().shaders["beamatlas"]
+    soft_dist = _shader_const(src, "VL_SHADOW_SOFT_DIST")
+    soft_min = _shader_const(src, "VL_SOFT_MIN_F")
+    soft_max = _shader_const(src, "VL_SOFT_MAX_F")
+
+    require(soft_dist == 520.0, f"shadow softness distance changed: {soft_dist}")
+    require(abs((soft_min + soft_max) - 1.0) < 1e-7,
+            f"soft radius ramp no longer tops out at the full radius "
+            f"({soft_min} + {soft_max} != 1.0)")
+
+    # 同值不同义：Lua 的 R_MAX 恰好也是 520，但必须是两个独立的名字
+    lc = lua_consts()["LCHAR"]
+    require(lc["R_MAX"] == soft_dist,
+            "the coincidence being documented no longer holds - update the comment")
+    code_only = re.sub(r"//[^\n]*", "", src)
+    require("R_MAX" not in code_only,
+            "beamatlas must not borrow the Lua name R_MAX for a softness distance")
+    lua_dir = REPO_ROOT / "src" / "VolumetricLight3D" / "modules"
+    leaked = [p.name for p in sorted(lua_dir.glob("*.lua"))
+              if "VL_SHADOW_SOFT_DIST" in p.read_text(encoding="utf-8")]
+    require(not leaked, f"the shader-only softness constant leaked into Lua: {leaked}")
+
+    # 代码体里不许再裸写 0.22 / 0.78 / 520.0
+    for lit in ("0.22", "0.78", "520.0"):
+        require(code_only.count(lit) == 1,
+                f"naked {lit} left in beamatlas besides its declaration")
+
+    return {"soft_dist": soft_dist, "ramp": [soft_min, soft_max],
+            "lua_r_max": lc["R_MAX"]}

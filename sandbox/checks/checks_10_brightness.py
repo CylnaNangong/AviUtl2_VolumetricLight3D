@@ -282,3 +282,61 @@ def alpha_window_single_source():
     return {"poly_alpha_spot": k["ALPHA_SPOT"], "w_spot": round(w_spot, 9),
             "w_default": round(w_base, 9), "window": [k["DISCARD"], round(upper, 9)],
             "edge_cut_f": round(f_cut, 5)}
+
+
+@check("brightness: L_char keeps its three estimators inside one envelope",
+       tags=["brightness", "contract", "core"])
+def lchar_envelope():
+    """L_char 是亮度归一化的分母（k_gain_base = 强度/100 × CALIB / L_char）。
+
+    历史上有三条互不相同的估算路径（屏幕空间一般路径 / 平行光固定值 / 点聚光
+    角度换算）。本次不合并它们（合并会改变现有画面），而是：
+      1. 把三套系数外置成 K.LCHAR，并把共用的屏幕半径上限 520 收成一处；
+      2. 断言「固定值 195 落在另外两条的窗口内，且能被它们的输入复现」——
+         这是「切换光源类型时亮度跳变有界」的可检验形态；
+      3. 断言生成物里不再有裸写的 195.0 / 520.0 / 0.32。
+    """
+    import math
+
+    from vl3dsb.consts import lua_consts
+
+    lc = lua_consts()["LCHAR"]
+    gain = lua_consts()["GAIN"]
+
+    # 窗口自洽
+    require(lc["MIN_FIXED"] < lc["PAR_FIXED"] < lc["MAX_FIXED"],
+            f"PAR_FIXED {lc['PAR_FIXED']} left the screen-space window "
+            f"({lc['MIN_FIXED']}, {lc['MAX_FIXED']})")
+    require(lc["MIN_SPOT"] < lc["PAR_FIXED"] < lc["MAX_SPOT"],
+            f"PAR_FIXED {lc['PAR_FIXED']} left the point/spot window "
+            f"({lc['MIN_SPOT']}, {lc['MAX_SPOT']})")
+
+    # 可达性：(a) 用 base_ratio∈[0,1] 能算出 195；(c) 用 half_angle 能算出 195
+    ratio2 = (lc["PAR_FIXED"] / lc["R_MAX"] - lc["BASE"]) / lc["RATIO2"]
+    require(0.0 <= ratio2 <= 1.0,
+            f"PAR_FIXED is unreachable from the screen-space path (base_ratio²={ratio2:.3f})")
+    tan_needed = (lc["PAR_FIXED"] / lc["SPOT_COEF"]) / lc["SPOT_GAIN"]
+    require(math.atan(tan_needed) <= lc["ANG_MAX"],
+            "PAR_FIXED is unreachable from the point/spot path (angle beyond ANG_MAX)")
+
+    # R_MAX 必须真的会生效，否则「共用上限」是死代码
+    require(lc["SPOT_GAIN"] * math.tan(lc["ANG_MAX"]) > lc["R_MAX"],
+            "R_MAX never clamps the spot reference radius")
+
+    require(gain["REF_INTENSITY"] == 100.0,
+            f"intensity normalization basis changed: {gain['REF_INTENSITY']}")
+
+    # 生成物：三处裸字面量必须消失，且都改为读 K.LCHAR
+    text = script().text.replace("\r\n", "\n")
+    for banned in ("VL_BF.L_char = 195.0",
+                   "math.min(math.max(VL_BF.Hx, VL_BF.Hy), 520.0)",
+                   "ref_r * 0.32)",
+                   "(P.intensity / 100.0) * K.GAIN.CALIB"):
+        require(banned not in text, f"naked literal still present: {banned!r}")
+    require(text.count("K.LCHAR") >= 4,
+            "the three L_char paths no longer read K.LCHAR")
+
+    return {"par_fixed": lc["PAR_FIXED"], "r_max": lc["R_MAX"],
+            "window_fixed": [lc["MIN_FIXED"], lc["MAX_FIXED"]],
+            "window_spot": [lc["MIN_SPOT"], lc["MAX_SPOT"]],
+            "reach_ratio2": round(ratio2, 4), "reach_angle_rad": round(math.atan(tan_needed), 4)}

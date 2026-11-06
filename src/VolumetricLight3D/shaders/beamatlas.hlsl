@@ -18,6 +18,15 @@
     const float VL_IGN_BX     = 0.06711056;  // IGN：x 梯度
     const float VL_IGN_BY     = 0.00583715;  // IGN：y 梯度
 
+    // ---- 投影阴影半影（软化半径）----------------------------------------
+    // 遮挡体之后的半影半径随「遮挡后距离」线性增长，在 SOFT_DIST（世界单位）
+    // 处饱和到 p16.w 的 SOFT_MAX_F 倍；两者之和恰为 1.0（= 满软半径）。
+    // 注意：这里的 520 与 Lua 侧 K.LCHAR.R_MAX 的 520 只是同值，语义无关
+    // （那边是屏幕半径上限，这边是半影饱和距离），切勿合并成同一个名字。
+    const float VL_SHADOW_SOFT_DIST = 520.0;
+    const float VL_SOFT_MIN_F       = 0.22;
+    const float VL_SOFT_MAX_F       = 0.78;
+
     // ---- prox 编码（camocc 深度图）的常量 ----------------------------------
     // 与 Lua 侧 K.PROX 同一协议（见 00a_consts.lua）。四份副本（Lua / C++ /
     // 本文件 / ps_vl_lfpack.hlsl）由 sandbox 的 contract 检查对齐，改动必须同步。
@@ -818,7 +827,7 @@
                                 float dist_after = (cm.a > 0.5)
                                     ? max(0.0, t_ray - (1.0 - (cm.r + cm.g + cm.b) * (1.0 / 3.0)) * L_tot)
                                     : (L_tot * 0.35);
-                                rad_px = p16.w * (0.22 + 0.78 * saturate(dist_after / 520.0));
+                                rad_px = p16.w * (VL_SOFT_MIN_F + VL_SOFT_MAX_F * saturate(dist_after / VL_SHADOW_SOFT_DIST));
                             }
                             if (max(max(len_u_sh, len_v_sh) * 0.55, rad_px) > 0.35)
                             {

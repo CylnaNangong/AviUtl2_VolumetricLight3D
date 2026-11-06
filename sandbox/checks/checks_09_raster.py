@@ -109,15 +109,10 @@ _PROX_NAMES = {
 
 
 def _lua_prox() -> dict:
-    from lupa.luajit21 import LuaRuntime
+    from vl3dsb.consts import lua_consts
 
-    require(_CONSTS_LUA.exists(), f"missing {_CONSTS_LUA}")
-    lua = LuaRuntime(unpack_returned_tuples=True)
-    try:
-        K = lua.execute(_CONSTS_LUA.read_text(encoding="utf-8") + "\nreturn K")
-    except Exception as exc:                       # noqa: BLE001 - LuaError
-        raise AssertionError(f"00a_consts.lua failed its own self-check: {exc}") from exc
-    return {k: float(K.PROX[k]) for k in _PROX_NAMES}
+    table = lua_consts()["PROX"]
+    return {k: float(table[k]) for k in _PROX_NAMES}
 
 
 def _grab(path, ident: str, pattern: str) -> float:
