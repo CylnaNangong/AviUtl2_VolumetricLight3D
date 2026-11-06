@@ -1,4 +1,5 @@
 #include "vl3d_bridge_core.h"
+#include "vl3d_bridge_prox.h"
 #include "vl3d_bridge_shaders.h"
 
 #include <algorithm>
@@ -783,12 +784,14 @@ RastOutput ExecuteCpuPassLocked(RastManager& mgr, void* dst_rgba, int32_t w, int
                 uint32_t val = mgr.cpu_prox_buf[base + static_cast<size_t>(x)];
                 if (val != 0u) {
                     float pr = Clamp01(static_cast<float>((val >> 1u) - 1u) * (1.0f / 16777214.0f));
+                    // prox 编码：协议常量集中在 vl3d_bridge_prox.h（与 Lua K.PROX 同源）
                     float code = is_camdepth
-                        ? (((val & 1u) != 0u) ? (pr * 0.48f + 0.51f) : (pr * 0.48f + 0.01f))
+                        ? (((val & 1u) != 0u) ? (pr * prox::kStep + prox::kBaseChar)
+                                              : (pr * prox::kStep + prox::kBaseMesh))
                         : pr;
-                    float rf = Clamp01(code * 3.0f - 2.0f);
-                    float gf = Clamp01(code * 3.0f - 1.0f);
-                    float bf = Clamp01(code * 3.0f);
+                    float rf = Clamp01(code * prox::kChan - prox::kOffR);
+                    float gf = Clamp01(code * prox::kChan - prox::kOffG);
+                    float bf = Clamp01(code * prox::kChan - prox::kOffB);
                     size_t di = (base + static_cast<size_t>(x)) * 4u;
                     rgba[di + 0] = static_cast<uint8_t>(rf * 255.0f + 0.5f);
                     rgba[di + 1] = static_cast<uint8_t>(gf * 255.0f + 0.5f);

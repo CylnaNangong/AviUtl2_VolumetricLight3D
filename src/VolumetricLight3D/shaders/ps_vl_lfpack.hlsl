@@ -4,6 +4,16 @@
     //   Band 1 (rows row_sh..row_sh+47) : 48x48 unified 3D shmap + 2D occ cast-shadow depth (RG16 + B=cov)
     //   Band 2 (rows row_cm..row_cm+17) : 48x18 unified 3D camocc + 2D occ foreground depth (RG16 + B=cov)
 
+    // ---- prox 编码（camocc 深度图）的常量 ----------------------------------
+    // 与 Lua 侧 K.PROX 同一协议：code = depth * VL_PROX_STEP + VL_PROX_BASE_*，
+    // 三通道 r/g/b 互为移位拷贝，解码时 raw=(r+g+b)/3。改这里必须同步
+    // 00a_consts.lua 与 beamatlas.hlsl（contract 检查会拦住漂移）。
+    const float VL_PROX_STEP      = 0.48;
+    const float VL_PROX_BASE_MESH = 0.01;
+    const float VL_PROX_BASE_CHAR = 0.51;
+    const float VL_PROX_FLAG      = 0.50;
+    const float VL_PROX_CHAN      = 3.0;
+
     Texture2D g_mip    : register(t0);
     Texture2D g_occ    : register(t1);
     Texture2D g_shmap  : register(t2);
@@ -233,10 +243,10 @@
                 float4 cm = g_camocc.Load(int3(ip, 0));
                 if (cm.a >= 0.5)
                 {
-                    float raw = (cm.r + cm.g + cm.b) * (1.0 / 3.0);
-                    float prox = (raw > 0.50)
-                        ? saturate((raw - 0.51) * (1.0 / 0.48))
-                        : saturate((raw - 0.01) * (1.0 / 0.48));
+                    float raw = (cm.r + cm.g + cm.b) * (1.0 / VL_PROX_CHAN);
+                    float prox = (raw > VL_PROX_FLAG)
+                        ? saturate((raw - VL_PROX_BASE_CHAR) * (1.0 / VL_PROX_STEP))
+                        : saturate((raw - VL_PROX_BASE_MESH) * (1.0 / VL_PROX_STEP));
                     float z_3d = (1.0 - prox) * max_z;
                     if (z_3d < z_min) z_min = z_3d;
                     fg_cov = max(fg_cov, occ_str);

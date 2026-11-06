@@ -14,6 +14,17 @@ static constexpr const char* kVl3dRastHlslCs = R"HLSL(
 #define VL_LOOP [loop]
 #endif
 
+// ---- prox 编码（camocc 深度图）常量 --------------------------------------
+// 与 C++ / Lua 侧同一协议（见 vl3d_bridge_prox.h 与 00a_consts.lua 的 K.PROX）。
+const float VL_PROX_STEP      = 0.48;
+const float VL_PROX_BASE_MESH = 0.01;
+const float VL_PROX_BASE_CHAR = 0.51;
+const float VL_PROX_FLAG      = 0.50;
+const float VL_PROX_CHAN      = 3.0;
+const float VL_PROX_OFF_R     = 2.0;
+const float VL_PROX_OFF_G     = 1.0;
+const float VL_PROX_OFF_B     = 0.0;
+
 cbuffer RastCB : register(b0)
 {
     float4 c0;  // x=width, y=height, z=pass_mode (0=shadow, 1=camdepth), w=tri_count
@@ -570,16 +581,16 @@ void cs_encode_rgba(uint3 dtid : SV_DispatchThreadID)
     float code = pr;
     if (c0.z >= 0.5)
     {
-        code = pr * 0.48 + 0.01;
+        code = pr * VL_PROX_STEP + VL_PROX_BASE_MESH;
         if ((val & 1u) != 0u)
         {
-            code = pr * 0.48 + 0.51;
+            code = pr * VL_PROX_STEP + VL_PROX_BASE_CHAR;
         }
     }
 
-    float r_f = saturate(code * 3.0 - 2.0);
-    float g_f = saturate(code * 3.0 - 1.0);
-    float b_f = saturate(code * 3.0);
+    float r_f = saturate(code * VL_PROX_CHAN - VL_PROX_OFF_R);
+    float g_f = saturate(code * VL_PROX_CHAN - VL_PROX_OFF_G);
+    float b_f = saturate(code * VL_PROX_CHAN - VL_PROX_OFF_B);
 
     uint r_u = (uint)(r_f * 255.0 + 0.5);
     uint g_u = (uint)(g_f * 255.0 + 0.5);

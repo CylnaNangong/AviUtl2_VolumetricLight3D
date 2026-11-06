@@ -189,9 +189,35 @@ class Parser:
         textures: List[str] = []
         samplers: List[str] = []
         cbuffers: List[Dict] = []
+        consts: List[Dict] = []
         funcs: List[Dict] = []
         while self.peek().kind != "eof":
             tok = self.peek()
+            if tok.text in ("static", "const"):
+                # `static const float NAME = 0.48;` —— 标量常量声明，转译期直接折叠。
+                # 目的只是让「有名字的常量」在真实 D3D 与沙箱里同时成立。
+                while self.peek().text in ("static", "const"):
+                    self.next()
+                base, comps = self.parse_type()
+                if comps != 1 or base not in ("f", "i", "u"):
+                    raise HlslError(
+                        f"{self.name}: only scalar numeric const globals are supported "
+                        f"(line {tok.line})")
+                nm = self.ident()
+                self.expect("=")
+                sign = 1.0
+                if self.at("-"):
+                    self.next()
+                    sign = -1.0
+                num = self.next()
+                if num.kind != "num":
+                    raise HlslError(
+                        f"{self.name}: const global {nm!r} must be a numeric literal "
+                        f"(line {num.line})")
+                self.expect(";")
+                consts.append({"name": nm, "type": [base, comps],
+                               "value": sign * float(num.text.rstrip("uUlLfF").lower())})
+                continue
             if tok.text == "Texture2D":
                 self.next()
                 nm = self.ident()
@@ -269,7 +295,8 @@ class Parser:
                           "line": tok.line})
         if not textures and not funcs:
             raise HlslError(f"{self.name}: no shader code found")
-        return {"textures": textures, "samplers": samplers, "cbuffers": cbuffers, "funcs": funcs}
+        return {"textures": textures, "samplers": samplers, "cbuffers": cbuffers,
+                "consts": consts, "funcs": funcs}
 
     # -- statements --
     def parse_block(self) -> Tuple:
@@ -502,6 +529,8 @@ class CodeGen:
         for cb in program["cbuffers"]:
             for f in cb["fields"]:
                 self.globals[f["name"]] = ("f", 4)
+        for c in program.get("consts", []):
+            self.globals[c["name"]] = tuple(c["type"])
         self.out: List[str] = []
         self.indent = 1
         self.entry = None
@@ -1025,6 +1054,12 @@ class CodeGen:
                 else:
                     lines.append(f"static V& {f['name']} = cb.{f['name']};")
             self.cb_fields = cb["fields"]
+        for c in prog.get("consts", []):
+            ct = ctype(tuple(c["type"]))
+            val = repr(float(c["value"]))
+            if tuple(c["type"])[0] == "f":
+                val += "f"
+            lines.append(f"static constexpr {ct} {c['name']} = {val};")
         lines.append("")
         # function prototypes then bodies
         for f in prog["funcs"]:

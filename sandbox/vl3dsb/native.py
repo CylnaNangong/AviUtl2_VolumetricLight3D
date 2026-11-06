@@ -45,6 +45,7 @@ class NativeBridge:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256()
         for rel in SOURCES + ["src/vl3d_bridge_core.h", "src/vl3d_bridge_shaders.h",
+                              "src/vl3d_bridge_prox.h",
                               "include/aviutl2_sdk/plugin2.h", "include/aviutl2_sdk/module2.h"]:
             p = SRC_DIR / rel
             digest.update(rel.encode())

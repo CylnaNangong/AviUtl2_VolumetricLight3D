@@ -1,3 +1,12 @@
+    // ---- prox 编码（camocc 深度图）的常量 ----------------------------------
+    // 与 Lua 侧 K.PROX 同一协议（见 00a_consts.lua）。四份副本（Lua / C++ /
+    // 本文件 / ps_vl_lfpack.hlsl）由 sandbox 的 contract 检查对齐，改动必须同步。
+    const float VL_PROX_STEP      = 0.48;
+    const float VL_PROX_BASE_MESH = 0.01;
+    const float VL_PROX_BASE_CHAR = 0.51;
+    const float VL_PROX_FLAG      = 0.50;
+    const float VL_PROX_CHAN      = 3.0;
+
     Texture2D g_src    : register(t0);
     Texture2D g_occ    : register(t1);
     Texture2D g_shmap  : register(t2);
@@ -71,16 +80,16 @@
         if (c.a < 0.5)
             return;
         hit_w = 1.0;
-        float raw = (c.r + c.g + c.b) * (1.0 / 3.0);
+        float raw = (c.r + c.g + c.b) * (1.0 / VL_PROX_CHAN);
         float prox;
-        if (raw > 0.50)
+        if (raw > VL_PROX_FLAG)
         {
             char_w = 1.0;
-            prox = saturate((raw - 0.51) * (1.0 / 0.48));
+            prox = saturate((raw - VL_PROX_BASE_CHAR) * (1.0 / VL_PROX_STEP));
         }
         else
         {
-            prox = saturate((raw - 0.01) * (1.0 / 0.48));
+            prox = saturate((raw - VL_PROX_BASE_MESH) * (1.0 / VL_PROX_STEP));
         }
         z_val = (1.0 - prox) * max_z;
     }
