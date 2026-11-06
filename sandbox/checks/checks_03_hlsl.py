@@ -439,3 +439,82 @@ def beamatlas_alpha_switch():
             "alpha_ratio": round(float(a_prop.mean()) / max(float(a_const.mean()), 1e-9), 3),
             "alpha_const_max": round(float(a_const.max()), 5),
             "alpha_prop_max": round(float(a_prop.max()), 5)}
+
+
+# ---------------------------------------------------------------------------
+# 抖动 / 去相关常量：黄金比家族 + IGN（外部给定）
+# ---------------------------------------------------------------------------
+def _shader_const(src: str, ident: str) -> float:
+    m = re.search(rf"const\s+float\s+{re.escape(ident)}\s*=\s*([-0-9.eE+]+)\s*;", src)
+    require(m is not None, f"{ident} not found in beamatlas")
+    return float(m.group(1))
+
+
+def _gaps(alpha: float, n: int):
+    xs = sorted((k * alpha) % 1.0 for k in range(1, n + 1))
+    gs = [xs[i + 1] - xs[i] for i in range(n - 1)] + [1.0 - xs[-1] + xs[0]]
+    return min(gs), max(gs)
+
+
+@check("hlsl: dither constants are the golden-ratio family and stay decorrelated",
+       tags=["hlsl", "contract", "core"])
+def dither_constants():
+    """抖动常量不是调参值：它们是数论常数，写错只会让画面悄悄出现条带 / 彩色台阶。
+
+    这里把三件事变成可执行断言：
+      1. 数值身份：1/φ、1/φ²、(5+√5)/10、1/ρ（塑料数）在 8 位小数上逐位吻合；
+      2. 增量有效性：frac(k/φ) 的分层性（最坏间隔必须贴近 1/N）—— 这是「用 φ
+         而不是随便一个数」的可检验理由，换成 0.6 这类有理数会立刻塌成零间隔；
+      3. 去相关：三个通道的抖动偏移两两相隔 > 1/4，否则 RGB 会同步量化。
+    IGN 三个系数是 Jimenez 2014 的公开值，属于外部给定，只能原样保留。
+    """
+    src = script().shaders["beamatlas"]
+    phi = (1.0 + math.sqrt(5.0)) / 2.0
+    rho = 1.3247179572447460          # 塑料数：x³ = x + 1 的实根
+
+    expected = {
+        "VL_PHI_INV": 1.0 / phi,
+        "VL_DITHER_G": 1.0 / phi ** 2,
+        "VL_DITHER_B": phi ** 2 / (1.0 + phi ** 2),      # = (5+√5)/10
+        "VL_R2_INV_RHO": 1.0 / rho,
+        "VL_IGN_A": 52.9829189,
+        "VL_IGN_BX": 0.06711056,
+        "VL_IGN_BY": 0.00583715,
+    }
+    got = {}
+    for ident, want in expected.items():
+        val = _shader_const(src, ident)
+        got[ident] = val
+        require(abs(val - want) <= 5e-9,
+                f"{ident} = {val!r} no longer matches {want!r} (8-decimal truncation)")
+
+    # 增量有效性：φ 是「最难逼近的有理数之比」，其倍数的落点间隔最均匀。
+    n = 64
+    lo, hi = _gaps(got["VL_PHI_INV"], n)
+    require(lo > 1.0 / (4 * n), f"1/φ stratification collapsed: min gap {lo:.6f}")
+    require(hi < 4.0 / n, f"1/φ stratification collapsed: max gap {hi:.6f}")
+    # 把这条检查的判别力本身也钉住：有理增量会周期化 → 出现零间隔
+    require(_gaps(0.6, n)[0] == 0.0, "the stratification probe lost its discriminating power")
+
+    # 三通道去相关：圆环距离两两 > 1/4
+    offs = [0.0, got["VL_DITHER_G"], got["VL_DITHER_B"]]
+    worst = min(min(abs(a - b), 1.0 - abs(a - b))
+                for i, a in enumerate(offs) for b in offs[i + 1:])
+    require(worst > 0.25, f"channel dither offsets are too close: {worst:.4f}")
+
+    # IGN 在 8x8 小块上应当处处不同、均值接近 0.5（否则等于没抖动）
+    a, bx, by = got["VL_IGN_A"], got["VL_IGN_BX"], got["VL_IGN_BY"]
+    vals = [((a * (((x * bx) + (y * by)) % 1.0)) % 1.0) for y in range(8) for x in range(8)]
+    q = sorted({int(v * 255.0 + 0.5) for v in vals})
+    require(len(q) >= 60, f"IGN degenerated: only {len(q)}/64 distinct levels in an 8x8 tile")
+    require(abs(sum(vals) / len(vals) - 0.5) < 0.05, "IGN mean drifted away from 0.5")
+
+    # 代码体里不能再有裸字面量（注释不算：文档注释里本来就该写出数值）
+    code = re.sub(r"//[^\n]*", "", src)
+    for lit in ("0.61803399", "0.38196601", "0.72360680", "0.75487767",
+                "52.9829189", "0.06711056", "0.00583715"):
+        require(code.count(lit) == 1, f"naked {lit} left in beamatlas besides its declaration")
+
+    return {"phi_inv": got["VL_PHI_INV"], "min_gap": round(lo, 6),
+            "max_gap": round(hi, 6), "channel_sep": round(worst, 4),
+            "ign_levels": len(q)}

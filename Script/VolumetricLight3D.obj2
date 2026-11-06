@@ -1597,6 +1597,26 @@ end
 ]]
 
 --[[pixelshader@beamatlas:
+    // ---- 抖动 / 去相关常量 ----------------------------------------------
+    // 这些不是调参值，是「低差异序列」的数论常数：
+    //   1/φ  = 0.6180339887…   黄金分割比 —— 连乘后落点最均匀的增量（三段定理），
+    //                          相邻切片用它错开相位，才不会出现「年轮」式条带；
+    //   1/φ² = 0.3819660112…   绿通道抖动偏移（与蓝通道一起拉开三色量化）；
+    //   φ²/(1+φ²) = (5+√5)/10 = 0.7236067977…  蓝通道抖动偏移；
+    //   1/ρ  = 0.7548776662…   塑料数 ρ=1.3247179572… 的倒数 —— R2 低差异序列的
+    //                          第二维步长（不用 φ 是为了和第一维去相关）。
+    // 三色偏移必须两两相隔 > 1/4，否则 RGB 会同步量化、暗部出现彩色台阶。
+    // 52.9829189 / 0.06711056 / 0.00583715 是 Jimenez 2014（CoD:AW）公开的
+    // Interleaved Gradient Noise 系数，属于「外部给定」，不可推导也不可乱改。
+    // 数值一致性由 sandbox/checks/checks_03_hlsl.py 的对拍用例守住。
+    const float VL_PHI_INV    = 0.61803399;  // 1/φ
+    const float VL_DITHER_G   = 0.38196601;  // 1/φ²
+    const float VL_DITHER_B   = 0.72360680;  // φ²/(1+φ²) = (5+√5)/10
+    const float VL_R2_INV_RHO = 0.75487767;  // 1/ρ（R2 序列）
+    const float VL_IGN_A      = 52.9829189;  // IGN：斜率
+    const float VL_IGN_BX     = 0.06711056;  // IGN：x 梯度
+    const float VL_IGN_BY     = 0.00583715;  // IGN：y 梯度
+
     // ---- prox 编码（camocc 深度图）的常量 ----------------------------------
     // 与 Lua 侧 K.PROX 同一协议（见 00a_consts.lua）。四份副本（Lua / C++ /
     // 本文件 / ps_vl_lfpack.hlsl）由 sandbox 的 contract 检查对齐，改动必须同步。
@@ -1983,7 +2003,7 @@ end
         uint2 tile_px = uint2(max(pix.xy - float2(tx, ty) * tile_sz, 0.0));
         float2 rnd_qmc = pcg3d_rand2(uint3(tile_px.x, tile_px.y, 17u));
         float2 rnd_grp = pcg3d_rand2(uint3(tile_px.x, tile_px.y, 131u + (g_si_u >> 3u)));
-        float ign  = frac(g_si_f * 0.61803399 + (rnd_qmc.x - 0.5) * 0.12);
+        float ign  = frac(g_si_f * VL_PHI_INV + (rnd_qmc.x - 0.5) * 0.12);
         float ign2 = frac(rnd_grp.x + (float)(g_si_u & 7u) * 0.125);
 
         float kind = p9.w;
@@ -2587,7 +2607,7 @@ end
             float s255_max = max(s255_sp.r, max(s255_sp.g, s255_sp.b));
             float out_a_sp = p12.z;
             float k_min_sp = max(1.0, floor(out_a_sp * 255.0 + 0.5));
-            float d_sl_sp  = frac(g_si_f * 0.61803399 + 0.5 * frac(g_si_f * 0.75487767));
+            float d_sl_sp  = frac(g_si_f * VL_PHI_INV + 0.5 * frac(g_si_f * VL_R2_INV_RHO));
             if (s255_max < k_min_sp)
             {
                 if (s255_max < k_min_sp * d_sl_sp)
@@ -2598,7 +2618,7 @@ end
                 float3 q_min_v = floor(s_boost + 0.5) * (1.0 / 255.0);
                 return float4(q_min_v, out_a_sp);
             }
-            float d_ig_sp = frac(52.9829189 * frac(dot(float2(tile_px), float2(0.06711056, 0.00583715))) + g_si_f * 0.61803399);
+            float d_ig_sp = frac(VL_IGN_A * frac(dot(float2(tile_px), float2(VL_IGN_BX, VL_IGN_BY))) + g_si_f * VL_PHI_INV);
             float3 q_sp   = floor(s255_sp + float3(d_ig_sp, d_ig_sp, d_ig_sp)) * (1.0 / 255.0);
             if (max(q_sp.r, max(q_sp.g, q_sp.b)) < (0.5 / 255.0))
             {
@@ -2617,7 +2637,7 @@ end
             scaled_rgb *= (1.0 / s_max);
         }
         float2 rnd_c2 = pcg3d_rand2(uint3(tile_px.x ^ 0x5bd1u, tile_px.y ^ 0x1b87u, 277u + g_si_u));
-        float3 d3 = frac(float3(ign2, rnd_c2.x, rnd_c2.y) + float3(0.0, 0.38196601, 0.72360680));
+        float3 d3 = frac(float3(ign2, rnd_c2.x, rnd_c2.y) + float3(0.0, VL_DITHER_G, VL_DITHER_B));
         float3 q_rgb = floor(saturate(scaled_rgb) * 255.0 + d3) * (1.0 / 255.0);
         float q_max = max(q_rgb.r, max(q_rgb.g, q_rgb.b));
         if (q_max < (0.5 / 255.0))
