@@ -91,6 +91,23 @@ local K = {
     -- PAR_FIXED 同时落在 (a)(c) 的窗口内，是「切换光源类型时亮度不跳变」的
     -- 最低保障；要真正消除分支间的不连续，得重做标定（会改变现有画面），
     -- 不在常量整理范围内。
+    ---------------------------------------------------------------
+    -- 宿主给的硬上限（只能在其内分配，调大不会让它变大）
+    ---------------------------------------------------------------
+    -- CACHE_DOTS：AviUtl2 默认 TemporaryImageCacheSize = 1,600 万点。
+    --   分配超过它 → 宿主的 LRU 会驱逐我们的 cache:* ，表现是画面闪烁 / 图集
+    --   突然变空，而不是报错。所以这是「预算」不是「建议」。
+    -- TEX_MAX：D3D11 纹理/RTV 边长上限 4096（D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION）。
+    --   建 4097 的纹理直接创建失败。
+    -- TEX_CAP：本项目**自设**的边长上限 2048 —— 不是宿主给的，是在宿主上限内
+    --   给「图集 + mip + 前景备份」同时驻留留出的余量（见 K.ATLAS）。
+    -- 注意：4096 在本项目里另有几种无关用法（PE 页扫描块大小、UTF-16 平面步长、
+    --   结构体尺寸上界、光栅化 splat 上限），那些不是渲染上限，不能一起替换。
+    HOST = {
+        CACHE_DOTS = 16000000,   -- 宿主 TemporaryImageCacheSize（默认值）
+        TEX_MAX    = 4096,       -- D3D11 纹理边长硬上限
+        TEX_CAP    = 2048,       -- 本项目自设的边长上限
+    },
     LCHAR = {
         R_MAX     = 520.0,   -- 屏幕半径上限（(a) 的 R_fixed 与 (c) 的 ref_r 共用）
         BASE      = 0.12,    -- (a) 常数项
@@ -193,4 +210,13 @@ do
     -- 同值不同义：两个 0.48 必须各自存在（合并会让编码斜率与亮度补偿一起漂移）
     assert(K.GAIN.CAM_COMP_SPOT == K.PROX.STEP,
            "K: the two 0.48 constants (cam_comp / prox step) diverged - update the comment")
+    -- 宿主上限之间的关系：内部自设上限必须低于硬上限，缓存预算必须装得下
+    -- 「图集 + 同尺寸备份」（17_occlusion_pipeline 会同时持有 occ_a / occ_b）
+    local h = K.HOST
+    assert(h.TEX_CAP <= h.TEX_MAX, "K.HOST: TEX_CAP exceeds the D3D11 hard limit")
+    assert(h.TEX_MAX == 4096, "K.HOST: D3D11 texture limit is 4096 - do not guess")
+    assert(2 * h.TEX_CAP * h.TEX_CAP <= h.CACHE_DOTS,
+           "K.HOST: two full TEX_CAP buffers no longer fit the host cache budget")
+    assert(K.ATLAS.SIDE_3 <= h.TEX_CAP,
+           "K.ATLAS: atlas side is above the project texture cap")
 end

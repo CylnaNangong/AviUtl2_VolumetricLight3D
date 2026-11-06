@@ -420,6 +420,23 @@ local K = {
     -- PAR_FIXED 同时落在 (a)(c) 的窗口内，是「切换光源类型时亮度不跳变」的
     -- 最低保障；要真正消除分支间的不连续，得重做标定（会改变现有画面），
     -- 不在常量整理范围内。
+    ---------------------------------------------------------------
+    -- 宿主给的硬上限（只能在其内分配，调大不会让它变大）
+    ---------------------------------------------------------------
+    -- CACHE_DOTS：AviUtl2 默认 TemporaryImageCacheSize = 1,600 万点。
+    --   分配超过它 → 宿主的 LRU 会驱逐我们的 cache:* ，表现是画面闪烁 / 图集
+    --   突然变空，而不是报错。所以这是「预算」不是「建议」。
+    -- TEX_MAX：D3D11 纹理/RTV 边长上限 4096（D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION）。
+    --   建 4097 的纹理直接创建失败。
+    -- TEX_CAP：本项目**自设**的边长上限 2048 —— 不是宿主给的，是在宿主上限内
+    --   给「图集 + mip + 前景备份」同时驻留留出的余量（见 K.ATLAS）。
+    -- 注意：4096 在本项目里另有几种无关用法（PE 页扫描块大小、UTF-16 平面步长、
+    --   结构体尺寸上界、光栅化 splat 上限），那些不是渲染上限，不能一起替换。
+    HOST = {
+        CACHE_DOTS = 16000000,   -- 宿主 TemporaryImageCacheSize（默认值）
+        TEX_MAX    = 4096,       -- D3D11 纹理边长硬上限
+        TEX_CAP    = 2048,       -- 本项目自设的边长上限
+    },
     LCHAR = {
         R_MAX     = 520.0,   -- 屏幕半径上限（(a) 的 R_fixed 与 (c) 的 ref_r 共用）
         BASE      = 0.12,    -- (a) 常数项
@@ -522,6 +539,15 @@ do
     -- 同值不同义：两个 0.48 必须各自存在（合并会让编码斜率与亮度补偿一起漂移）
     assert(K.GAIN.CAM_COMP_SPOT == K.PROX.STEP,
            "K: the two 0.48 constants (cam_comp / prox step) diverged - update the comment")
+    -- 宿主上限之间的关系：内部自设上限必须低于硬上限，缓存预算必须装得下
+    -- 「图集 + 同尺寸备份」（17_occlusion_pipeline 会同时持有 occ_a / occ_b）
+    local h = K.HOST
+    assert(h.TEX_CAP <= h.TEX_MAX, "K.HOST: TEX_CAP exceeds the D3D11 hard limit")
+    assert(h.TEX_MAX == 4096, "K.HOST: D3D11 texture limit is 4096 - do not guess")
+    assert(2 * h.TEX_CAP * h.TEX_CAP <= h.CACHE_DOTS,
+           "K.HOST: two full TEX_CAP buffers no longer fit the host cache budget")
+    assert(K.ATLAS.SIDE_3 <= h.TEX_CAP,
+           "K.ATLAS: atlas side is above the project texture cap")
 end
 --track@src_layer:光源レイヤー,0,100,0,1
 --select@ray_mode:光の出方=0,平行=0,放射=1,収束=2
@@ -2943,6 +2969,19 @@ local I18N = {
         en = "Volumetric Light (3D) v3.17: Initializing...",
         de = "Volumenlicht (3D) v3.17: Initialisierung läuft...",
     },
+    -- 宿主上限生效时的「显式降级」提示（每对象每类只报一次，log_mode 开启时）
+    limit_atlas = {
+        ja = "体積光（3D）v3.17：ホスト上限に合わせてアトラスを縮小しました（要求 %d → 実際 %d、上限 %d）",
+        zh = "体积光（3D）v3.17：图集受宿主上限限制已自动缩小（请求 %d → 实际 %d，上限 %d）",
+        en = "Volumetric Light (3D) v3.17: atlas clamped to the host limit (%d -> %d, cap %d)",
+        de = "Volumenlicht (3D) v3.17: Atlas an das Host-Limit angepasst (%d -> %d, Grenze %d)",
+    },
+    limit_occ = {
+        ja = "体積光（3D）v3.17：遮蔽アトラスをドット予算内に縮小しました（要求 %dx%d → 実際 %dx%d）",
+        zh = "体积光（3D）v3.17：遮挡图集为满足像素预算已缩小（请求 %dx%d → 实际 %dx%d）",
+        en = "Volumetric Light (3D) v3.17: occluder atlas scaled to fit the dot budget (%dx%d -> %dx%d)",
+        de = "Volumenlicht (3D) v3.17: Abschattungsatlas an das Punkt-Budget angepasst (%dx%d -> %dx%d)",
+    },
     init_done = {
         ja = "体積光（3D）v3.17：初期化完了（%.2f秒）",
         zh = "体积光（3D）v3.17：初始化完成（耗时 %.2f 秒）",
@@ -3314,6 +3353,20 @@ read_binary_file_utf8 = function(raw_path)
     return nil
 end
 
+-- 宿主上限生效时的「显式降级」提示。
+-- 设计要点：只在 log_mode 开启时报、每个对象每类只报一次（用 _VL_PERSIST 记），
+-- 且任何一步失败都不能影响渲染（全程 pcall）。
+-- 为什么需要它：这些 clamp 以前是静默的 —— 宿主缓存不够 / 纹理超上限时画面
+-- 会「悄悄变糊/变暗」，用户只能靠肉眼猜。现在至少日志里有一行说明。
+local function vl_limit_note(key, fmt, ...)
+    if type(P) ~= "table" or not P.log_mode then return end
+    _VL_PERSIST.limit_notes = _VL_PERSIST.limit_notes or {}
+    local k = tostring(key)
+    if _VL_PERSIST.limit_notes[k] then return end
+    _VL_PERSIST.limit_notes[k] = true
+    local ok, msg = pcall(string.format, fmt, ...)
+    if ok then pcall(function() print("@info", msg) end) end
+end
 -- =====================================================================
 -- 共有 LuaJIT VM 無衝突 Win32 UTF-16LE ファイル／メモリエンジン
 -- （ffi.C の既存定義と一切衝突しない GetProcAddress + ffi.typeof 直結方式）
@@ -6330,7 +6383,7 @@ local function save_occ2d_atlas(src_name, w, h, key, tiles, uv_span_x, uv_span_y
         if p == nil then return end
         local ww = (type(pw) == "number" and pw > 0) and pw or w
         local hh = (type(ph) == "number" and ph > 0) and ph or h
-        if ww < 1 or hh < 1 or ww > 4096 or hh > 4096 then return end
+        if ww < 1 or hh < 1 or ww > K.HOST.TEX_MAX or hh > K.HOST.TEX_MAX then return end
         local nbytes = ww * hh * 4
         local slot = _VL_PERSIST.occ2d
         if (slot.cap or 0) < nbytes then
@@ -7756,7 +7809,7 @@ local function vl_bf_capture()
             end
             if w_col == nil then w_col = 0x66c8ff end
 
-            local tex_sz = math.max(128, math.min(2048, math.floor((VL_BF.scr_w * w_res / 100.0) / 8 + 0.5) * 8))
+            local tex_sz = math.max(128, math.min(K.HOST.TEX_CAP, math.floor((VL_BF.scr_w * w_res / 100.0) / 8 + 0.5) * 8))
             local sp_s   = w_sp / 10.0
             local drad   = math.rad(w_dir)
             local vx_w   = -math.sin(drad) * sp_s
@@ -8611,10 +8664,16 @@ local function vl_bf_occlusion()
                     cands_2d[1].pre_w, cands_2d[1].pre_h = fw, fh
                     local pad_est = 40.0
                     local want_w, want_h = fw + pad_est, fh + pad_est
-                    local sc = math.min(1.0, 2048.0 / math.max(want_w, 1.0), 2048.0 / math.max(want_h, 1.0),
+                    local tex_cap = K.HOST.TEX_CAP
+                    local sc = math.min(1.0, tex_cap / math.max(want_w, 1.0), tex_cap / math.max(want_h, 1.0),
                         math.sqrt(OCC_SINGLE_BUDGET / math.max(want_w * want_h, 1.0)))
-                    atl_ox = math.max(64, math.min(2048, math.floor((want_w * sc) / 8) * 8))
-                    atl_oy = math.max(64, math.min(2048, math.floor((want_h * sc) / 8) * 8))
+                    atl_ox = math.max(64, math.min(tex_cap, math.floor((want_w * sc) / 8) * 8))
+                    atl_oy = math.max(64, math.min(tex_cap, math.floor((want_h * sc) / 8) * 8))
+                    if sc < 0.999 then
+                        -- 显式降级：遮挡图集被「纹理边长上限 / 像素预算」压低
+                        vl_limit_note("occ_atlas", I18N.limit_occ[VL_BF.ui_lang] or I18N.limit_occ.ja,
+                            math.floor(want_w), math.floor(want_h), atl_ox, atl_oy)
+                    end
                 end
             end
 
@@ -9404,9 +9463,10 @@ function AB.run_foreground_blend()
         end
 
         -- Reload target layer T and GPU-downsample directly into bounded cache:vl3d/ab_src (<= 2048x2048 & <= 1.8M dots!)
-        local work_sc = math.min(1.0, 2048.0 / T.ow, 2048.0 / T.oh, math.sqrt(OCC_SINGLE_BUDGET / math.max(1.0, T.ow * T.oh)))
-        local base_w = math.max(2, math.min(2048, math.floor(T.ow * work_sc + 0.5)))
-        local base_h = math.max(2, math.min(2048, math.floor(T.oh * work_sc + 0.5)))
+        local tex_cap = K.HOST.TEX_CAP
+        local work_sc = math.min(1.0, tex_cap / T.ow, tex_cap / T.oh, math.sqrt(OCC_SINGLE_BUDGET / math.max(1.0, T.ow * T.oh)))
+        local base_w = math.max(2, math.min(tex_cap, math.floor(T.ow * work_sc + 0.5)))
+        local base_h = math.max(2, math.min(tex_cap, math.floor(T.oh * work_sc + 0.5)))
         local ok_ld = false
         pcall(function()
             obj.load("layer", T.layer, true)
@@ -9927,7 +9987,7 @@ local function vl_bf_render()
     VL_BF.f_scale= math.max(10.0, P.fog_scale)
     VL_BF.wox, VL_BF.woy, VL_BF.woz= 0.0, 0.0, 0.0
     do
-        local max_w, max_h = 4096, 4096
+        local max_w, max_h = K.HOST.TEX_MAX, K.HOST.TEX_MAX  -- D3D11 纹理边长硬上限
         pcall(function()
             local mw, mh = obj.getinfo("image_max")
             if type(mw) == "number" and mw >= 512 then max_w = mw end
@@ -9936,6 +9996,11 @@ local function vl_bf_render()
         local want_atlas = (P.res_mode == 0) and 3584 or ((P.res_mode == 2) and 1536 or 2560)
         VL_BF.ATLAS = math.floor(math.min(want_atlas, max_w, max_h) / VL_BF.TILES_X) * VL_BF.TILES_X
         if VL_BF.ATLAS < 512 then VL_BF.ATLAS = 512 end
+        if VL_BF.ATLAS < want_atlas then
+            -- 显式降级：宿主 image_max / D3D11 上限吃掉了用户选的画质档
+            vl_limit_note("atlas", I18N.limit_atlas[VL_BF.ui_lang] or I18N.limit_atlas.ja,
+                want_atlas, VL_BF.ATLAS, math.min(max_w, max_h))
+        end
         VL_BF.TILE = VL_BF.ATLAS / VL_BF.TILES_X
         local t_now = type(obj.time) == "number" and obj.time or 0.0
         local wrad = math.rad(P.wind_dir)

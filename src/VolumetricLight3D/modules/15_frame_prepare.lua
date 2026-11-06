@@ -200,7 +200,7 @@ local function vl_bf_capture()
             end
             if w_col == nil then w_col = 0x66c8ff end
 
-            local tex_sz = math.max(128, math.min(2048, math.floor((VL_BF.scr_w * w_res / 100.0) / 8 + 0.5) * 8))
+            local tex_sz = math.max(128, math.min(K.HOST.TEX_CAP, math.floor((VL_BF.scr_w * w_res / 100.0) / 8 + 0.5) * 8))
             local sp_s   = w_sp / 10.0
             local drad   = math.rad(w_dir)
             local vx_w   = -math.sin(drad) * sp_s

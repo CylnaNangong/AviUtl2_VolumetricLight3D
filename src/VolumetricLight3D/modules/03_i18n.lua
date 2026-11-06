@@ -176,6 +176,19 @@ local I18N = {
         en = "Volumetric Light (3D) v3.17: Initializing...",
         de = "Volumenlicht (3D) v3.17: Initialisierung läuft...",
     },
+    -- 宿主上限生效时的「显式降级」提示（每对象每类只报一次，log_mode 开启时）
+    limit_atlas = {
+        ja = "体積光（3D）v3.17：ホスト上限に合わせてアトラスを縮小しました（要求 %d → 実際 %d、上限 %d）",
+        zh = "体积光（3D）v3.17：图集受宿主上限限制已自动缩小（请求 %d → 实际 %d，上限 %d）",
+        en = "Volumetric Light (3D) v3.17: atlas clamped to the host limit (%d -> %d, cap %d)",
+        de = "Volumenlicht (3D) v3.17: Atlas an das Host-Limit angepasst (%d -> %d, Grenze %d)",
+    },
+    limit_occ = {
+        ja = "体積光（3D）v3.17：遮蔽アトラスをドット予算内に縮小しました（要求 %dx%d → 実際 %dx%d）",
+        zh = "体积光（3D）v3.17：遮挡图集为满足像素预算已缩小（请求 %dx%d → 实际 %dx%d）",
+        en = "Volumetric Light (3D) v3.17: occluder atlas scaled to fit the dot budget (%dx%d -> %dx%d)",
+        de = "Volumenlicht (3D) v3.17: Abschattungsatlas an das Punkt-Budget angepasst (%dx%d -> %dx%d)",
+    },
     init_done = {
         ja = "体積光（3D）v3.17：初期化完了（%.2f秒）",
         zh = "体积光（3D）v3.17：初始化完成（耗时 %.2f 秒）",

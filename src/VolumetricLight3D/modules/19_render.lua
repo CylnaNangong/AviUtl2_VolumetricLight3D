@@ -7,7 +7,7 @@ local function vl_bf_render()
     VL_BF.f_scale= math.max(10.0, P.fog_scale)
     VL_BF.wox, VL_BF.woy, VL_BF.woz= 0.0, 0.0, 0.0
     do
-        local max_w, max_h = 4096, 4096
+        local max_w, max_h = K.HOST.TEX_MAX, K.HOST.TEX_MAX  -- D3D11 纹理边长硬上限
         pcall(function()
             local mw, mh = obj.getinfo("image_max")
             if type(mw) == "number" and mw >= 512 then max_w = mw end
@@ -16,6 +16,11 @@ local function vl_bf_render()
         local want_atlas = (P.res_mode == 0) and 3584 or ((P.res_mode == 2) and 1536 or 2560)
         VL_BF.ATLAS = math.floor(math.min(want_atlas, max_w, max_h) / VL_BF.TILES_X) * VL_BF.TILES_X
         if VL_BF.ATLAS < 512 then VL_BF.ATLAS = 512 end
+        if VL_BF.ATLAS < want_atlas then
+            -- 显式降级：宿主 image_max / D3D11 上限吃掉了用户选的画质档
+            vl_limit_note("atlas", I18N.limit_atlas[VL_BF.ui_lang] or I18N.limit_atlas.ja,
+                want_atlas, VL_BF.ATLAS, math.min(max_w, max_h))
+        end
         VL_BF.TILE = VL_BF.ATLAS / VL_BF.TILES_X
         local t_now = type(obj.time) == "number" and obj.time or 0.0
         local wrad = math.rad(P.wind_dir)

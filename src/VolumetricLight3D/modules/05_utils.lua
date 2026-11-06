@@ -269,3 +269,17 @@ read_binary_file_utf8 = function(raw_path)
     return nil
 end
 
+-- 宿主上限生效时的「显式降级」提示。
+-- 设计要点：只在 log_mode 开启时报、每个对象每类只报一次（用 _VL_PERSIST 记），
+-- 且任何一步失败都不能影响渲染（全程 pcall）。
+-- 为什么需要它：这些 clamp 以前是静默的 —— 宿主缓存不够 / 纹理超上限时画面
+-- 会「悄悄变糊/变暗」，用户只能靠肉眼猜。现在至少日志里有一行说明。
+local function vl_limit_note(key, fmt, ...)
+    if type(P) ~= "table" or not P.log_mode then return end
+    _VL_PERSIST.limit_notes = _VL_PERSIST.limit_notes or {}
+    local k = tostring(key)
+    if _VL_PERSIST.limit_notes[k] then return end
+    _VL_PERSIST.limit_notes[k] = true
+    local ok, msg = pcall(string.format, fmt, ...)
+    if ok then pcall(function() print("@info", msg) end) end
+end

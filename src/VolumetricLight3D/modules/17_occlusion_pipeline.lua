@@ -208,10 +208,16 @@ local function vl_bf_occlusion()
                     cands_2d[1].pre_w, cands_2d[1].pre_h = fw, fh
                     local pad_est = 40.0
                     local want_w, want_h = fw + pad_est, fh + pad_est
-                    local sc = math.min(1.0, 2048.0 / math.max(want_w, 1.0), 2048.0 / math.max(want_h, 1.0),
+                    local tex_cap = K.HOST.TEX_CAP
+                    local sc = math.min(1.0, tex_cap / math.max(want_w, 1.0), tex_cap / math.max(want_h, 1.0),
                         math.sqrt(OCC_SINGLE_BUDGET / math.max(want_w * want_h, 1.0)))
-                    atl_ox = math.max(64, math.min(2048, math.floor((want_w * sc) / 8) * 8))
-                    atl_oy = math.max(64, math.min(2048, math.floor((want_h * sc) / 8) * 8))
+                    atl_ox = math.max(64, math.min(tex_cap, math.floor((want_w * sc) / 8) * 8))
+                    atl_oy = math.max(64, math.min(tex_cap, math.floor((want_h * sc) / 8) * 8))
+                    if sc < 0.999 then
+                        -- 显式降级：遮挡图集被「纹理边长上限 / 像素预算」压低
+                        vl_limit_note("occ_atlas", I18N.limit_occ[VL_BF.ui_lang] or I18N.limit_occ.ja,
+                            math.floor(want_w), math.floor(want_h), atl_ox, atl_oy)
+                    end
                 end
             end
 

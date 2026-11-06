@@ -528,9 +528,10 @@ function AB.run_foreground_blend()
         end
 
         -- Reload target layer T and GPU-downsample directly into bounded cache:vl3d/ab_src (<= 2048x2048 & <= 1.8M dots!)
-        local work_sc = math.min(1.0, 2048.0 / T.ow, 2048.0 / T.oh, math.sqrt(OCC_SINGLE_BUDGET / math.max(1.0, T.ow * T.oh)))
-        local base_w = math.max(2, math.min(2048, math.floor(T.ow * work_sc + 0.5)))
-        local base_h = math.max(2, math.min(2048, math.floor(T.oh * work_sc + 0.5)))
+        local tex_cap = K.HOST.TEX_CAP
+        local work_sc = math.min(1.0, tex_cap / T.ow, tex_cap / T.oh, math.sqrt(OCC_SINGLE_BUDGET / math.max(1.0, T.ow * T.oh)))
+        local base_w = math.max(2, math.min(tex_cap, math.floor(T.ow * work_sc + 0.5)))
+        local base_h = math.max(2, math.min(tex_cap, math.floor(T.oh * work_sc + 0.5)))
         local ok_ld = false
         pcall(function()
             obj.load("layer", T.layer, true)

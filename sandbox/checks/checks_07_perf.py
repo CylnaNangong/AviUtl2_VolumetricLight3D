@@ -135,3 +135,49 @@ def atlas_side_from_budget():
 
 def _align_name(n: int) -> str:
     return {8: "₈", 16: "₁₆", 32: "₃₂", 64: "₆₄"}.get(n, str(n))
+
+
+@check("perf: host limits live in one table and every texture clamp is announced",
+       tags=["perf", "contract", "core"])
+def host_limits():
+    """宿主的硬上限（缓存点数 / 纹理边长）只能在其内分配，且压低画质时必须出声。
+
+    以前这些 clamp 全是静默的：宿主 TemporaryImageCacheSize 不够、或 image_max
+    小于画质档时，图集会被悄悄缩小 —— 用户只看到「画面突然变糊」，日志里没有
+    一个字。现在断言两件事：
+      1. 上限只有一处定义（K.HOST），渲染路径不再裸写 4096 / 2048；
+      2. 一旦 clamp 真的生效，必须打且只打一条说明（用真实帧验证，不靠 grep）。
+    """
+    from vl3dsb.consts import lua_consts
+
+    h = lua_consts()["HOST"]
+    require(h["TEX_MAX"] == 4096, f"D3D11 texture limit is 4096, table says {h['TEX_MAX']}")
+    require(h["TEX_CAP"] <= h["TEX_MAX"], "project cap exceeds the host hard limit")
+    require(h["CACHE_DOTS"] == 16_000_000,
+            f"TemporaryImageCacheSize changed: {h['CACHE_DOTS']}")
+    require(2 * h["TEX_CAP"] ** 2 <= h["CACHE_DOTS"],
+            "two TEX_CAP buffers no longer fit the host cache budget")
+
+    text = script().text.replace("\r\n", "\n")
+    for banned in ("local max_w, max_h = 4096, 4096",
+                   "ww > 4096 or hh > 4096",
+                   "2048.0 / math.max(want_w, 1.0)"):
+        require(banned not in text, f"naked host limit still in the script: {banned!r}")
+    require(text.count("K.HOST.TEX_MAX") >= 2 and text.count("K.HOST.TEX_CAP") >= 3,
+            "the render paths no longer read the host limits from K.HOST")
+
+    # 行为验证：画质档 2560 > 宿主 image_max 1080 → 必须报警；给足 4096 → 不许报
+    params = {"src_layer": 1.0, "intensity": 200.0, "slices": 8.0, "auto_slice": 0.0}
+    layer = [Layer(index=1, image=assets.stained_window(64, 64))]
+    tight = run_frame(layer, params, width=160, height=90)
+    notes = [p for p in tight.host.prints if "2560" in p and "1080" in p]
+    require(len(notes) == 1,
+            f"expected exactly one clamp notice, got {len(notes)}: {tight.host.prints}")
+    roomy = run_frame(layer, params, width=160, height=90,
+                      extra_cfg={"image_max": (4096, 4096)})
+    require(not [p for p in roomy.host.prints if "clamp" in p.lower() or "縮小" in p
+                 or "缩小" in p],
+            f"spurious clamp notice when the host has room: {roomy.host.prints}")
+
+    return {"tex_max": h["TEX_MAX"], "tex_cap": h["TEX_CAP"],
+            "cache_dots": h["CACHE_DOTS"], "notice": notes[0].split("\t")[-1][:60]}

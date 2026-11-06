@@ -198,7 +198,7 @@ local function save_occ2d_atlas(src_name, w, h, key, tiles, uv_span_x, uv_span_y
         if p == nil then return end
         local ww = (type(pw) == "number" and pw > 0) and pw or w
         local hh = (type(ph) == "number" and ph > 0) and ph or h
-        if ww < 1 or hh < 1 or ww > 4096 or hh > 4096 then return end
+        if ww < 1 or hh < 1 or ww > K.HOST.TEX_MAX or hh > K.HOST.TEX_MAX then return end
         local nbytes = ww * hh * 4
         local slot = _VL_PERSIST.occ2d
         if (slot.cap or 0) < nbytes then
