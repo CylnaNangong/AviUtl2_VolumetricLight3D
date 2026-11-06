@@ -107,6 +107,10 @@ local K = {
         CACHE_DOTS = 16000000,   -- 宿主 TemporaryImageCacheSize（默认值）
         TEX_MAX    = 4096,       -- D3D11 纹理边长硬上限
         TEX_CAP    = 2048,       -- 本项目自设的边长上限
+        -- 宿主 camera_mode 的取值：2 = 「視点切り替え」中的编辑用视点。
+        -- 官方文档明说该模式下 camera_param 不反映编辑相机，所以脚本必须
+        -- 走 VL3DBridge / FFI 去读实时相机，读不到时回退到时间轴相机。
+        CAMERA_EDIT_MODE = 2,
     },
     LCHAR = {
         R_MAX     = 520.0,   -- 屏幕半径上限（(a) 的 R_fixed 与 (c) 的 ref_r 共用）
@@ -219,4 +223,5 @@ do
            "K.HOST: two full TEX_CAP buffers no longer fit the host cache budget")
     assert(K.ATLAS.SIDE_3 <= h.TEX_CAP,
            "K.ATLAS: atlas side is above the project texture cap")
+    assert(h.CAMERA_EDIT_MODE == 2, "K.HOST: camera_mode 2 is the Edit-Camera view (host enum)")
 end

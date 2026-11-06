@@ -189,6 +189,13 @@ local I18N = {
         en = "Volumetric Light (3D) v3.17: occluder atlas scaled to fit the dot budget (%dx%d -> %dx%d)",
         de = "Volumenlicht (3D) v3.17: Abschattungsatlas an das Punkt-Budget angepasst (%dx%d -> %dx%d)",
     },
+    -- 编辑视点相机读不到时的显式降级（宿主限制，不是错误）
+    cam_fallback = {
+        ja = "体積光（3D）v3.17：編集用視点のカメラを読めないため、タイムラインのカメラで計算します（VL3DBridge を導入すると追従します）",
+        zh = "体积光（3D）v3.17：读不到编辑用视点的相机，已回退到时间轴相机计算（安装 VL3DBridge 后可跟随）",
+        en = "Volumetric Light (3D) v3.17: edit-view camera unavailable, falling back to the timeline camera (install VL3DBridge to follow it)",
+        de = "Volumenlicht (3D) v3.17: Kamera der Bearbeitungsansicht nicht lesbar, Rückfall auf die Timeline-Kamera (mit VL3DBridge wird sie verfolgt)",
+    },
     init_done = {
         ja = "体積光（3D）v3.17：初期化完了（%.2f秒）",
         zh = "体积光（3D）v3.17：初始化完成（耗时 %.2f 秒）",

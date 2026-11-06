@@ -59,6 +59,11 @@ local function vl_bf_prepare()
         end
     end
     VL_BF.cam_mode, VL_BF.has_exact_cam, VL_BF.cam_x, VL_BF.cam_y, VL_BF.cam_z, VL_BF.focal_d, VL_BF.f_x, VL_BF.f_y, VL_BF.f_z, VL_BF.r_x, VL_BF.r_y, VL_BF.r_z, VL_BF.d_x, VL_BF.d_y, VL_BF.d_z= get_camera_basis()
+    if VL_BF.cam_mode == K.HOST.CAMERA_EDIT_MODE and not VL_BF.has_exact_cam then
+        -- 显式降级：正在用编辑视点看，但读不到它的实时相机 → 画面与编辑视口
+        -- 不一致是**预期行为**，以前这里完全静默，用户只会觉得「对不上」。
+        vl_limit_note("cam_fallback", I18N.cam_fallback[VL_BF.ui_lang] or I18N.cam_fallback.ja)
+    end
 
     ------------------------------------------------------------
 end

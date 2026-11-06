@@ -394,3 +394,44 @@ def discard_margin():
             f"thinnest slice weight {worst_weight:.7f} is at/below the assumed discard {DISCARD_W}")
     return {"discard_w": DISCARD_W, "worst": worst,
             "margin_x": round(worst_weight / DISCARD_W, 3), "rows": len(rows)}
+
+
+@check("runtime: edit-camera fallback is announced once instead of silently mismatching",
+       tags=["runtime", "contract", "core"])
+def edit_camera_fallback_notice():
+    """camera_mode == 2（宿主「編集用視点」）时 camera_param 不代表屏幕画面。
+
+    官方文档写明该模式下相机参数不反映编辑视点，所以脚本去读实时相机；读不到时
+    **必须**回退到时间轴相机（不能移除这条回退），但回退本身要出声 —— 否则用户
+    只看到「光束和编辑视口对不上」，日志里一个字都没有。
+
+    沙箱里带 VL3DBridge 时 get_edit_camera 总能成功，所以「读不到」的场景用
+    bridge=False 复现（等价于用户没导入 VL3DBridge）。
+    """
+    params = {"src_layer": 1.0, "intensity": 180.0, "slices": 12.0, "auto_slice": 0.0}
+    layers = [Layer(index=1, image=assets.stained_window(64, 64))]
+    cam = {"x": 0.0, "y": 0.0, "z": -1024.0, "tx": 0.0, "ty": 0.0, "tz": 0.0, "rz": 0.0, "d": 1024.0}
+
+    def _notes(r):
+        return [p for p in r.host.prints if "VL3DBridge" in p]
+
+    fallback = run_frame(layers, params, width=160, height=90, camera=cam,
+                         camera_mode=2, bridge=False)
+    notes = _notes(fallback)
+    require(len(notes) == 1,
+            f"expected exactly one edit-camera fallback notice, got {len(notes)}: "
+            f"{fallback.host.prints}")
+    require(fallback.volume is not None, "the fallback removed the render instead of degrading")
+
+    # 桥接可用（沙箱默认）→ 有实时相机，不该报降级
+    exact = run_frame(layers, params, width=160, height=90, camera=cam, camera_mode=2)
+    require(not _notes(exact),
+            f"fallback notice shown although the live camera was available: {exact.host.prints}")
+
+    # 时间轴模式更不该有
+    plain = run_frame(layers, params, width=160, height=90, camera=cam, camera_mode=1)
+    require(not _notes(plain),
+            f"spurious fallback notice in timeline mode: {plain.host.prints}")
+
+    return {"fallback_notice": notes[0].split("\t")[-1][:48],
+            "cam_mode_source": "K.HOST.CAMERA_EDIT_MODE"}

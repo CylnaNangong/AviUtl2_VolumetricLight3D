@@ -436,6 +436,10 @@ local K = {
         CACHE_DOTS = 16000000,   -- 宿主 TemporaryImageCacheSize（默认值）
         TEX_MAX    = 4096,       -- D3D11 纹理边长硬上限
         TEX_CAP    = 2048,       -- 本项目自设的边长上限
+        -- 宿主 camera_mode 的取值：2 = 「視点切り替え」中的编辑用视点。
+        -- 官方文档明说该模式下 camera_param 不反映编辑相机，所以脚本必须
+        -- 走 VL3DBridge / FFI 去读实时相机，读不到时回退到时间轴相机。
+        CAMERA_EDIT_MODE = 2,
     },
     LCHAR = {
         R_MAX     = 520.0,   -- 屏幕半径上限（(a) 的 R_fixed 与 (c) 的 ref_r 共用）
@@ -548,6 +552,7 @@ do
            "K.HOST: two full TEX_CAP buffers no longer fit the host cache budget")
     assert(K.ATLAS.SIDE_3 <= h.TEX_CAP,
            "K.ATLAS: atlas side is above the project texture cap")
+    assert(h.CAMERA_EDIT_MODE == 2, "K.HOST: camera_mode 2 is the Edit-Camera view (host enum)")
 end
 --track@src_layer:光源レイヤー,0,100,0,1
 --select@ray_mode:光の出方=0,平行=0,放射=1,収束=2
@@ -2981,6 +2986,13 @@ local I18N = {
         zh = "体积光（3D）v3.17：遮挡图集为满足像素预算已缩小（请求 %dx%d → 实际 %dx%d）",
         en = "Volumetric Light (3D) v3.17: occluder atlas scaled to fit the dot budget (%dx%d -> %dx%d)",
         de = "Volumenlicht (3D) v3.17: Abschattungsatlas an das Punkt-Budget angepasst (%dx%d -> %dx%d)",
+    },
+    -- 编辑视点相机读不到时的显式降级（宿主限制，不是错误）
+    cam_fallback = {
+        ja = "体積光（3D）v3.17：編集用視点のカメラを読めないため、タイムラインのカメラで計算します（VL3DBridge を導入すると追従します）",
+        zh = "体积光（3D）v3.17：读不到编辑用视点的相机，已回退到时间轴相机计算（安装 VL3DBridge 后可跟随）",
+        en = "Volumetric Light (3D) v3.17: edit-view camera unavailable, falling back to the timeline camera (install VL3DBridge to follow it)",
+        de = "Volumenlicht (3D) v3.17: Kamera der Bearbeitungsansicht nicht lesbar, Rückfall auf die Timeline-Kamera (mit VL3DBridge wird sie verfolgt)",
     },
     init_done = {
         ja = "体積光（3D）v3.17：初期化完了（%.2f秒）",
@@ -7439,8 +7451,9 @@ local function get_camera_basis()
     local cam = nil
     pcall(function() cam = obj.getoption("camera_param") end)
 
-    local has_exact_cam = (cam_mode ~= 2)
-    if cam_mode == 2 then
+    -- camera_mode == 2 是宿主的「編集用視点」：此时 camera_param 不代表屏幕上的画面
+    local has_exact_cam = (cam_mode ~= K.HOST.CAMERA_EDIT_MODE)
+    if cam_mode == K.HOST.CAMERA_EDIT_MODE then
         local ecam = try_read_live_edit_camera()
         if ecam ~= nil then
             cam = ecam
@@ -7668,6 +7681,11 @@ local function vl_bf_prepare()
         end
     end
     VL_BF.cam_mode, VL_BF.has_exact_cam, VL_BF.cam_x, VL_BF.cam_y, VL_BF.cam_z, VL_BF.focal_d, VL_BF.f_x, VL_BF.f_y, VL_BF.f_z, VL_BF.r_x, VL_BF.r_y, VL_BF.r_z, VL_BF.d_x, VL_BF.d_y, VL_BF.d_z= get_camera_basis()
+    if VL_BF.cam_mode == K.HOST.CAMERA_EDIT_MODE and not VL_BF.has_exact_cam then
+        -- 显式降级：正在用编辑视点看，但读不到它的实时相机 → 画面与编辑视口
+        -- 不一致是**预期行为**，以前这里完全静默，用户只会觉得「对不上」。
+        vl_limit_note("cam_fallback", I18N.cam_fallback[VL_BF.ui_lang] or I18N.cam_fallback.ja)
+    end
 
     ------------------------------------------------------------
 end

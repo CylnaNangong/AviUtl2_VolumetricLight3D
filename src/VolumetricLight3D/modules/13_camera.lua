@@ -150,8 +150,9 @@ local function get_camera_basis()
     local cam = nil
     pcall(function() cam = obj.getoption("camera_param") end)
 
-    local has_exact_cam = (cam_mode ~= 2)
-    if cam_mode == 2 then
+    -- camera_mode == 2 是宿主的「編集用視点」：此时 camera_param 不代表屏幕上的画面
+    local has_exact_cam = (cam_mode ~= K.HOST.CAMERA_EDIT_MODE)
+    if cam_mode == K.HOST.CAMERA_EDIT_MODE then
         local ecam = try_read_live_edit_camera()
         if ecam ~= nil then
             cam = ecam
