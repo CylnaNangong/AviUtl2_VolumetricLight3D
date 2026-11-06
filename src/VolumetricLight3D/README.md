@@ -18,8 +18,8 @@
 
 ## 数值常量表 `K`
 
-跨分支共享的数值常量集中在 `modules/00a_consts.lua` 的 `K` 表里，`19_render.lua` 等片段
-只引用 `K.*`，不再写裸字面量。表里每条都带「为什么是这个值」的注释，并在文件末尾用
+跨分支共享的数值常量集中在 `modules/00a_consts.lua` 的 `K` 表里，`04_params.lua`、
+`17_occlusion_pipeline.lua`、`19_render.lua` 等片段只引用 `K.*`，不再写裸字面量。表里每条都带「为什么是这个值」的注释，并在文件末尾用
 `assert` 固化它们之间的隐含关系（例如 `ALPHA_SPOT × BASE_SPOT` 必须精确等于历史锚点
 `0.2565/255`，且两个权重都必须落在宿主丢弃窗口 `(0.001, 0.001/0.75)` 内）。
 
@@ -66,7 +66,7 @@ src/VolumetricLight3D/
 | Lua 片段 | 职责 |
 | --- | --- |
 | `00_header.lua` | 版本信息、许可/致谢与历史注释 |
-| `00a_consts.lua` | **数值常量表 `K`**（OIT alpha 窗口、增益标定）与启动自检 |
+| `00a_consts.lua` | **数值常量表 `K`**（OIT alpha 窗口、增益标定、2D 遮蔽图集预算）与启动自检 |
 | `01_properties.lua` | 6 组、47 项 AviUtl2 参数及 hide/group 注解 |
 | `02_runtime_state.lua` | 宿主别名与跨帧持久状态 |
 | `03_i18n.lua` | UI 语言检测、前向声明与内置四语文本 |

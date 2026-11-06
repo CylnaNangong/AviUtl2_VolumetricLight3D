@@ -193,7 +193,9 @@ local function vl_bf_occlusion()
             -- 超高解像度光源（4K/8K 超）を cache:* へ生寸退避すると TemporaryImageCacheSize (16M) 超過で
             -- cache:vl3d/mip 等が LRU 蒸発するため、不要な退避キャッシュ確保は行わない。
             local grid_o = (#cands_2d == 1) and 1 or ((#cands_2d <= 4) and 2 or 3)
-            local atl_ox, atl_oy = 1344, 1344
+            -- 1344 = K.ATLAS.SIDE_3 = 向上取 8 对齐的 sqrt(180 万点预算)：
+            -- 这不是独立调参值，改预算就该跟着走（自检见 00a_consts.lua 末尾）
+            local atl_ox, atl_oy = K.ATLAS.SIDE_3, K.ATLAS.SIDE_3
             if grid_o == 1 then
                 local fw, fh = 0, 0
                 pcall(function() obj.load("layer", cands_2d[1].layer, true) end)

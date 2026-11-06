@@ -42,7 +42,29 @@ local K = {
         CALIB = 0.155,                    -- k_gain_base 的标定常数（见 docs/CHANGELOG v3.14）
         QUANT = 1.05,                     -- 8bit 量化互补余量
     },
+    ---------------------------------------------------------------
+    -- 2D 遮蔽图集（occ_atlas）的分辨率预算
+    ---------------------------------------------------------------
+    -- 单张图集允许的像素上限是 180 万点（04_params.lua 原本就把它命名为
+    -- OCC_SINGLE_BUDGET，注释「1 枚あたり 180 万ドット上限」），这个上限
+    -- 来自宿主 TemporaryImageCacheSize（1,600 万点）在「图集 + mip + 前景
+    -- 备份」同时驻留时的分配，不是 D3D 的硬限制。
+    --
+    -- 多光源（2x2 / 3x3 网格）时图集边长取 1344：它不是一个独立调出来的
+    -- 数字，而是「能塞进 180 万点的最小 8 对齐正方形边长」——
+    --     sqrt(1,800,000) = 1341.64…  →  向上取 8 的整倍数  →  1344
+    -- 反证：1336² = 1,784,896 < 1,800,000（太小），1344² = 1,806,336（刚够，
+    -- 超出预算 0.35%，这正是「略超」的来源，见 §8.4(2)）。
+    -- 1344 同时是 64 的整倍数（21×64），也是 2、3 的整倍数，所以 2x2 得
+    -- 672、3x3 得 448，切分后不产生余数像素。
+    ATLAS = {
+        BUDGET_DOTS = 1800000,            -- 单图集像素预算（宿主缓存内的工程分配）
+        ALIGN       = 8,                  -- 边长对齐（与 15_frame_prepare 的 /8 对齐一致）
+    },
 }
+
+-- 由预算推导出的图集边长（放在表外，因为它是 BUDGET_DOTS/ALIGN 的函数）
+K.ATLAS.SIDE_3 = K.ATLAS.ALIGN * math.ceil(math.sqrt(K.ATLAS.BUDGET_DOTS) / K.ATLAS.ALIGN)
 
 ---------------------------------------------------------------------
 -- 启动自检：常量之间的隐含关系一旦被改坏，立刻在控制台暴露，
@@ -63,4 +85,15 @@ do
     assert(_win_ok(w_base), "K.OIT: default weight left the (DISCARD, DISCARD/0.75) window")
     K.OIT.W_SPOT  = w_spot            -- 运行期只读缓存，便于调试输出
     K.OIT.W_BASE  = w_base
+    -- 图集边长必须是「预算的平方根向上取整到 ALIGN」；改 BUDGET_DOTS 会自动跟随
+    local a = K.ATLAS
+    assert(a.SIDE_3 == 1344,
+           "K.ATLAS: SIDE_3 drifted from the budget-derived 1344")
+    assert(a.SIDE_3 * a.SIDE_3 >= a.BUDGET_DOTS,
+           "K.ATLAS: atlas side no longer covers the dot budget")
+    assert((a.SIDE_3 - a.ALIGN) * (a.SIDE_3 - a.ALIGN) < a.BUDGET_DOTS,
+           "K.ATLAS: atlas side is larger than the smallest one covering the budget")
+    -- 2x2 / 3x3 网格要能整除（672 / 448），否则 ceil 会多出整行整列
+    assert(a.SIDE_3 % 2 == 0 and a.SIDE_3 % 3 == 0,
+           "K.ATLAS: atlas side is not divisible by the 2x2 / 3x3 grid factors")
 end

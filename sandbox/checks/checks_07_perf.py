@@ -1,14 +1,16 @@
 """Performance / resource budget checks (cache dots, slice scaling, wall clock)."""
 from __future__ import annotations
 
+import math
 import statistics
 
 import numpy as np
 
 from vl3dsb import assets, session
+from vl3dsb.config import REPO_ROOT
 from vl3dsb.harness import check, require
 from vl3dsb.host import Layer
-from vl3dsb.session import run_frame
+from vl3dsb.session import run_frame, script
 
 LIGHT = assets.stained_window(128, 128)
 BASE = {"src_layer": 1, "intensity": 180.0}
@@ -87,3 +89,56 @@ def draw_batching():
     calls = len(par.host.draw_calls)
     require(calls <= 4, f"parallel beam should batch its quads, used {calls} drawpoly calls")
     return {"quads_parallel": q_par, "quads_point": q_pt, "drawpoly_calls": calls}
+
+
+_CONSTS_LUA = REPO_ROOT / "src" / "VolumetricLight3D" / "modules" / "00a_consts.lua"
+
+
+@check("perf: 2D occlusion atlas side is derived from the dot budget",
+       tags=["perf", "contract", "core"])
+def atlas_side_from_budget():
+    """1344 不是调参数，是 sqrt(180 万点预算) 向上取 8 的整倍数。
+
+    这里直接在 LuaJIT 里执行 00a_consts.lua（连带跑完它末尾的 assert），
+    再读回运行时真实值 —— 比解析文本更接近"脚本实际看到的常量"。
+    """
+    from lupa.luajit21 import LuaRuntime
+
+    require(_CONSTS_LUA.exists(), f"missing {_CONSTS_LUA}")
+    src = _CONSTS_LUA.read_text(encoding="utf-8")
+    lua = LuaRuntime(unpack_returned_tuples=True)
+    try:
+        K = lua.execute(src + "\nreturn K")
+    except Exception as exc:                       # noqa: BLE001 - LuaError
+        raise AssertionError(f"00a_consts.lua failed its own self-check: {exc}") from exc
+
+    budget = int(K.ATLAS.BUDGET_DOTS)
+    align = int(K.ATLAS.ALIGN)
+    side = K.ATLAS.SIDE_3
+
+    require(budget == 1_800_000, f"single-atlas dot budget changed: {budget}")
+    require(align == 8, f"atlas alignment changed: {align}")
+    require(side == 1344, f"atlas side drifted: {side}")
+    require(side == align * math.ceil(math.sqrt(budget) / align),
+            f"{side} is not ceil{_align_name(align)}(sqrt({budget}))")
+    # 最小性：再小一档就装不下预算
+    require((side - align) ** 2 < budget <= side * side,
+            f"{side} is not the smallest {align}-aligned side covering {budget} dots")
+    # 2x2 / 3x3 网格整除，切分后不留余数行
+    require(side % 2 == 0 and side % 3 == 0,
+            f"{side} cannot be split evenly into 2x2 / 3x3 grids")
+
+    # 单一来源：生成物里不允许再出现裸的 1344 / 1800000
+    text = script().text.replace("\r\n", "\n")
+    require("= 1344, 1344" not in text, "naked 1344 atlas side still in the script")
+    require("K.ATLAS.SIDE_3" in text, "the atlas side is no longer read from K.ATLAS")
+    require("local OCC_SINGLE_BUDGET = 1800000" not in text,
+            "OCC_SINGLE_BUDGET re-hardcoded instead of deriving from K.ATLAS.BUDGET_DOTS")
+
+    return {"budget_dots": budget, "align": align, "side": side,
+            "side_sq": side * side, "over_budget_pct": round((side * side / budget - 1) * 100, 3),
+            "tiles_2x2": side // 2, "tiles_3x3": side // 3}
+
+
+def _align_name(n: int) -> str:
+    return {8: "₈", 16: "₁₆", 32: "₃₂", 64: "₆₄"}.get(n, str(n))

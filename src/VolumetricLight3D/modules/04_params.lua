@@ -2,7 +2,7 @@
 -- 本体（TemporaryImageCacheSize = 16,000,000 ドット厳守・即時解放設計）
 ---------------------------------------------------------------------
 local MAX_OCC = 8
-local OCC_SINGLE_BUDGET = 1800000 -- 1 枚あたり 180 万ドット上限
+local OCC_SINGLE_BUDGET = K.ATLAS.BUDGET_DOTS -- 1 枚あたり 180 万ドット上限（出典: 00a_consts.lua）
 
 local CACHE_KEYS = {
     "cache:vl3d/pool",
