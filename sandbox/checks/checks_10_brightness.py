@@ -340,3 +340,33 @@ def lchar_envelope():
             "window_fixed": [lc["MIN_FIXED"], lc["MAX_FIXED"]],
             "window_spot": [lc["MIN_SPOT"], lc["MAX_SPOT"]],
             "reach_ratio2": round(ratio2, 4), "reach_angle_rad": round(math.atan(tan_needed), 4)}
+
+
+@check("brightness: camera-light compensation is named apart from the prox step",
+       tags=["brightness", "contract", "core"])
+def cam_comp_vs_prox_step():
+    """两个 0.48 只是同值：一个是亮度补偿（cam_comp），一个是深度编码斜率（PROX.STEP）。
+
+    合并它们正是报告 §8.5(a) 说的「一值多义」陷阱：一次全局替换会同时改坏
+    相机光源的亮度与遮挡深度的编码。这里确保它们各自命名、各自被引用。
+    """
+    from vl3dsb.consts import lua_consts
+
+    K = lua_consts()
+    cam = K["GAIN"]["CAM_COMP_SPOT"]
+    step = K["PROX"]["STEP"]
+    require(cam == 0.48, f"camera-light compensation changed: {cam}")
+    require(step == cam, "the documented same-value coincidence no longer holds - update comments")
+    require(K["GAIN"]["REF_INTENSITY"] == 100.0, "intensity basis changed")
+
+    text = script().text.replace("\r\n", "\n")
+    require("VL_BF.cam_comp   = 0.48" not in text,
+            "camera compensation is still a bare literal in the render path")
+    require("VL_BF.cam_comp   = K.GAIN.CAM_COMP_SPOT" in text,
+            "the render path no longer reads cam_comp from K.GAIN")
+    require("(P.intensity / 100.0)" not in text,
+            "the 100% intensity basis is still hard-coded somewhere")
+    require(text.count("K.GAIN.REF_INTENSITY") >= 2,
+            "intensity normalization should go through K.GAIN.REF_INTENSITY")
+
+    return {"cam_comp": cam, "prox_step": step, "ref_intensity": K["GAIN"]["REF_INTENSITY"]}

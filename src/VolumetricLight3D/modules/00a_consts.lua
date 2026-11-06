@@ -42,6 +42,9 @@ local K = {
         CALIB = 0.155,                    -- k_gain_base 的标定常数（见 docs/CHANGELOG v3.14）
         REF_INTENSITY = 100.0,            -- 强度归一化基准（100 = 默认强度）
         QUANT = 1.05,                     -- 8bit 量化互补余量
+        -- 相机虚拟光源（cam_light_mode）路径的整体亮度补偿。0.48 与 PROX.STEP
+        -- 同值但语义无关（一个是编码斜率，一个是亮度系数）→ 各自命名，禁止合并。
+        CAM_COMP_SPOT = 0.48,
     },
     ---------------------------------------------------------------
     -- 2D 遮蔽图集（occ_atlas）的分辨率预算
@@ -187,4 +190,7 @@ do
     assert(lc.SPOT_GAIN * math.tan(lc.ANG_MAX) > lc.R_MAX,
            "K.LCHAR: R_MAX no longer clamps the spot reference radius")
     assert(K.GAIN.REF_INTENSITY > 0, "K.GAIN: reference intensity must be positive")
+    -- 同值不同义：两个 0.48 必须各自存在（合并会让编码斜率与亮度补偿一起漂移）
+    assert(K.GAIN.CAM_COMP_SPOT == K.PROX.STEP,
+           "K: the two 0.48 constants (cam_comp / prox step) diverged - update the comment")
 end

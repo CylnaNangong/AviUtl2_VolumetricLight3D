@@ -58,7 +58,7 @@ local function vl_bf_render()
         if is_virtual_spot then
             VL_BF.poly_alpha = K.OIT.ALPHA_SPOT
             VL_BF.min_opt_a  = K.OIT.BASE_SPOT
-            VL_BF.cam_comp   = 0.48
+            VL_BF.cam_comp   = K.GAIN.CAM_COMP_SPOT
             wboit_ka         = 0.0
         else
             VL_BF.poly_alpha = K.OIT.ALPHA_DEFAULT

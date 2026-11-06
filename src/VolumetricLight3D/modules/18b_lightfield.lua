@@ -116,7 +116,7 @@ local function vl_lf_publish(
     local pk_t = math.max(1.0, lt_r, lt_g, lt_b)
     local tint_r, tint_g, tint_b = lt_r / pk_t, lt_g / pk_t, lt_b / pk_t
     local host_pk = math.max(1.0, h_core_peak or 1.0)
-    local gain_s = math.max(0.0, (P.intensity / 100.0) * (VL_BF.base_alpha or 1.0) * (VL_BF.cam_comp or 1.0) * (pk_t / host_pk))
+    local gain_s = math.max(0.0, (P.intensity / K.GAIN.REF_INTENSITY) * (VL_BF.base_alpha or 1.0) * (VL_BF.cam_comp or 1.0) * (pk_t / host_pk))
 
     local cam_zmax = 8192.0
     if cam3d_on and type(VL_BF.camocc_max_z) == "number" and VL_BF.camocc_max_z > 1.0 then

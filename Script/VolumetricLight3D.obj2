@@ -371,6 +371,9 @@ local K = {
         CALIB = 0.155,                    -- k_gain_base 的标定常数（见 docs/CHANGELOG v3.14）
         REF_INTENSITY = 100.0,            -- 强度归一化基准（100 = 默认强度）
         QUANT = 1.05,                     -- 8bit 量化互补余量
+        -- 相机虚拟光源（cam_light_mode）路径的整体亮度补偿。0.48 与 PROX.STEP
+        -- 同值但语义无关（一个是编码斜率，一个是亮度系数）→ 各自命名，禁止合并。
+        CAM_COMP_SPOT = 0.48,
     },
     ---------------------------------------------------------------
     -- 2D 遮蔽图集（occ_atlas）的分辨率预算
@@ -516,6 +519,9 @@ do
     assert(lc.SPOT_GAIN * math.tan(lc.ANG_MAX) > lc.R_MAX,
            "K.LCHAR: R_MAX no longer clamps the spot reference radius")
     assert(K.GAIN.REF_INTENSITY > 0, "K.GAIN: reference intensity must be positive")
+    -- 同值不同义：两个 0.48 必须各自存在（合并会让编码斜率与亮度补偿一起漂移）
+    assert(K.GAIN.CAM_COMP_SPOT == K.PROX.STEP,
+           "K: the two 0.48 constants (cam_comp / prox step) diverged - update the comment")
 end
 --track@src_layer:光源レイヤー,0,100,0,1
 --select@ray_mode:光の出方=0,平行=0,放射=1,収束=2
@@ -9736,7 +9742,7 @@ local function vl_lf_publish(
     local pk_t = math.max(1.0, lt_r, lt_g, lt_b)
     local tint_r, tint_g, tint_b = lt_r / pk_t, lt_g / pk_t, lt_b / pk_t
     local host_pk = math.max(1.0, h_core_peak or 1.0)
-    local gain_s = math.max(0.0, (P.intensity / 100.0) * (VL_BF.base_alpha or 1.0) * (VL_BF.cam_comp or 1.0) * (pk_t / host_pk))
+    local gain_s = math.max(0.0, (P.intensity / K.GAIN.REF_INTENSITY) * (VL_BF.base_alpha or 1.0) * (VL_BF.cam_comp or 1.0) * (pk_t / host_pk))
 
     local cam_zmax = 8192.0
     if cam3d_on and type(VL_BF.camocc_max_z) == "number" and VL_BF.camocc_max_z > 1.0 then
@@ -9972,7 +9978,7 @@ local function vl_bf_render()
         if is_virtual_spot then
             VL_BF.poly_alpha = K.OIT.ALPHA_SPOT
             VL_BF.min_opt_a  = K.OIT.BASE_SPOT
-            VL_BF.cam_comp   = 0.48
+            VL_BF.cam_comp   = K.GAIN.CAM_COMP_SPOT
             wboit_ka         = 0.0
         else
             VL_BF.poly_alpha = K.OIT.ALPHA_DEFAULT
