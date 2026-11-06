@@ -18,17 +18,32 @@
 
 ## 数值常量表 `K`
 
-跨分支共享的数值常量集中在 `modules/00a_consts.lua` 的 `K` 表里，`04_params.lua`、
-`17_occlusion_pipeline.lua`、`19_render.lua` 等片段只引用 `K.*`，不再写裸字面量。表里每条都带「为什么是这个值」的注释，并在文件末尾用
-`assert` 固化它们之间的隐含关系（例如 `ALPHA_SPOT × BASE_SPOT` 必须精确等于历史锚点
-`0.2565/255`，且两个权重都必须落在宿主丢弃窗口 `(0.001, 0.001/0.75)` 内）。
+跨分支共享的数值常量集中在 `modules/00a_consts.lua` 的 `K` 表里，
+`04_params.lua`、`13_camera.lua`、`15_frame_prepare.lua`、`17_occlusion_pipeline.lua`、
+`19_render.lua` 等片段只引用 `K.*`，不再写裸字面量。表里每条都带「这个数是什么、
+谁定的、为什么是这个值」的注释，并在文件末尾用 `assert` 固化它们之间的隐含关系：
+
+| 组 | 内容 | 隐含关系（自检/契约） |
+|---|---|---|
+| `OIT` | WBOIT 片元权重、基准阶 | `ALPHA_SPOT × BASE_SPOT` 必须精确等于锚点 `0.2565/255`；两条路径都必须落在宿主丢弃窗口 `(0.001, 0.001/0.75)` |
+| `GAIN` | 亮度标定、量化余量、强度基准、相机光源补偿 | `CAM_COMP_SPOT` 与 `PROX.STEP` 同值但各自独立（禁止合并） |
+| `ATLAS` | 单图集像素预算与对齐 | `SIDE_3` 必须等于「覆盖预算的最小 ALIGN 对齐边长」（1344） |
+| `PROX` | 相机遮挡深度的 8bit RGB 编码 | 区间首尾相接、标志位居中、保护带宽于 8bit 量化误差、三通道和恒为 `CHAN×code` |
+| `LCHAR` | 特征光距的三条估算路径 | 固定值必须落在另两条窗口内且可被复现 |
+| `HOST` | 宿主硬上限与 `camera_mode` 枚举 | `TEX_CAP ≤ TEX_MAX`、两个满尺寸缓冲仍装得进缓存预算 |
+
+着色器侧对应 `VL_PROX_* / VL_PHI_* / VL_IGN_* / VL_SHADOW_SOFT_*`（`beamatlas.hlsl`、
+`ps_vl_lfpack.hlsl`），C++ 侧对应 `src/VL3DBridge/src/vl3d_bridge_prox.h`；
+跨语言数值一致性由 `sandbox/checks/checks_09_raster.py` 的对拍用例守住。
 
 改常量时的标准动作：
 
-1. 只改 `00a_consts.lua`；
+1. 只改 `00a_consts.lua`（着色器常量则同步其 `const float` 声明）；
 2. `python3 src/VolumetricLight3D/build.py` 重新生成 `.obj2`；
-3. `python3 sandbox/run_checks.py --only brightness` —— 其中的
-   `brightness: OIT alpha window is single-sourced…` 会把散文约束变成可执行断言。
+3. `python3 sandbox/run_checks.py --only brightness` / `--only prox` / `--only host`，
+   再用 `sandbox/tools/golden.py` 做逐位比对 —— 散文约束在这里都是可执行断言。
+
+完整整改记录见 [`docs/CONSTS_REFACTOR.zh.md`](../../docs/CONSTS_REFACTOR.zh.md)。
 
 ## 构建与检查
 
