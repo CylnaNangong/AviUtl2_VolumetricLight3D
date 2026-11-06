@@ -57,6 +57,29 @@ local K = {
     -- 超出预算 0.35%，这正是「略超」的来源，见 §8.4(2)）。
     -- 1344 同时是 64 的整倍数（21×64），也是 2、3 的整倍数，所以 2x2 得
     -- 672、3x3 得 448，切分后不产生余数像素。
+    ---------------------------------------------------------------
+    -- 相机遮挡深度图的 8bit RGB 编码（自定协议；Lua / C++ / 两份 HLSL 共四份副本）
+    ---------------------------------------------------------------
+    -- camocc 纹理是 RGBA8，浮点深度必须先压成 [0,1] 的 code，再摊到三个通道：
+    --     r = sat(CHAN*code - 2), g = sat(CHAN*code - 1), b = sat(CHAN*code)
+    -- 三通道互为「移位拷贝」：任一 code 恰好有一条不饱和，三者和恒等于 3*code，
+    -- 所以 HLSL 侧 raw = (r+g+b)/3 能还原（误差只剩 8bit 量化 ≤ 0.5/255）。
+    -- code 落在哪个区间由「是不是 VRM 角色」决定，FLAG 是区间标志位：
+    --     网格 [0.01, 0.49]、角色 [0.51, 0.99]
+    -- 两侧各留 0.01 保护带；三通道均值的量化误差是 1/510 ≈ 0.00196，
+    -- 所以标志位不会被量化误差翻转（断言见文件末尾）。
+    -- 注意：此处的 0.48 与 19_render.lua 的 cam_comp = 0.48 只是同值，
+    -- 语义无关（一个是编码斜率，一个是相机补偿），千万不要一起替换。
+    PROX = {
+        STEP      = 0.48,   -- 归一化深度 → code 的斜率（区间总宽 0.49 - 0.01）
+        BASE_MESH = 0.01,   -- 网格区间下限
+        BASE_CHAR = 0.51,   -- 角色区间下限（= FLAG + 0.01）
+        FLAG      = 0.50,   -- 解码侧判据：raw > FLAG 即角色
+        CHAN      = 3.0,    -- 通道展开系数
+        OFF_R     = 2.0,    -- r = CHAN*code - OFF_R
+        OFF_G     = 1.0,    -- g = CHAN*code - OFF_G
+        OFF_B     = 0.0,    -- b = CHAN*code - OFF_B
+    },
     ATLAS = {
         BUDGET_DOTS = 1800000,            -- 单图集像素预算（宿主缓存内的工程分配）
         ALIGN       = 8,                  -- 边长对齐（与 15_frame_prepare 的 /8 对齐一致）
@@ -96,4 +119,28 @@ do
     -- 2x2 / 3x3 网格要能整除（672 / 448），否则 ceil 会多出整行整列
     assert(a.SIDE_3 % 2 == 0 and a.SIDE_3 % 3 == 0,
            "K.ATLAS: atlas side is not divisible by the 2x2 / 3x3 grid factors")
+    -- prox 编码的区间必须首尾相接、标志位必须居中，且保护带大于量化误差
+    local px = K.PROX
+    local mesh_top = px.BASE_MESH + px.STEP        -- 0.49
+    local char_top = px.BASE_CHAR + px.STEP        -- 0.99
+    assert(math.abs(mesh_top - 0.49) < 1e-12, "K.PROX: mesh range no longer ends at 0.49")
+    assert(math.abs(char_top - 0.99) < 1e-12, "K.PROX: char range no longer ends at 0.99")
+    assert(char_top <= 1.0, "K.PROX: char range overflows the 0..1 code space")
+    assert(math.abs(px.FLAG - (mesh_top + px.BASE_CHAR) * 0.5) < 1e-12,
+           "K.PROX: FLAG is no longer midway between the two ranges")
+    -- 量化误差：三通道均值最坏 1/510；保护带必须比它宽
+    local q_err = 1.0 / 510.0
+    assert(px.FLAG - mesh_top > q_err, "K.PROX: mesh guard band is thinner than 8bit quantization")
+    assert(px.BASE_CHAR - px.FLAG > q_err, "K.PROX: char guard band is thinner than 8bit quantization")
+    -- 三通道展开必须能还原：任一 code，clamp 后三者和恒为 CHAN*code
+    for i = 0, 64 do
+        local c = i / 64
+        local s3 = 0
+        for k = 0, 2 do
+            local v = c * px.CHAN - k
+            if v < 0 then v = 0 elseif v > 1 then v = 1 end
+            s3 = s3 + v
+        end
+        assert(math.abs(s3 - px.CHAN * c) < 1e-12, "K.PROX: channel spread is not lossless")
+    end
 end

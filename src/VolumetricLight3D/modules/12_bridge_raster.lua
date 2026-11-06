@@ -422,9 +422,9 @@ local function build_3d_shadow_map(models_3d, sh_res, wx, wy, wz, Hx, Hy,
             for x = x0, x1 do
                 local pr = zbuf[base + x]
                 if pr >= 0.0 then
-                    local r = pr * 3.0 - 2.0; if r < 0.0 then r = 0.0 elseif r > 1.0 then r = 1.0 end
-                    local g = pr * 3.0 - 1.0; if g < 0.0 then g = 0.0 elseif g > 1.0 then g = 1.0 end
-                    local b = pr * 3.0;       if b < 0.0 then b = 0.0 elseif b > 1.0 then b = 1.0 end
+                    local r = pr * K.PROX.CHAN - K.PROX.OFF_R; if r < 0.0 then r = 0.0 elseif r > 1.0 then r = 1.0 end
+                    local g = pr * K.PROX.CHAN - K.PROX.OFF_G; if g < 0.0 then g = 0.0 elseif g > 1.0 then g = 1.0 end
+                    local b = pr * K.PROX.CHAN - K.PROX.OFF_B; if b < 0.0 then b = 0.0 elseif b > 1.0 then b = 1.0 end
                     local di = (base + x) * 4
                     rgba[di]     = math.floor(r * 255.0 + 0.5)
                     rgba[di + 1] = math.floor(g * 255.0 + 0.5)
@@ -682,16 +682,17 @@ local function build_3d_cam_depth_map(models_3d, cm_w, cm_h, scr_w, scr_h,
                 local v = zbuf[base + x]
                 if v >= 0.0 then
                     local code
+                    -- code 的区间与斜率见 K.PROX（与 HLSL / C++ 四份副本同源）
                     if v >= 2.0 then
                         -- VRM キャラクター: [0.51, 0.99]
-                        code = (v - 2.0) * 0.48 + 0.51
+                        code = (v - 2.0) * K.PROX.STEP + K.PROX.BASE_CHAR
                     else
                         -- OBJ メッシュ: [0.01, 0.49]
-                        code = v * 0.48 + 0.01
+                        code = v * K.PROX.STEP + K.PROX.BASE_MESH
                     end
-                    local r = code * 3.0 - 2.0; if r < 0.0 then r = 0.0 elseif r > 1.0 then r = 1.0 end
-                    local g = code * 3.0 - 1.0; if g < 0.0 then g = 0.0 elseif g > 1.0 then g = 1.0 end
-                    local b = code * 3.0;       if b < 0.0 then b = 0.0 elseif b > 1.0 then b = 1.0 end
+                    local r = code * K.PROX.CHAN - K.PROX.OFF_R; if r < 0.0 then r = 0.0 elseif r > 1.0 then r = 1.0 end
+                    local g = code * K.PROX.CHAN - K.PROX.OFF_G; if g < 0.0 then g = 0.0 elseif g > 1.0 then g = 1.0 end
+                    local b = code * K.PROX.CHAN - K.PROX.OFF_B; if b < 0.0 then b = 0.0 elseif b > 1.0 then b = 1.0 end
                     local di = (base + x) * 4
                     rgba[di]     = math.floor(r * 255.0 + 0.5)
                     rgba[di + 1] = math.floor(g * 255.0 + 0.5)
