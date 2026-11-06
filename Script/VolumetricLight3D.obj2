@@ -327,6 +327,72 @@
 -- v2.08〜v2.09 更新点：
 --   ・スライス数の 1 枚刻み連続スケーリング（64〜192）、負の微小拡散角度の安定化、および 1,600 万ドット省メモリ設計を導入。
 --group:形,true
+---------------------------------------------------------------------
+-- 00a_consts.lua — 数值常量表（K）
+---------------------------------------------------------------------
+-- 本文件是「跨分支共享的数值常量」的唯一出处。规则：
+--   ・新增或修改常量 → 只改这里；render/geometry 片段只允许引用 K.*
+--   ・本表与 sandbox/checks/checks_10_brightness.py 的性质断言成对维护，
+--     改数值前先跑 `python3 sandbox/run_checks.py --only brightness`
+--   ・这里只放「有明确含义、会被多处引用」的值。局部的一次性系数
+--     （例如某个平滑窗口的中点）仍写在原地，避免把表变成废纸篓。
+--
+-- 位置说明：本片段必须排在 00_header 之后、任何读取 K 的片段之前。
+---------------------------------------------------------------------
+
+local K = {
+    ---------------------------------------------------------------
+    -- 宿主 3D OIT 的片元权重契约（逆向自 Shader #118，非官方 API 规范）
+    ---------------------------------------------------------------
+    -- 宿主对每个四边形片元计算 r4.w = tex.a * poly_alpha：
+    --   ・r4.w <  DISCARD  → 片元被硬件丢弃（用于砍掉光锥外缘的零值邻域）
+    --   ・r4.w >= DISCARD  → 参与 WBOIT 累积
+    -- 同时要求 0.75 * r4.w < DISCARD，这样 2x2 双线性里「3/4 权重来自零纹素」
+    -- 的边缘像素也会被同一阈值丢弃，从而得到「满覆盖活、边缘死」的硬边界。
+    -- 于是合法窗口是 (DISCARD, DISCARD / 0.75) = (0.001, 0.001333)。
+    -- 详见 docs/CHANGELOG_zh.md v3.09 / v3.11 / v3.12 三节与 §8.4(1)。
+    OIT = {
+        DISCARD      = 0.001,             -- r4.w 丢弃阈值（实测，非官方规范）
+        EDGE_KILL_F  = 0.994,             -- 边缘覆盖 f < 此值应被丢弃 → 权重下限的由来
+        MIN_WEIGHT   = 0.2565 / 255.0,    -- 锚点权重 = 0.0010058824（v3.09 起实机验证）
+        BASE_SPOT    = 4.0 / 255.0,       -- 虚拟聚光的恒定基准阶（v3.12，k_min = 4）
+        BASE_DEFAULT = 1.0 / 255.0,       -- 其它路径的恒定基准阶（v3.10）
+        ALPHA_SPOT   = 0.2565 / 4.0,      -- = MIN_WEIGHT / BASE_SPOT = 0.064125（精确相等）
+        ALPHA_DEFAULT = 0.27,             -- 非聚光路径的拉伸 alpha（与 BASE_DEFAULT 配对）
+    },
+
+    ---------------------------------------------------------------
+    -- 亮度标定（k_gain）
+    ---------------------------------------------------------------
+    -- 有效辉度 = k_gain_base * (base_alpha / poly_alpha) * QUANT * cam_comp，
+    -- 其中的 (base_alpha / poly_alpha) 是「换了 poly_alpha 也要保持同一亮度」的
+    -- 补偿项：两者必须一起改，否则整条光束的亮度会阶跃。
+    GAIN = {
+        CALIB = 0.155,                    -- k_gain_base 的标定常数（见 docs/CHANGELOG v3.14）
+        QUANT = 1.05,                     -- 8bit 量化互补余量
+    },
+}
+
+---------------------------------------------------------------------
+-- 启动自检：常量之间的隐含关系一旦被改坏，立刻在控制台暴露，
+-- 而不是等到「画面悄悄变了」才发现。
+---------------------------------------------------------------------
+do
+    local o = K.OIT
+    local w_spot  = o.ALPHA_SPOT * o.BASE_SPOT
+    local w_base  = o.ALPHA_DEFAULT * o.BASE_DEFAULT
+    local function _win_ok(w)
+        return w > o.DISCARD and 0.75 * w < o.DISCARD
+    end
+    -- 派生式必须精确复现历史锚点（差分放 0 之外就只有量化误差，不允许）
+    assert(math.abs(w_spot - o.MIN_WEIGHT) < 1e-12,
+           "K.OIT: ALPHA_SPOT*BASE_SPOT drifted from MIN_WEIGHT")
+    -- 两条路径都必须落在宿主丢弃窗口内
+    assert(_win_ok(w_spot), "K.OIT: spot weight left the (DISCARD, DISCARD/0.75) window")
+    assert(_win_ok(w_base), "K.OIT: default weight left the (DISCARD, DISCARD/0.75) window")
+    K.OIT.W_SPOT  = w_spot            -- 运行期只读缓存，便于调试输出
+    K.OIT.W_BASE  = w_base
+end
 --track@src_layer:光源レイヤー,0,100,0,1
 --select@ray_mode:光の出方=0,平行=0,放射=1,収束=2
 --select@fill_mode:光の中身=0,体積光=0,ベタ=1
@@ -9671,7 +9737,7 @@ local function vl_bf_render()
     -- 5) GPU マルチパス体積描画
     ------------------------------------------------------------
     VL_BF.TILES_X, VL_BF.ATLAS, VL_BF.TILE, VL_BF.PAD= 8, 2560, 320, 2.0
-    VL_BF.k_gain_base= (P.intensity / 100.0) * 0.155 / VL_BF.L_char
+    VL_BF.k_gain_base= (P.intensity / 100.0) * K.GAIN.CALIB / VL_BF.L_char
     VL_BF.fog_amt= math.max(0.0, math.min(1.0, P.fog / 100.0))
     VL_BF.f_scale= math.max(10.0, P.fog_scale)
     VL_BF.wox, VL_BF.woy, VL_BF.woz= 0.0, 0.0, 0.0
@@ -9700,11 +9766,11 @@ local function vl_bf_render()
     pcall(function() obj.setoption("blend", "none") end)
 
     -- 3D OIT シーンでは lua_drawpoly(verts, 4, poly_alpha) が v1.z = poly_alpha を直接渡す（機械語 0x1404404b0 検証済）。
-    -- v3.12: 仮想スポット光源（ltype = 4/5）では解析的「視線∩光円錐∩球 L_tot」6点弦積分 ＋ min_opt_a = 4/255（poly_alpha = 0.064125,
+    -- v3.12: 仮想スポット光源（ltype = 4/5）では解析的「視線∩光円錐∩球 L_tot」6点弦積分 ＋ min_opt_a = K.OIT.BASE_SPOT（poly_alpha = K.OIT.ALPHA_SPOT,
     -- 外縁ゼロ隣接 r4.w = 0.001006 ハードウェア遮断を維持したまま 4 倍高精細化して p^4 破棄クリフ＆馬蹄形アーチを根治、
     -- 低輝度 s255 < 4 はスライス位相コヒーレント生存で白床面暗化ゼロを維持）＋ IG 準乱数ディザを適用。
-    VL_BF.poly_alpha= 0.27
-    VL_BF.min_opt_a= 1.0 / 255.0
+    VL_BF.poly_alpha= K.OIT.ALPHA_DEFAULT
+    VL_BF.min_opt_a= K.OIT.BASE_DEFAULT
     VL_BF.cam_comp= 1.0
     VL_BF.cam_mode2_note= ""
     local cli_r = VL_BF.cam_light_info or { count = 0, unlit = 1.0, amb_r = 0.0, amb_g = 0.0, amb_b = 0.0, peak_gain = 1.0, primary = nil }
@@ -9725,17 +9791,17 @@ local function vl_bf_render()
     local wboit_ka = 0.0
     if P.fill_mode ~= 1 then
         if is_virtual_spot then
-            VL_BF.poly_alpha = 0.064125
-            VL_BF.min_opt_a  = 4.0 / 255.0
+            VL_BF.poly_alpha = K.OIT.ALPHA_SPOT
+            VL_BF.min_opt_a  = K.OIT.BASE_SPOT
             VL_BF.cam_comp   = 0.48
             wboit_ka         = 0.0
         else
-            VL_BF.poly_alpha = 0.27
-            VL_BF.min_opt_a  = 1.0 / 255.0
+            VL_BF.poly_alpha = K.OIT.ALPHA_DEFAULT
+            VL_BF.min_opt_a  = K.OIT.BASE_DEFAULT
             wboit_ka         = 0.0
         end
     end
-    VL_BF.k_gain_gpu= VL_BF.k_gain_base * (VL_BF.base_alpha / VL_BF.poly_alpha) * 1.05 * VL_BF.cam_comp
+    VL_BF.k_gain_gpu= VL_BF.k_gain_base * (VL_BF.base_alpha / VL_BF.poly_alpha) * K.GAIN.QUANT * VL_BF.cam_comp
 
     VL_BF.n_chunks= math.ceil(VL_BF.total_sl / 64)
     VL_BF.ps_ok= VL_BF.mip_ready

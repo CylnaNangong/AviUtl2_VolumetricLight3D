@@ -7,6 +7,10 @@
     },
     {
       "kind": "lua",
+      "path": "modules/00a_consts.lua"
+    },
+    {
+      "kind": "lua",
       "path": "modules/01_properties.lua"
     },
     {

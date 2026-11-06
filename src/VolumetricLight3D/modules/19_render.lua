@@ -2,7 +2,7 @@ local function vl_bf_render()
     -- 5) GPU マルチパス体積描画
     ------------------------------------------------------------
     VL_BF.TILES_X, VL_BF.ATLAS, VL_BF.TILE, VL_BF.PAD= 8, 2560, 320, 2.0
-    VL_BF.k_gain_base= (P.intensity / 100.0) * 0.155 / VL_BF.L_char
+    VL_BF.k_gain_base= (P.intensity / 100.0) * K.GAIN.CALIB / VL_BF.L_char
     VL_BF.fog_amt= math.max(0.0, math.min(1.0, P.fog / 100.0))
     VL_BF.f_scale= math.max(10.0, P.fog_scale)
     VL_BF.wox, VL_BF.woy, VL_BF.woz= 0.0, 0.0, 0.0
@@ -31,11 +31,11 @@ local function vl_bf_render()
     pcall(function() obj.setoption("blend", "none") end)
 
     -- 3D OIT シーンでは lua_drawpoly(verts, 4, poly_alpha) が v1.z = poly_alpha を直接渡す（機械語 0x1404404b0 検証済）。
-    -- v3.12: 仮想スポット光源（ltype = 4/5）では解析的「視線∩光円錐∩球 L_tot」6点弦積分 ＋ min_opt_a = 4/255（poly_alpha = 0.064125,
+    -- v3.12: 仮想スポット光源（ltype = 4/5）では解析的「視線∩光円錐∩球 L_tot」6点弦積分 ＋ min_opt_a = K.OIT.BASE_SPOT（poly_alpha = K.OIT.ALPHA_SPOT,
     -- 外縁ゼロ隣接 r4.w = 0.001006 ハードウェア遮断を維持したまま 4 倍高精細化して p^4 破棄クリフ＆馬蹄形アーチを根治、
     -- 低輝度 s255 < 4 はスライス位相コヒーレント生存で白床面暗化ゼロを維持）＋ IG 準乱数ディザを適用。
-    VL_BF.poly_alpha= 0.27
-    VL_BF.min_opt_a= 1.0 / 255.0
+    VL_BF.poly_alpha= K.OIT.ALPHA_DEFAULT
+    VL_BF.min_opt_a= K.OIT.BASE_DEFAULT
     VL_BF.cam_comp= 1.0
     VL_BF.cam_mode2_note= ""
     local cli_r = VL_BF.cam_light_info or { count = 0, unlit = 1.0, amb_r = 0.0, amb_g = 0.0, amb_b = 0.0, peak_gain = 1.0, primary = nil }
@@ -56,17 +56,17 @@ local function vl_bf_render()
     local wboit_ka = 0.0
     if P.fill_mode ~= 1 then
         if is_virtual_spot then
-            VL_BF.poly_alpha = 0.064125
-            VL_BF.min_opt_a  = 4.0 / 255.0
+            VL_BF.poly_alpha = K.OIT.ALPHA_SPOT
+            VL_BF.min_opt_a  = K.OIT.BASE_SPOT
             VL_BF.cam_comp   = 0.48
             wboit_ka         = 0.0
         else
-            VL_BF.poly_alpha = 0.27
-            VL_BF.min_opt_a  = 1.0 / 255.0
+            VL_BF.poly_alpha = K.OIT.ALPHA_DEFAULT
+            VL_BF.min_opt_a  = K.OIT.BASE_DEFAULT
             wboit_ka         = 0.0
         end
     end
-    VL_BF.k_gain_gpu= VL_BF.k_gain_base * (VL_BF.base_alpha / VL_BF.poly_alpha) * 1.05 * VL_BF.cam_comp
+    VL_BF.k_gain_gpu= VL_BF.k_gain_base * (VL_BF.base_alpha / VL_BF.poly_alpha) * K.GAIN.QUANT * VL_BF.cam_comp
 
     VL_BF.n_chunks= math.ceil(VL_BF.total_sl / 64)
     VL_BF.ps_ok= VL_BF.mip_ready

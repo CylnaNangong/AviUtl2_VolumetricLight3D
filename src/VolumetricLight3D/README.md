@@ -1,7 +1,7 @@
 # VolumetricLight3D 模块化脚本源码
 
 这里是 `Script/VolumetricLight3D.obj2` 的**唯一编辑源**。原来的 9,560 行单文件已拆成
-21 个有序 Lua 片段和 14 个独立 HLSL 文件；`VL3DBridge` 的 C++17 源码仍位于
+23 个有序 Lua 片段和 15 个独立 HLSL 文件；`VL3DBridge` 的 C++17 源码仍位于
 `src/VL3DBridge/`，本次没有改动其实现。
 
 ## 为什么仍然生成单个 `.obj2`
@@ -15,6 +15,20 @@
 > **不要直接编辑 `Script/VolumetricLight3D.obj2`。** 它是生成物；沙箱和 CI 会检查它是否
 > 与这里的源码逐字节一致。也不要单独执行 `modules/*.lua`：它们会有意引用前面片段的
 > 顶层局部变量，只有按清单组合后才是完整脚本。
+
+## 数值常量表 `K`
+
+跨分支共享的数值常量集中在 `modules/00a_consts.lua` 的 `K` 表里，`19_render.lua` 等片段
+只引用 `K.*`，不再写裸字面量。表里每条都带「为什么是这个值」的注释，并在文件末尾用
+`assert` 固化它们之间的隐含关系（例如 `ALPHA_SPOT × BASE_SPOT` 必须精确等于历史锚点
+`0.2565/255`，且两个权重都必须落在宿主丢弃窗口 `(0.001, 0.001/0.75)` 内）。
+
+改常量时的标准动作：
+
+1. 只改 `00a_consts.lua`；
+2. `python3 src/VolumetricLight3D/build.py` 重新生成 `.obj2`；
+3. `python3 sandbox/run_checks.py --only brightness` —— 其中的
+   `brightness: OIT alpha window is single-sourced…` 会把散文约束变成可执行断言。
 
 ## 构建与检查
 
@@ -44,14 +58,15 @@ python3 sandbox/run_checks.py
 ```text
 src/VolumetricLight3D/
 ├── build.py             # 确定性组装、--check、隔离输出
-├── manifest.json        # 35 个源文件的显式顺序
-├── modules/             # 21 个 Lua 构建片段
-└── shaders/             # 14 个像素着色器（.hlsl）
+├── manifest.json        # 38 个源文件的显式顺序
+├── modules/             # 23 个 Lua 构建片段
+└── shaders/             # 15 个像素着色器（.hlsl）
 ```
 
 | Lua 片段 | 职责 |
 | --- | --- |
 | `00_header.lua` | 版本信息、许可/致谢与历史注释 |
+| `00a_consts.lua` | **数值常量表 `K`**（OIT alpha 窗口、增益标定）与启动自检 |
 | `01_properties.lua` | 6 组、47 项 AviUtl2 参数及 hide/group 注解 |
 | `02_runtime_state.lua` | 宿主别名与跨帧持久状态 |
 | `03_i18n.lua` | UI 语言检测、前向声明与内置四语文本 |

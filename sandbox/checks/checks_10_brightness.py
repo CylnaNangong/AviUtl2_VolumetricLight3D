@@ -1,6 +1,7 @@
 """Regression checks for v3.14 beam brightness & 3D Shader #118 OIT pipeline."""
 from __future__ import annotations
 
+import re
 import tempfile
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from vl3dsb.aup2 import load_aup2_scene, map_aup2_params_to_obj2
 from vl3dsb.compositor3d import composite_scene_3d
 from vl3dsb.harness import check, require
 from vl3dsb.host import Host, HostConfig, Layer
+from vl3dsb.config import REPO_ROOT
 from vl3dsb.session import native, run_frame, script, shader_library, standard_scene
 
 _P12_Z = 12 * 4 + 2   # min_opt_a
@@ -184,7 +186,9 @@ effect.name=VolumetricLight3D
 
         # Mutate temporary copy back to v3.08..v3.13 non-spot settings to verify regression gap
         norm_src = obj2_cur.text.replace("\r\n", "\n")
-        needle = "            VL_BF.poly_alpha = 0.27\n            VL_BF.min_opt_a  = 1.0 / 255.0\n            wboit_ka         = 0.0"
+        needle = ("            VL_BF.poly_alpha = K.OIT.ALPHA_DEFAULT\n"
+                  "            VL_BF.min_opt_a  = K.OIT.BASE_DEFAULT\n"
+                  "            wboit_ka         = 0.0")
         require(needle in norm_src, "expected v3.14 non-spot block not found in script")
         reg_src = norm_src.replace(
             needle,
@@ -207,3 +211,74 @@ effect.name=VolumetricLight3D
                 f"expected v3.14 to be materially brighter than v3.08..v3.13 settings: fixed={luma_fixed:.2f} vs reg={luma_reg:.2f}")
         return {"luma_v314": round(luma_fixed, 2), "luma_v308_v313": round(luma_reg, 2),
                 "gain_255": round(luma_fixed - luma_reg, 2)}
+
+
+# ---------------------------------------------------------------------------
+# 常量表契约：OIT alpha 窗口必须单一来源，且落在宿主丢弃窗口内
+# ---------------------------------------------------------------------------
+_CONSTS_LUA = REPO_ROOT / "src" / "VolumetricLight3D" / "modules" / "00a_consts.lua"
+
+# 允许在常量表里出现的表达式：数字、四则运算、括号
+_SAFE_EXPR = re.compile(r"^[0-9eE+\-*/.() ]+$")
+
+
+def _lua_number(expr: str) -> float:
+    """把常量表里的算术表达式按 Lua 的 double 语义求值（只接受纯算术）。"""
+    expr = expr.strip().rstrip(",").strip()
+    if not _SAFE_EXPR.match(expr):
+        raise AssertionError(f"unsupported expression in consts table: {expr!r}")
+    return float(eval(expr, {"__builtins__": {}}, {}))  # noqa: S307 - 纯算术白名单
+
+
+def _consts() -> dict:
+    require(_CONSTS_LUA.exists(), f"missing {_CONSTS_LUA}")
+    text = _CONSTS_LUA.read_text(encoding="utf-8")
+    out = {}
+    for name in ("DISCARD", "EDGE_KILL_F", "MIN_WEIGHT", "BASE_SPOT",
+                 "BASE_DEFAULT", "ALPHA_SPOT", "ALPHA_DEFAULT"):
+        m = re.search(rf"^\s*{name}\s*=\s*([^\n]+?)\s*,?\s*(?:--.*)?$", text, re.M)
+        require(m, f"K.OIT.{name} not found in 00a_consts.lua")
+        out[name] = _lua_number(m.group(1))
+    return out
+
+
+@check("brightness: OIT alpha window is single-sourced and mirrors the host cutoff", tags=["brightness", "contract", "core"])
+def alpha_window_single_source():
+    """常量表是唯一来源；两条路径都必须落在 (DISCARD, DISCARD/0.75) 内。
+
+    这个用例把 docs/CHANGELOG 里 v3.09/v3.11/v3.12 的散文约束变成可执行断言：
+    改 K.OIT 的任何一个数，都会在这里立刻失败，而不是让画面悄悄变化。
+    """
+    k = _consts()
+    require(abs(k["DISCARD"] - 0.001) < 1e-12, f"host discard threshold changed: {k['DISCARD']}")
+
+    w_spot = k["ALPHA_SPOT"] * k["BASE_SPOT"]
+    w_base = k["ALPHA_DEFAULT"] * k["BASE_DEFAULT"]
+
+    # 派生式必须精确复现历史锚点（0.2565/255），不允许引入量化漂移
+    require(w_spot == k["MIN_WEIGHT"], f"spot weight {w_spot!r} != anchor {k['MIN_WEIGHT']!r}")
+    require(k["ALPHA_SPOT"] == 0.064125, f"spot poly_alpha drifted: {k['ALPHA_SPOT']!r}")
+
+    # 合法窗口：(DISCARD, DISCARD/0.75)。上界来自 2x2 双线性里 3/4 权重来自零纹素。
+    upper = k["DISCARD"] / 0.75
+    for name, w in (("spot", w_spot), ("default", w_base)):
+        require(k["DISCARD"] < w < upper,
+                f"{name} weight {w:.9f} outside ({k['DISCARD']}, {upper:.9f})")
+        require(0.75 * w < k["DISCARD"],
+                f"{name}: 0.75*{w:.9f} = {0.75 * w:.9f} would survive the edge discard")
+
+    # EDGE_KILL_F 是对同一锚点的另一种读法：丢弃覆盖率 f < EDGE_KILL_F 的插值像素
+    f_cut = k["DISCARD"] / w_spot
+    require(abs(f_cut - k["EDGE_KILL_F"]) < 1e-3,
+            f"EDGE_KILL_F={k['EDGE_KILL_F']} no longer describes the anchor (cut at {f_cut:.5f})")
+
+    # 生成物里不允许再有裸字面量：渲染片段必须只引用 K.*
+    text = script().text.replace("\r\n", "\n")
+    for ban in ("VL_BF.poly_alpha = 0.064125", "VL_BF.poly_alpha = 0.27",
+                "VL_BF.min_opt_a  = 4.0 / 255.0", "VL_BF.min_opt_a  = 1.0 / 255.0"):
+        require(ban not in text, f"naked literal still in the render path: {ban!r}")
+    require(text.count("local K = {") == 1, "the K table must be defined exactly once")
+
+    return {"poly_alpha_spot": k["ALPHA_SPOT"], "w_spot": round(w_spot, 9),
+            "w_default": round(w_base, 9), "window": [k["DISCARD"], round(upper, 9)],
+            "edge_cut_f": round(f_cut, 5)}
