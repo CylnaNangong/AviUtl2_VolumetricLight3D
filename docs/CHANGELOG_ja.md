@@ -1,7 +1,8 @@
 # 更新履歴 — 体積光（3D） / VL3DBridge
 
-## 未公開（Unreleased）・AviUtl ExEdit2 `v2.1.17` ホワイトリスト同期＆プローブ／SDK 互換性検証
+## v3.18（2026-11-07）・AviUtl ExEdit2 `v2.1.17` ホワイトリスト同期＆プローブ／SDK 互換性検証
 
+- **公開範囲**：メンテナンスリリース。描画ロジック／シェーダー／`VL3DLF v3` プロトコルは v3.17 から変更なし。パッケージ名・package.ini・HUD の表記を `v3.18` に同期。
 - **最新版 `v2.1.17`（2026-11-07、id `2011700`）で読み取り専用メモリプローブが有効であることを確認**：2 つの機械語シグネチャ（Sig1: `.text` 内 70 件、Sig2: 1 件、`off_w = 0x8C0` / `off_c = 0x198` 不変）が引き続き命中し、G-Buffer 光源配列の `+0x98 / +0xA0 / +0xA8`／`+0xD0` アクセス列も `v2.1.16` とバイト単位で一致。既定の混合検証モードでは `SDK+VERIFIED_RPM` のままです。
 - **公式 SDK `[2026/11/7]` の影響なし**：`EVENT_TYPE` への `RELOAD_LANGUAGE = 6` 追加と `filter2.h` のコメント追記のみで、188 個の関数ポインタ順序・構造体レイアウトは不変（`get_direct3d_device()` を含む）。
 - **`v2.1.17` をホワイトリストへ登録**：`aviutl2.exe` のディスク SHA-256 `c425bfc237cb9fdd9a1cfd7269756f3374ae82ad9f7b4cddcbfa2971a975f431`、PE 指紋 `0x6AEE6718` / `0x005FC000`。2 つの `VL3DBridge.ini` へ `allow_pe` と `allow_sha256` を追記し、`ResetDefaultAllowlist()` にも `v2117` を追加（次回ビルド用）。

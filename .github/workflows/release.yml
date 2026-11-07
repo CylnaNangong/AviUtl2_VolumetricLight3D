@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to build & upload .au2pkg.zip assets for (leave blank for latest release, e.g. v3.17)"
+        description: "Release tag to build & upload .au2pkg.zip assets for (leave blank for latest release, e.g. v3.18)"
         required: false
         default: ""
 

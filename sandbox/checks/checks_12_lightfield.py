@@ -1,4 +1,4 @@
-"""End-to-end verification of VL3DLF v3 shared 3D light field (VolumetricLight3D v3.17 x Snow3D v1.23 x VolumetricFog3D v2.06)."""
+"""End-to-end verification of VL3DLF v3 shared 3D light field (VolumetricLight3D v3.18 x Snow3D v1.23 x VolumetricFog3D v2.06)."""
 from __future__ import annotations
 
 import base64
