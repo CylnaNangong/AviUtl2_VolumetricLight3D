@@ -586,7 +586,7 @@ extern "C" int vl3d_test_selftest(char* buf, int buflen) {
               "sdk_scene_camera_self_target_layer");
     }
 
-    // 9. v1.22 ASLR ImageBase SHA-256 invariance, v2.1.16 strict allowlist, alt-reg Sig1 & 13-slot get_status
+    // 9. v1.22 ASLR ImageBase SHA-256 invariance, v2.1.16 / v2.1.17 strict allowlist, alt-reg Sig1 & 13-slot get_status
     {
         const size_t img = 8192;
         uint8_t* img_p = static_cast<uint8_t*>(MapPage(img, PROT_READ | PROT_WRITE));
@@ -660,6 +660,18 @@ extern "C" int vl3d_test_selftest(char* buf, int buflen) {
                   rec.ints[2] == 0x005F6000 && rec.bools[6] == 1,
                   "mod_get_status_13_slots");
             g_rec = nullptr;
+
+            // Verify v2.1.17 default allowlist entry (0x6AEE6718, 0x005FC000) passes strict_whitelist_only=1
+            WriteU32(img_p + 0x80 + 8, 0x6AEE6718u);  // v2.1.17 TimeDateStamp
+            WriteU32(img_p + 0x80 + 24 + 0x38, 0x005FC000u);
+            vl3d_test_reset(reinterpret_cast<uint64_t>(img_p));
+            vl3d::GetGlobalBridgeEngine().ResetDefaultAllowlist();
+            vl3d_test_load_ini("strict_whitelist_only=1\n");
+            vl3d_test_add_region(reinterpret_cast<uint64_t>(img_p), img, 0x1000, 0x20, 0x1000000);
+            vl3d_test_init_host(2011700);
+            auto st_2117 = vl3d::GetGlobalBridgeEngine().GetStatus();
+            check(st_2117.whitelist_hit && st_2117.rpm_allowed && st_2117.strict_whitelist_only,
+                  "v2117_default_allowlist_strict_hit");
 
             ::munmap(img_p, ((img + 4095) / 4096) * 4096);
         }

@@ -5,7 +5,7 @@
 🎉 **震撼首发！！！**  
 **面向 AviUtl ExEdit2 的真·3D 丁达尔体积光自定义对象 · 内置 3D 联动「前景融入背景」 · 可选 D3D11 CS 硬件阴影加速插件**
 
-`VolumetricLight3D.obj2 v3.17` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.16+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.17` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.17+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 语言切换 / Language:** &nbsp; **简体中文** &nbsp;|&nbsp; **[日本語 (Japanese)](docs/README_ja.md)** &nbsp;|&nbsp; **[English](docs/README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](docs/README_de.md)**
 
@@ -89,7 +89,7 @@
 | 项目 | 要求与说明 |
 | :--- | :--- |
 | **操作系统** | Windows 10 / Windows 11（64-bit） |
-| **宿主版本** | 推荐 **AviUtl ExEdit2 `v2.1.15`（2026-10-24）～`v2.1.16`（2026-10-31）及以上**<br><sub>※ `VL3DBridge.aux2 v1.22` 的 D3D11 `cs_5_0` GPU 硬件加速依赖 `v2.1.15+` 官方 SDK 接口，并已内置 `v2.1.15` 与 `v2.1.16` 双版本认证白名单；在较早的 `v2.0.54+` 版本上会自动回退至 C++ `-O3` CPU 或纯 LuaJIT 模式运行。</sub> |
+| **宿主版本** | 推荐 **AviUtl ExEdit2 `v2.1.15`（2026-10-24）～`v2.1.17`（2026-11-07）及以上**<br><sub>※ `VL3DBridge.aux2 v1.22` 的 D3D11 `cs_5_0` GPU 硬件加速依赖 `v2.1.15+` 官方 SDK 接口；随包 `VL3DBridge.ini` 已登记 `v2.1.15` / `v2.1.16` / `v2.1.17` 三版 PE 认证指纹及 `v2.1.17` 的磁盘 SHA-256；在较早的 `v2.0.54+` 版本上会自动回退至 C++ `-O3` CPU 或纯 LuaJIT 模式运行。</sub> |
 | **显卡（GPU）** | 支持 DirectX 11（`Shader Model 5.0` / `cs_5_0`）的独立或集成显卡（NVIDIA / AMD / Intel Arc 及核显） |
 | **缓存设置** | 直接兼容 AviUtl2 默认的临时图像缓存上限（`TemporaryImageCacheSize = 16M`），无需手动改大宿主缓存配置 |
 | **可选联动组件** | 如需使用 `.vrm` 角色模型的 3D 遮光投影与轮廓保护，需安装对应的 [`VRMToolkit`](https://github.com/nove-nove/aviutl2-vrm-toolkit)（`VRMToolkitBridge`）插件 |
@@ -268,12 +268,14 @@ Layer 7  [字幕 / UI 叠加层]   保持清晰，不受上述效果影响
 
 AviUtl ExEdit2 目前仍处于活跃迭代阶段，部分高阶宿主内部状态（例如「摄像机控制」内部的延迟渲染 3D 光源列表、编辑器自由视角“绿相机”姿态等）**尚未在官方 Plugin SDK 中提供公开读取接口**（`v2.1.16` SDK 新增的 `get_camera_control_object()` 仅面向 `.auf2` 滤镜插件）。为了实现完整的 3D 光影联动体验，本项目部分辅助能力涉及对 `aviutl2.exe`（已在 **`v2.1.15` 与 `v2.1.16` 实机验证通过**）的二进制逆向分析与**只读内存探针**。
 
+> **📌 `v2.1.17`（2026-11-07）兼容性核验：探针未失效。** 官方最新版 `v2.1.17`（版本 id `2011700`）的 `aviutl2.exe` 仍保留 `VL3DBridge` 依赖的两段机器码特征——`lua_getvalue` 渲染上下文特征在 `.text` 中命中 **70** 处，编辑自由相机矩阵特征命中 **1** 处且 `off_w = 0x8C0` / `off_c = 0x198` 与 `v2.1.16` 完全一致；G-Buffer 光源数组的 `+0x98 / +0xA0 / +0xA8` 向量三元组与 `+0xD0` 访问序列在新旧两版中**逐字节一致**（仅整体 VA 平移 `0x30`）。官方 `[2026/11/7]` SDK 更新仅向 `EVENT_TYPE` 枚举追加 `RELOAD_LANGUAGE = 6` 并补充 `filter2.h` 注释，`EDIT_HANDLE` / `get_direct3d_device()` 等 188 个函数指针的顺序与所有结构体布局完全未变，**对本仓库无 ABI 影响**。本次同步已把 `v2.1.17` 的 PE 指纹（`0x6AEE6718, 0x005FC000`）与磁盘 SHA-256 登记进 `Plugin\VL3DBridge.ini`，严格白名单模式亦可放行。
+
 为方便用户客观评估升级风险，现将各模块的底层依赖与宿主更新影响完全公开说明如下：
 
 | 功能模块 | 底层实现方式 | 未来 `aviutl2.exe` 更新时的风险评估 |
 | :--- | :--- | :--- |
 | **核心 3D 体积光渲染、Mip 预滤波、烟雾噪声**<br>**2D 前景轮廓遮挡、「前景融入背景（AutoBlendLight）」** | 100% 官方脚本 API + 原生 HLSL 像素着色器 | **极低（稳定兼容）** |
-| **`VL3DBridge.aux2` 无锁图层/文本/水面/场景相机读取**<br>**`D3D11 ComputeShader (cs_5_0)` 硬件 3D 阴影光栅化** | 100% 官方 Plugin SDK（`plugin2.h` / `module2.h` `2026-10-24`～`2026-10-31`） | **极低（遵循官方 SDK ABI）** |
+| **`VL3DBridge.aux2` 无锁图层/文本/水面/场景相机读取**<br>**`D3D11 ComputeShader (cs_5_0)` 硬件 3D 阴影光栅化** | 100% 官方 Plugin SDK（`plugin2.h` / `module2.h` `2026-10-24`～`2026-11-07`） | **极低（遵循官方 SDK ABI）** |
 | **「摄像机光源联动」自动读取摄像机控制内 3D 点光源/聚光灯/平行光** | 只读内存探针（读取延迟渲染 G-Buffer 光源数组） | **存在局部失效风险**：若未来宿主重构内部类内存布局，可能暂时无法检出摄像机 3D 光源 |
 | **编辑器自由视角（绿相机图标）实时跟随 & 未安装 `.aux2` 时的未保存工程兜底解析** | 只读内存探针 + `.aup2` 文件解析双兜底 | **存在局部失效风险**：若偏移变化，未安装 `.aux2` 时需保存工程（`Ctrl+S`）以解析 `.obj` 路径，绿相机预览视角可能回退为正式摄像机视角 |
 
@@ -281,7 +283,7 @@ AviUtl ExEdit2 目前仍处于活跃迭代阶段，部分高阶宿主内部状�
 
 1. **100% 纯只读承诺**：无论是 `VolumetricLight3D.obj2` 还是 `VL3DBridge.aux2`，**严禁向 `aviutl2.exe` 宿主内存写入任何字节**；所有探针均通过操作系统内核级 `ReadProcessMemory` 安全拷贝，即使遇到未映射页或保护页也绝不会触发访问冲突崩溃（`Access Violation`）。
 2. **PE 指纹白名单 + 机器码特征自检自动降级**：`VL3DBridge.aux2` 启动时会校验 `aviutl2.exe` 的 PE 头/`SHA-256` 白名单及机器码结构不变量。一旦未来新版 AviUtl2 内部结构发生变动导致特征不匹配，插件将**自动关闭内存探针并平滑降级为纯官方 SDK 模式**——核心体积光、2D/3D 遮挡、GPU 硬件阴影加速与前景融入背景均继续正常工作，不会损坏任何 `.aup2` 工程文件。
-3. **手动强制纯白名单模式**：如果你在安全性要求极高的生产环境中使用，可随时打开 `Plugin\VL3DBridge.ini` 将 `strict_whitelist_only = 1` 开启，此时仅当宿主匹配已认证的 PE 头指纹（内置支持 `v2.1.15` / `v2.1.16`）或磁盘文件 `SHA-256`（`Get-FileHash aviutl2.exe`）时才启用只读探针，未登记的新版本将一律强制运行于纯 SDK 模式。
+3. **手动强制纯白名单模式**：如果你在安全性要求极高的生产环境中使用，可随时打开 `Plugin\VL3DBridge.ini` 将 `strict_whitelist_only = 1` 开启，此时仅当宿主匹配已登记的 PE 头指纹（`v2.1.15` / `v2.1.16` / `v2.1.17`）或磁盘文件 `SHA-256`（已登记 `v2.1.17`；`Get-FileHash aviutl2.exe`）时才启用只读探针，未登记的新版本将一律强制运行于纯 SDK 模式。
 
 ---
 

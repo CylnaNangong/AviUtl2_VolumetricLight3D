@@ -295,6 +295,15 @@ void BridgeEngine::ResetDefaultAllowlist() {
     v2116.image_size = 0x005F6000u;
     v2116.label = "AviUtl2_v2.1.16_20261031";
     allowlist_.push_back(v2116);
+
+    // Official AviUtl ExEdit2 v2.1.17 (2026-11-07) verified PE32+ fingerprint
+    // SHA-256 of the on-disk aviutl2.exe (ASLR-invariant, Get-FileHash compatible).
+    AllowlistEntry v2117{};
+    v2117.pe_timestamp = 0x6AEE6718u;
+    v2117.image_size = 0x005FC000u;
+    v2117.sha256_hex = "c425bfc237cb9fdd9a1cfd7269756f3374ae82ad9f7b4cddcbfa2971a975f431";
+    v2117.label = "AviUtl2_v2.1.17_20261107";
+    allowlist_.push_back(v2117);
 }
 
 void BridgeEngine::SetMemoryOps(const HostMemoryOps& ops) {

@@ -237,7 +237,7 @@ def lua_surface():
     return {"bridge_functions": len(expected)}
 
 
-@check("bridge: shipped Windows x64 VL3DBridge.aux2 & ini match v1.22 / v2.1.16", tags=["bridge", "static"])
+@check("bridge: shipped Windows x64 VL3DBridge.aux2 & ini match v1.22 / v2.1.17", tags=["bridge", "static"])
 def shipped_aux2_and_ini():
     from vl3dsb.config import REPO_ROOT
     aux2_path = REPO_ROOT / "Plugin" / "VL3DBridge.aux2"
@@ -283,5 +283,8 @@ def shipped_aux2_and_ini():
     ini_txt = ini_raw.decode("utf-8")
     require("0x6AE538B8,0x005F6000" in ini_txt, "VL3DBridge.ini missing AviUtl2 v2.1.16 allow_pe")
     require("0x6ADC1302,0x005F5000" in ini_txt, "VL3DBridge.ini missing AviUtl2 v2.1.15 allow_pe")
+    require("0x6AEE6718,0x005FC000" in ini_txt, "VL3DBridge.ini missing AviUtl2 v2.1.17 allow_pe")
+    require("c425bfc237cb9fdd9a1cfd7269756f3374ae82ad9f7b4cddcbfa2971a975f431" in ini_txt,
+            "VL3DBridge.ini missing AviUtl2 v2.1.17 allow_sha256")
     require("ea321cfb" not in ini_txt, "VL3DBridge.ini still contains obsolete v1.21 header allow_sha256")
     return {"size": len(b), "exports": exports}

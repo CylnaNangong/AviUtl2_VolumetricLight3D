@@ -6,7 +6,7 @@
 **THE REAL 3D Volumetric Light (God Rays / Crepuscular Rays / Light Shafts) Custom Object for AviUtl ExEdit2**  
 **With Built-in 3D-Linked Foreground Light Blending & Optional D3D11 CS GPU Acceleration**
 
-`VolumetricLight3D.obj2 v3.17` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.16+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.17` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.17+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanese)](README_ja.md)** &nbsp;|&nbsp; **English** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
@@ -89,7 +89,7 @@
 | Component | Requirement / Notes |
 | :--- | :--- |
 | **OS** | Windows 10 / Windows 11 (64-bit) |
-| **Host Application** | **AviUtl ExEdit2 `v2.1.15` (2026-10-24) – `v2.1.16` (2026-10-31) or newer recommended**<br><sub>*Note: `VL3DBridge.aux2 v1.22` uses the official D3D11 device API (`v2.1.15+`) for `cs_5_0` GPU shadow acceleration and includes built-in verified allowlists for both `v2.1.15` and `v2.1.16`. Earlier `v2.0.54+` builds automatically fall back to the C++ `-O3` CPU or pure LuaJIT path.*</sub> |
+| **Host Application** | **AviUtl ExEdit2 `v2.1.15` (2026-10-24) – `v2.1.17` (2026-11-07) or newer recommended**<br><sub>*Note: `VL3DBridge.aux2 v1.22` uses the official D3D11 device API (`v2.1.15+`) for `cs_5_0` GPU shadow acceleration; the bundled `VL3DBridge.ini` registers verified PE fingerprints for `v2.1.15`, `v2.1.16` and `v2.1.17` plus the on-disk SHA-256 for `v2.1.17`. Earlier `v2.0.54+` builds automatically fall back to the C++ `-O3` CPU or pure LuaJIT path.*</sub> |
 | **GPU** | DirectX 11 (`Shader Model 5.0` / `cs_5_0`) compatible GPU (NVIDIA / AMD / Intel Arc or iGPU) |
 | **Cache Config** | Works out-of-the-box with AviUtl2's default `TemporaryImageCacheSize` (16M pixels) |
 | **Optional Companion** | [`VRMToolkit`](https://github.com/nove-nove/aviutl2-vrm-toolkit) (`VRMToolkitBridge`) is only needed if you use `.vrm` avatars as 3D occluders |
@@ -263,6 +263,8 @@ All **47 parameters across 6 UI groups** (showing English UI labels from `Englis
 
 AviUtl ExEdit2 is actively evolving, and **the official Plugin SDK does not yet expose APIs for certain internal host states** — specifically the deferred G-Buffer 3D light array inside Camera Control (`カメラ制御`) and the interactive Editor Free-Camera ("green camera icon") view matrix (`get_camera_control_object()` added in `v2.1.16` is `.auf2`-filter-only). To bridge these gaps today, optional sub-features use **read-only binary memory probes** verified on `aviutl2.exe` (`v2.1.15` and `v2.1.16`).
 
+> **v2.1.17 (2026-11-07) verification:** the read-only probes are **not** invalidated. Both code signatures still match, the G-Buffer light-array offsets are byte-identical to v2.1.16, and the `[2026/11/7]` SDK update only appends `RELOAD_LANGUAGE = 6` to an enum plus documentation comments (no ABI change). The new host PE fingerprint and on-disk SHA-256 are now registered in `Plugin\VL3DBridge.ini`.
+
 We disclose the exact scope of version-sensitivity transparently below:
 
 | Feature Module | Implementation | Risk on Future `aviutl2.exe` Updates |
@@ -276,7 +278,7 @@ We disclose the exact scope of version-sensitivity transparently below:
 
 1. **Zero Memory Writes**: Neither `VolumetricLight3D.obj2` nor `VL3DBridge.aux2` ever writes to or hooks `aviutl2.exe` memory. All probes use kernel-validated `ReadProcessMemory` calls that safely return failure codes without raising access-violation crashes.
 2. **PE Fingerprint & Machine-Code Signature Gating**: Whenever AviUtl2 updates and any binary signature fails validation, `VL3DBridge.aux2` **automatically disables all memory probes and falls back cleanly to Pure Official SDK Mode** — your `.aup2` projects will not crash or corrupt, and core volumetric rays, 2D/3D shadows, `cs_5_0` GPU acceleration, and Foreground Blend continue working normally.
-3. **Strict Whitelist Option**: Set `strict_whitelist_only = 1` in `Plugin\VL3DBridge.ini` to restrict probes exclusively to PE-verified (`v2.1.15` / `v2.1.16` built-in) or on-disk SHA-256-verified (`Get-FileHash aviutl2.exe`) host builds.
+3. **Strict Whitelist Option**: Set `strict_whitelist_only = 1` in `Plugin\VL3DBridge.ini` to restrict probes exclusively to PE-verified (`v2.1.15` / `v2.1.16` / `v2.1.17` registered) or on-disk SHA-256-verified (`v2.1.17` registered; `Get-FileHash aviutl2.exe`) host builds.
 
 ---
 

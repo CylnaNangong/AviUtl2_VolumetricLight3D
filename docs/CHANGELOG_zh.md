@@ -1,5 +1,19 @@
 # 更新历史 — 体积光（3D） / VL3DBridge
 
+## 待发布（Unreleased）· AviUtl ExEdit2 `v2.1.17` 白名单同步 & 探针/SDK 兼容性核验
+
+- **确认只读内存探针在最新版 `v2.1.17`（2026-11-07 08:47 JST，版本 id `2011700`）上未失效**：
+  - **门禁签名仍命中**：`lua_getvalue` 渲染上下文特征（Sig1）在 `.text` 中命中 70 处（`v2.1.16` 为 79 处），编辑自由相机矩阵特征（Sig2）命中 1 处，且 `off_w = 0x8C0` / `off_c = 0x198` 与 `v2.1.16` 完全一致；因此默认 `strict_whitelist_only = 0` 混合校验模式下 `rpm_allowed` 仍为 `true`，`get_status()` 返回 `SDK+VERIFIED_RPM`。
+  - **内部结构偏移未变**：G-Buffer 光源数组的 `+0x98 / +0xA0 / +0xA8` 向量三元组与 `+0xD0` 访问序列在 `v2.1.16` / `v2.1.17` 两版中逐字节一致（仅因 `.text` 前段插入而整体 VA 平移 `0x30`）；`lctx + 0x88` / `+ 0xC8` 链路计数亦基本不变。Lua 侧 `09_layer_resolve.lua` 的硬编码 RVA 兜底表仅在 Sig1 零命中时才启用，本次 70 处命中不触发，无需新增兜底地址。
+  - **官方 SDK 更新无影响**：`[2026/11/7]` SDK 仅在 `plugin2.h` 的 `EVENT_TYPE` 枚举末尾追加 `RELOAD_LANGUAGE = 6`、在 `filter2.h` 补充 `--hide` 条件项目说明；`module2.h` / `cache2.h` / `config2.h` / `logger2.h` / `input2.h` / `output2.h` 全部未变。仓库自带裁剪版 `plugin2.h` 与最新官方头的 188 个函数指针**顺序逐一相同**，`EDIT_HANDLE` / `get_direct3d_device()` 等结构体布局零变化，D3D11 `cs_5_0` 路径不受影响。
+- **登记 `v2.1.17` 白名单（本次为静态核验，未做真机升级实测）**：
+  - `aviutl2.exe` 磁盘 SHA-256：`c425bfc237cb9fdd9a1cfd7269756f3374ae82ad9f7b4cddcbfa2971a975f431`（6,096,896 字节）；
+  - PE32+ 指纹：`TimeDateStamp = 0x6AEE6718`、`SizeOfImage = 0x005FC000`；
+  - `Plugin/VL3DBridge.ini` 与 `integrations/volumetricfog3d/Plugin/VL3DBridge.ini` 同步追加 `allow_pe` 与 `allow_sha256`（保留 2.1.15 / 2.1.16 两条）；解析器按行追加、`sha_ok || ts_ok` 任一命中即放行，故 `strict_whitelist_only = 1` 严格模式下 2.1.17 亦可通过。
+  - `src/VL3DBridge/src/vl3d_bridge_core.cpp` 的 `ResetDefaultAllowlist()` 补入 `v2117` 条目（PE 指纹 + 磁盘 SHA-256），供下次编译 `.aux2` 时内置。
+- **注意：随包二进制未重新构建**。`Plugin/VL3DBridge.aux2` 仍为已编译的 `v1.22`，其内置默认白名单只有 2.1.15 / 2.1.16；但启动时 `VL3DBridge.ini` 的 `allow_pe` / `allow_sha256` 会追加到同一白名单，因此现有二进制在严格模式下同样放行 2.1.17，用户无需自行重编译。
+- **门禁与文档同步**：`sandbox/checks/checks_05_bridge.py` 新增 2.1.17 的 `allow_pe` / `allow_sha256` 静态断言，`vl3d_bridge_selftest.cpp` 新增 `v2117_default_allowlist_strict_hit` 自测；四语 README 与 `packaging/package.txt` 的推荐宿主版本更新至 `v2.1.17`。
+
 ## v3.17（2026-11-01）· VolumetricFog3D v2.06 共享光场散射联动
 
 - **新增 VolumetricLight3D × VolumetricFog3D 联动包**：Fog3D 可读取同场景、当前帧的 `VL3DLF v3` 数据，在每个雾切片的 4×4 空间采样点应用局部光色、真实光束方向和 Band 1 投影阴影，再由 GPU Henyey–Greenstein 相位函数计算散射。

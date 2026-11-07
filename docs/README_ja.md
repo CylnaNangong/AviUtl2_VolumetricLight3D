@@ -6,7 +6,7 @@
 **AviUtl ExEdit2 用 真・3D ボリューメトリックライト（ボリュームライト／ゴッドレイ／薄明光線）カスタムオブジェクト**  
 **3D 連動「前景なじませ」内蔵 · D3D11 CS 高速化プラグイン同梱**
 
-`VolumetricLight3D.obj2 v3.17` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.16+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.17` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.17+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 言語切替 / Language:** &nbsp; **[简体中文 (Chinese)](../README.md)** &nbsp;|&nbsp; **日本語** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **[Deutsch (German)](README_de.md)**
 
@@ -91,7 +91,7 @@
 | 項目 | 要件・備考 |
 | :--- | :--- |
 | **OS** | Windows 10 / Windows 11（64-bit） |
-| **本体バージョン** | **AviUtl ExEdit2 `v2.1.15`（2026-10-24）〜`v2.1.16`（2026-10-31）以降推奨**<br><sub>※ `VL3DBridge.aux2 v1.22` の D3D11 `cs_5_0` GPU 高速化は `v2.1.15+` 公式 SDK API を使用し、`v2.1.15` / `v2.1.16` 両バージョンの認証ホワイトリストを内蔵しています。それ以前の `v2.0.54+` 環境では自動的に C++ `-O3` CPU または純 LuaJIT 経路へフォールバックします。</sub> |
+| **本体バージョン** | **AviUtl ExEdit2 `v2.1.15`（2026-10-24）〜`v2.1.17`（2026-11-07）以降推奨**<br><sub>※ `VL3DBridge.aux2 v1.22` の D3D11 `cs_5_0` GPU 高速化は `v2.1.15+` 公式 SDK API を使用します。同梱の `VL3DBridge.ini` に `v2.1.15` / `v2.1.16` / `v2.1.17` の認証 PE フィンガープリントと `v2.1.17` のディスク SHA-256 を登録済みです。それ以前の `v2.0.54+` 環境では自動的に C++ `-O3` CPU または純 LuaJIT 経路へフォールバックします。</sub> |
 | **GPU** | DirectX 11（`Shader Model 5.0` / `cs_5_0`）対応 GPU（NVIDIA / AMD / Intel Arc・内蔵 GPU） |
 | **キャッシュ設定** | AviUtl2 既定の `TemporaryImageCacheSize`（1,600 万ドット）のまま変更不要で動作します |
 | **任意連携プラグイン** | `.vrm` モデルの 3D 遮蔽を使用する場合は [`VRMToolkit`](https://github.com/nove-nove/aviutl2-vrm-toolkit)（`VRMToolkitBridge`）が必要です |
@@ -265,6 +265,8 @@ Layer 7  [字幕・UI]            体積効果の後段に置き、くっきり�
 
 AviUtl ExEdit2 は現在も活発に更新が続けられており、一部のホスト内部情報（「カメラ制御」内の遅延シェーディング 3D 光源配列や、編集用自由視点［緑カメラ］のリアルタイム姿勢など）については、**現時点の公式 Plugin SDK に取得用 API がまだ用意されていません**（`v2.1.16` SDK で追加された `get_camera_control_object()` は `.auf2` フィルタプラグイン専用）。そのため、本プロジェクトの一部の補助機能では `aviutl2.exe`（**`v2.1.15` および `v2.1.16` にて実機検証済み**）のバイナリ解析に基づく **読み取り専用メモリプローブ** を併用しています。
 
+> **`v2.1.17`（2026-11-07）検証結果：プローブは有効です。** 2 つの機械語シグネチャはいずれも命中し、G-Buffer 光源配列のオフセットも `v2.1.16` とバイト単位で一致しています。`[2026/11/7]` の SDK 更新は列挙型への `RELOAD_LANGUAGE = 6` 追加とコメント追記のみで ABI 変更はありません。`v2.1.17` の PE フィンガープリントとディスク SHA-256 は `Plugin\VL3DBridge.ini` に登録済みです。
+
 将来の本体アップデートに伴う影響範囲を以下の通り明確に公開します：
 
 | 機能モジュール | 実装方式 | 将来の `aviutl2.exe` 更新時のリスク評価 |
@@ -278,7 +280,7 @@ AviUtl ExEdit2 は現在も活発に更新が続けられており、一部の�
 
 1. **ホストメモリへの書き込みは一切行いません**：`VolumetricLight3D.obj2` および `VL3DBridge.aux2` は **100% 読み取り専用** であり、OS カーネル経由の `ReadProcessMemory` のみを使用します。未マップ領域等によるアクセス違反クラッシュは発生しません。
 2. **PE フィンガープリント＆機械語シグネチャ検証による安全な自動縮退**：将来の AviUtl2 更新で内部レイアウトが変化しシグネチャが一致しなくなった場合、`VL3DBridge.aux2` は**自動的にメモリプローブを遮断して「純公式 SDK モード」へ移行**します。プロジェクト（`.aup2`）の破損やクラッシュを起こすことなく、体積光描画・2D/3D 遮蔽・GPU `cs_5_0` 高速化・前景なじませはそのまま継続して利用可能です。
-3. **厳格ホワイトリストモード**：`Plugin\VL3DBridge.ini` にて `strict_whitelist_only = 1` を設定することで、PE ヘッダ（`v2.1.15` / `v2.1.16` 内蔵対応）またはディスクファイル SHA-256（`Get-FileHash aviutl2.exe`）が明示的に許可された本体ビルド以外でのプローブを完全に無効化することも可能です。
+3. **厳格ホワイトリストモード**：`Plugin\VL3DBridge.ini` にて `strict_whitelist_only = 1` を設定することで、PE ヘッダ（`v2.1.15` / `v2.1.16` / `v2.1.17` 登録済み）またはディスクファイル SHA-256（`v2.1.17` 登録済み、`Get-FileHash aviutl2.exe`）が明示的に許可された本体ビルド以外でのプローブを完全に無効化することも可能です。
 
 ---
 

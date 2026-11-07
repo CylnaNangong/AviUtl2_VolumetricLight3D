@@ -1,5 +1,12 @@
 # 更新履歴 — 体積光（3D） / VL3DBridge
 
+## 未公開（Unreleased）・AviUtl ExEdit2 `v2.1.17` ホワイトリスト同期＆プローブ／SDK 互換性検証
+
+- **最新版 `v2.1.17`（2026-11-07、id `2011700`）で読み取り専用メモリプローブが有効であることを確認**：2 つの機械語シグネチャ（Sig1: `.text` 内 70 件、Sig2: 1 件、`off_w = 0x8C0` / `off_c = 0x198` 不変）が引き続き命中し、G-Buffer 光源配列の `+0x98 / +0xA0 / +0xA8`／`+0xD0` アクセス列も `v2.1.16` とバイト単位で一致。既定の混合検証モードでは `SDK+VERIFIED_RPM` のままです。
+- **公式 SDK `[2026/11/7]` の影響なし**：`EVENT_TYPE` への `RELOAD_LANGUAGE = 6` 追加と `filter2.h` のコメント追記のみで、188 個の関数ポインタ順序・構造体レイアウトは不変（`get_direct3d_device()` を含む）。
+- **`v2.1.17` をホワイトリストへ登録**：`aviutl2.exe` のディスク SHA-256 `c425bfc237cb9fdd9a1cfd7269756f3374ae82ad9f7b4cddcbfa2971a975f431`、PE 指紋 `0x6AEE6718` / `0x005FC000`。2 つの `VL3DBridge.ini` へ `allow_pe` と `allow_sha256` を追記し、`ResetDefaultAllowlist()` にも `v2117` を追加（次回ビルド用）。
+- **同梱 `VL3DBridge.aux2` は再ビルドしていません**（`v1.22` のまま）。起動時に INI のエントリが追記されるため、厳格ホワイトリストモードでも 2.1.17 は放行されます。今回は静的検証であり実機アップグレード検証は未実施です。
+
 ## v3.17（2026-11-01）・VolumetricFog3D v2.06 共有光場散乱連携
 
 - **VolumetricLight3D × VolumetricFog3D 連携パッケージを追加**：Fog3D は同一シーン・現フレームの `VL3DLF v3` を読み、各霧スライスの 4×4 空間サンプルへ局所光色、実際の光線方向、Band 1 投影影を適用し、GPU Henyey–Greenstein 位相関数で散乱を計算。

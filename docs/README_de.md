@@ -6,7 +6,7 @@
 **DAS ECHTE 3D-Volumenlicht (God Rays / Krepuskulare Strahlen / Lichtstrahlen) für AviUtl ExEdit2**  
 **Mit eingebauter 3D-Vordergrund-Einblendung & optionalem D3D11-CS-Hardware-Schattenbeschleuniger**
 
-`VolumetricLight3D.obj2 v3.17` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.16+` &nbsp;|&nbsp; `MIT License`
+`VolumetricLight3D.obj2 v3.17` &nbsp;|&nbsp; `VL3DBridge.aux2 v1.22` &nbsp;|&nbsp; `AviUtl ExEdit2 v2.1.15–v2.1.17+` &nbsp;|&nbsp; `MIT License`
 
 **🌐 Sprache:** &nbsp; **[简体中文 (Chinesisch)](../README.md)** &nbsp;|&nbsp; **[日本語 (Japanisch)](README_ja.md)** &nbsp;|&nbsp; **[English](README_en.md)** &nbsp;|&nbsp; **Deutsch**
 
@@ -89,7 +89,7 @@
 | Komponente | Anforderung / Hinweise |
 | :--- | :--- |
 | **OS** | Windows 10 / Windows 11 (64-Bit) |
-| **Host-Anwendung** | **AviUtl ExEdit2 `v2.1.15` (2026-10-24) – `v2.1.16` (2026-10-31) oder neuer empfohlen**<br><sub>*Hinweis: `VL3DBridge.aux2 v1.22` nutzt die offizielle D3D11-Geräte-API (`v2.1.15+`) für die `cs_5_0`-GPU-Schattenbeschleunigung und enthält eingebaute verifizierte Allowlists für `v2.1.15` und `v2.1.16`. Frühere `v2.0.54+`-Builds fallen automatisch auf den C++ `-O3`-CPU- oder reines-LuaJIT-Pfad zurück.*</sub> |
+| **Host-Anwendung** | **AviUtl ExEdit2 `v2.1.15` (2026-10-24) – `v2.1.17` (2026-11-07) oder neuer empfohlen**<br><sub>*Hinweis: `VL3DBridge.aux2 v1.22` nutzt die offizielle D3D11-Geräte-API (`v2.1.15+`) für die `cs_5_0`-GPU-Schattenbeschleunigung. Die beigelegte `VL3DBridge.ini` enthält verifizierte PE-Fingerprints für `v2.1.15`, `v2.1.16` und `v2.1.17` sowie den Festplatten-SHA-256 für `v2.1.17`. Frühere `v2.0.54+`-Builds fallen automatisch auf den C++ `-O3`-CPU- oder reines-LuaJIT-Pfad zurück.*</sub> |
 | **GPU** | DirectX 11 (`Shader Model 5.0` / `cs_5_0`)-kompatible GPU (NVIDIA / AMD / Intel Arc oder iGPU) |
 | **Cache-Konfiguration** | Funktioniert out-of-the-box mit AviUtl2s Standard-`TemporaryImageCacheSize` (16 Mio. Pixel) |
 | **Optionaler Begleit-Plugin** | [`VRMToolkit`](https://github.com/nove-nove/aviutl2-vrm-toolkit) (`VRMToolkitBridge`) wird nur benötigt, wenn `.vrm`-Avatare als 3D-Abschattung genutzt werden |
@@ -263,6 +263,8 @@ Alle **47 Parameter in 6 UI-Gruppen** (Deutsche UI-Labels aus `Deutsch.Volumetri
 
 AviUtl ExEdit2 entwickelt sich aktiv weiter, und **die offizielle Plugin-SDK bietet noch keine API für bestimmte interne Host-Zustände** — insbesondere die verzögerte G-Buffer-3D-Licht-Array in der Kamerasteuerung (`カメラ制御`) und die Viewmatrix der interaktiven Editor-Freikanmera („grünes Kamera-Icon“; `get_camera_control_object()` in `v2.1.16` ist nur für `.auf2`-Filter). Um diese Lücken heute zu schließen, nutzen optionale Unterfunktionen **Schreib-gesperrte Binary-Memory-Probes**, verifiziert auf `aviutl2.exe` (`v2.1.15` und `v2.1.16`).
 
+> **Prüfung `v2.1.17` (2026-11-07): Die Probes funktionieren weiterhin.** Beide Maschinencode-Signaturen treffen weiterhin zu, die G-Buffer-Lichtarray-Offsets sind bytegleich mit v2.1.16, und das SDK-Update `[2026/11/7]` ergänzt lediglich `RELOAD_LANGUAGE = 6` in einer Enumeration sowie Kommentare (keine ABI-Änderung). PE-Fingerprint und Festplatten-SHA-256 von v2.1.17 sind in `Plugin\VL3DBridge.ini` registriert.
+
 Wir offenlegen transparent, welche Funktionen versionssensible sind:
 
 | Funktionsmodul | Implementierung | Risiko bei zukünftigen `aviutl2.exe`-Updates |
@@ -276,7 +278,7 @@ Wir offenlegen transparent, welche Funktionen versionssensible sind:
 
 1. **Null Memory-Writes**: Weder `VolumetricLight3D.obj2` noch `VL3DBridge.aux2` schreiben je in das `aviutl2.exe`-Host-Memory. Alle Probes nutzen kernel-validierte `ReadProcessMemory`-Aufrufe, die sicher Fehlercodes zurückgeben, ohne Access-Violation-Crashs zu verursachen.
 2. **PE-Fingerabdruck & Maschinencode-Signatur-Prüfung**: Wenn AviUtl2 aktualisiert wird und eine Binary-Signatur die Prüfung nicht besteht, **schaltet `VL3DBridge.aux2` alle Memory-Probes automatisch ab und geht sauber in den reinen offiziellen SDK-Modus** — Ihre `.aup2`-Projekte  crashen oder korruptieren nicht, und Kern-Volumenlicht, 2D/3D-Abschattung, `cs_5_0`-GPU-Beschleunigung und Vordergrund-Einblendung funktionieren weiterhin.
-3. **Strenge Whitelist-Option**: Stellen Sie in `Plugin\VL3DBridge.ini` `strict_whitelist_only = 1` ein, um Probes ausschließlich auf PE-verifizierte (`v2.1.15` / `v2.1.16` integriert) oder auf der Festplatte SHA-256-verifizierte (`Get-FileHash aviutl2.exe`) Host-Builds zu beschränken.
+3. **Strenge Whitelist-Option**: Stellen Sie in `Plugin\VL3DBridge.ini` `strict_whitelist_only = 1` ein, um Probes ausschließlich auf PE-verifizierte (`v2.1.15` / `v2.1.16` / `v2.1.17` registriert) oder auf der Festplatte SHA-256-verifizierte (`v2.1.17` registriert; `Get-FileHash aviutl2.exe`) Host-Builds zu beschränken.
 
 ---
 
